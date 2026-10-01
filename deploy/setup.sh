@@ -30,6 +30,8 @@ if [ ! -f .env ]; then
   cat > .env <<ENV
 # KRX OpenAPI 인증키 (openapi.krx.co.kr 에서 발급)
 KRX_API_KEY=
+# (선택) AI 질문·해설용 Anthropic API 키 (console.anthropic.com). 비우면 AI 기능만 꺼짐
+ANTHROPIC_API_KEY=
 # 웹 로그인 비밀번호
 SBT_PASSWORD=$PW
 SBT_DATASET=kr

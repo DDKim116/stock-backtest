@@ -25,7 +25,49 @@ class Store:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )""")
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS ai_usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                model TEXT NOT NULL,
+                input_tokens INTEGER, output_tokens INTEGER, cache_write INTEGER, cache_read INTEGER,
+                cost_usd REAL NOT NULL
+            )""")
+        self.db.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         self.db.commit()
+
+    # ------------------------------------------------------------ 설정
+    def get_setting(self, key: str, default=None):
+        with _lock:
+            r = self.db.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return json.loads(r["value"]) if r else default
+
+    def set_setting(self, key: str, value) -> None:
+        with _lock:
+            self.db.execute("INSERT INTO settings (key, value) VALUES (?, ?) "
+                            "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, json.dumps(value)))
+            self.db.commit()
+
+    # ------------------------------------------------------------ AI 사용량
+    def add_usage(self, kind: str, usage) -> None:
+        with _lock:
+            self.db.execute(
+                "INSERT INTO ai_usage (ts, kind, model, input_tokens, output_tokens, cache_write, cache_read, cost_usd) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (dt.datetime.now().isoformat(timespec="seconds"), kind, usage.model, usage.input_tokens,
+                 usage.output_tokens, usage.cache_write, usage.cache_read, usage.cost_usd))
+            self.db.commit()
+
+    def month_usage(self) -> dict:
+        start = dt.date.today().replace(day=1).isoformat()
+        with _lock:
+            r = self.db.execute("SELECT COUNT(*) AS n, COALESCE(SUM(cost_usd), 0) AS usd FROM ai_usage WHERE ts >= ?",
+                                (start,)).fetchone()
+            avg = self.db.execute(
+                "SELECT kind, AVG(cost_usd) AS usd FROM (SELECT * FROM ai_usage ORDER BY id DESC LIMIT 50) GROUP BY kind"
+            ).fetchall()
+        return {"count": r["n"], "usd": r["usd"], "avg_by_kind": {x["kind"]: x["usd"] for x in avg}}
 
     def list(self) -> list[dict]:
         with _lock:

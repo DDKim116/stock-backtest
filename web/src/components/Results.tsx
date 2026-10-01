@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { num, pct, price, retClass } from "@/lib/format";
 import type { BreakdownRow, Check, RunResult, SingleResult, Spec, SweepResult, Trade } from "@/lib/types";
+import AIExplain from "./AIExplain";
 import TradeChart from "./TradeChart";
 
 const CHECK_STYLE: Record<Check["level"], { icon: string; cls: string; label: string }> = {
@@ -309,15 +310,27 @@ function Sweep({ r, onPick }: { r: SweepResult; onPick: (s: Spec) => void }) {
 export default function Results({
   result,
   detail,
+  runSpec,
   onPick,
   onBack,
+  onLoadText,
 }: {
   result: RunResult;
   detail: SingleResult | null;
+  runSpec: Spec;
   onPick: (s: Spec) => void;
   onBack: () => void;
+  onLoadText: (text: string) => void;
 }) {
-  if (detail) return <Single r={detail} onBack={result.kind === "sweep" ? onBack : undefined} />;
-  if (result.kind === "sweep") return <Sweep r={result} onPick={onPick} />;
-  return <Single r={result} />;
+  const spec = detail ? detail.spec : result.kind === "single" ? result.spec : runSpec;
+  let body;
+  if (detail) body = <Single r={detail} onBack={result.kind === "sweep" ? onBack : undefined} />;
+  else if (result.kind === "sweep") body = <Sweep r={result} onPick={onPick} />;
+  else body = <Single r={result} />;
+  return (
+    <div className="space-y-4">
+      <AIExplain key={JSON.stringify(spec)} spec={spec} dataset={result.dataset.name} onLoad={onLoadText} />
+      {body}
+    </div>
+  );
 }

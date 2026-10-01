@@ -19,6 +19,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .. import config
+from ..ai import client as ai_client
+from ..ai import service as ai_service
 from ..data.panel import Panel
 from ..engine import dsl
 from ..engine.run import Runner, SpecError
@@ -113,7 +115,7 @@ def login(body: LoginIn):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "auth_required": bool(config.APP_PASSWORD)}
+    return {"ok": True, "auth_required": bool(config.APP_PASSWORD), "ai_enabled": ai_client.enabled()}
 
 
 # ---------------------------------------------------------------- 정보
@@ -307,6 +309,126 @@ def _f(x: float):
     x = float(x)
     return None if not np.isfinite(x) else round(x, 2)
 
+
+
+# ---------------------------------------------------------------- AI (선택 기능)
+
+AI_DEFAULTS = {"model": ai_client.DEFAULT_MODEL, "monthly_limit_usd": 20.0, "krw_rate": 1400.0}
+# 사용 기록이 없을 때 1회 예상 비용(달러)
+AI_EST = {"claude-opus-5-5": 0.08, "claude-sonnet-5-5": 0.04, "claude-haiku-4-5": 0.02}
+
+
+def ai_settings() -> dict:
+    return {k: store.get_setting(f"ai.{k}", v) for k, v in AI_DEFAULTS.items()}
+
+
+def ai_status_dict() -> dict:
+    st = ai_settings()
+    used = store.month_usage()
+    base = AI_EST.get(st["model"], 0.08)
+    est = {k: round(used["avg_by_kind"].get(k, base) * st["krw_rate"]) for k in ("translate", "explain")}
+    return {
+        "enabled": ai_client.enabled(),
+        **st,
+        "models": ai_client.MODELS,
+        "month_count": used["count"],
+        "month_usd": round(used["usd"], 4),
+        "month_krw": round(used["usd"] * st["krw_rate"]),
+        "limit_krw": round(st["monthly_limit_usd"] * st["krw_rate"]),
+        "estimate_krw": est,
+    }
+
+
+def _ai_guard() -> dict:
+    st = ai_settings()
+    if not ai_client.enabled():
+        raise HTTPException(503, "AI 기능이 꺼져 있습니다. 서버 .env 에 ANTHROPIC_API_KEY 를 넣어 주세요.")
+    if store.month_usage()["usd"] >= st["monthly_limit_usd"]:
+        raise HTTPException(402, "이번 달 AI 사용 한도에 도달했습니다. 설정에서 한도를 늘리거나 다음 달에 사용하세요.")
+    return st
+
+
+def _usage_out(u, st) -> dict:
+    return {"model": u.model, "input_tokens": u.input_tokens + u.cache_write + u.cache_read,
+            "output_tokens": u.output_tokens, "cost_usd": round(u.cost_usd, 4),
+            "cost_krw": round(u.cost_usd * st["krw_rate"])}
+
+
+@app.get("/api/ai/status", dependencies=[Depends(auth)])
+def ai_status():
+    return ai_status_dict()
+
+
+class AISettingsIn(BaseModel):
+    model: str | None = None
+    monthly_limit_usd: float | None = None
+    krw_rate: float | None = None
+
+
+@app.put("/api/ai/settings", dependencies=[Depends(auth)])
+def ai_update_settings(body: AISettingsIn):
+    if body.model is not None:
+        if body.model not in {m["id"] for m in ai_client.MODELS}:
+            raise HTTPException(422, "지원하지 않는 모델입니다")
+        store.set_setting("ai.model", body.model)
+    if body.monthly_limit_usd is not None:
+        if not 0 <= body.monthly_limit_usd <= 1000:
+            raise HTTPException(422, "월 한도는 0~1000 달러 사이로 정해 주세요")
+        store.set_setting("ai.monthly_limit_usd", body.monthly_limit_usd)
+    if body.krw_rate is not None:
+        if not 500 <= body.krw_rate <= 5000:
+            raise HTTPException(422, "환율 값이 이상합니다")
+        store.set_setting("ai.krw_rate", body.krw_rate)
+    return ai_status_dict()
+
+
+class TranslateIn(BaseModel):
+    question: str
+    current_text: str | None = None
+    history: list[str] = []
+
+
+@app.post("/api/ai/translate", dependencies=[Depends(auth)])
+def ai_translate(body: TranslateIn):
+    if not body.question.strip():
+        raise HTTPException(422, "질문을 입력하세요")
+    if len(body.question) > 2000:
+        raise HTTPException(422, "질문이 너무 깁니다 (2000자 이하)")
+    st = _ai_guard()
+    try:
+        out = ai_service.translate(body.question.strip(), body.current_text, st["model"], body.history[-6:])
+    except ai_client.AIError as e:
+        raise HTTPException(e.status, str(e))
+    if out.get("usage"):
+        store.add_usage("translate", out["usage"])
+    res = {k: v for k, v in out.items() if k not in ("usage", "spec")}
+    if out.get("spec") is not None:
+        res["spec"] = out["spec"].model_dump(mode="json")
+    if out.get("usage"):
+        res["usage"] = _usage_out(out["usage"], st)
+    return res
+
+
+class ExplainIn(BaseModel):
+    dataset: str = config.DEFAULT_DATASET
+    spec: Spec
+
+
+@app.post("/api/ai/explain", dependencies=[Depends(auth)])
+def ai_explain(body: ExplainIn):
+    st = _ai_guard()
+    runner = loaded.get(body.dataset)
+    try:
+        res = runner.run(body.spec, with_trades=False)
+    except (SpecError, dsl.DSLError) as e:
+        raise HTTPException(422, str(e))
+    try:
+        out = ai_service.explain(res, to_text(body.spec), st["model"])
+    except ai_client.AIError as e:
+        raise HTTPException(e.status, str(e))
+    store.add_usage("explain", out["usage"])
+    out["usage"] = _usage_out(out["usage"], st)
+    return out
 
 
 # ---------------------------------------------------------------- 웹 화면 (정적 파일)

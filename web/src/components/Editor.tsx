@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { joinAnd, parseNumList, showNumList, splitTopLevelAnd } from "@/lib/format";
 import type { Spec } from "@/lib/types";
+import AIAsk from "./AIAsk";
 
 export const DEFAULT_SPEC: Spec = {
   name: "",
@@ -222,12 +223,19 @@ export default function Editor({
         {tab("ai", "AI 질문")}
       </div>
 
-      {mode === "ai" && (
-        <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted">
-          AI 질문 기능은 다음 단계에서 추가됩니다. 말로 질문하면 AI가 아래 조건식으로 바꿔 채워 주고, 이후 숫자 수정·재실행은
-          무료로 할 수 있게 됩니다.
-        </div>
-      )}
+      {/* 대화 내용이 유지되도록 탭을 옮겨도 숨기기만 한다 */}
+      <div className={mode === "ai" ? "" : "hidden"}>
+        <AIAsk
+          onApply={(s) => {
+            setSpec(s);
+            setMode("build");
+          }}
+          onRun={(s) => {
+            setSpec(s);
+            onRun(s);
+          }}
+        />
+      </div>
 
       {mode === "text" && (
         <div className="space-y-2">

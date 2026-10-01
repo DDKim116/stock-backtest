@@ -6,7 +6,8 @@
 - 성공률, 아무 날이나 샀을 때(기준)와의 차이, 연도·시장·가격대별 통계, 자동 점검
 - 사례를 누르면 캔들차트에 신호·매수·매도 지점 표시
 - 숫자 자리에 여러 값을 넣으면 한 번에 비교표 생성
-- AI 질문(말로 질문 → 조건식 변환)은 다음 단계에서 선택 기능으로 추가
+- (선택) AI 질문: 말로 질문하면 조건식으로 변환해 확인받고 실행. AI 해설: 결과를 읽고 다음 검증할 변형까지 제안
+  - AI 를 거치는 순간만 유료(Anthropic API), 실행·숫자 수정·차트는 무료. 월 한도 설정 가능
 
 ## 구조
 
@@ -14,7 +15,8 @@
 server/   Python 분석 서버 (FastAPI + numpy/pandas/DuckDB)
   sbt/data/     KRX 수집, 수정주가 계산, 가상 데이터
   sbt/engine/   조건식 언어(dsl), 전략 명세(spec), 체결·청산 계산(event), 통계(stats)
-  sbt/api/      HTTP API, 저장한 전략(SQLite)
+  sbt/api/      HTTP API, 저장한 전략·AI 사용량(SQLite)
+  sbt/ai/       Claude API 호출 (질문 → 조건, 결과 해설), 비용 계산
 web/      Next.js 정적 웹앱 (서버가 같은 주소에서 함께 제공)
 deploy/   오라클 서버 설치·자동 업데이트 스크립트 → deploy/README.md
 ```

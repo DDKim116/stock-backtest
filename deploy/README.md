@@ -87,6 +87,20 @@ tailscale serve status       # https://○○○.ts.net 주소 확인
 Cloudflare 대시보드 → Zero Trust → Networks → Tunnels → Create tunnel 안내에 따라 서버에 `cloudflared` 를 설치하고,
 Public hostname 의 서비스 주소를 `http://localhost:8000` 으로 지정합니다.
 
+## 6. (선택) AI 질문·해설 켜기
+
+AI를 쓰지 않아도 조건식 검증은 모두 무료로 됩니다. 말로 질문하거나 결과 해설을 받고 싶을 때만 설정하세요.
+
+1. https://console.anthropic.com 가입 → **Billing**에서 크레딧 선불 충전 (예: $10). 자동 충전은 끄면 충전한 만큼만 쓰입니다.
+2. **API Keys** → Create Key → 키 복사 (한 번만 보여 줍니다)
+3. 서버에서:
+   ```bash
+   nano ~/stock-backtest/.env        # ANTHROPIC_API_KEY= 뒤에 붙여넣기
+   sudo systemctl restart sbt-api
+   ```
+4. 앱 **설정** 화면에서 월 한도(기본 28,000원)와 모델을 정합니다. 한도에 닿으면 그달에는 AI 기능만 멈춥니다.
+   - 1회 비용은 기본 모델(Opus 5.5) 기준 질문 약 100~200원, 해설 약 100원 정도이며 실제 사용 후 화면에 표시됩니다.
+
 ---
 
 ## 자주 쓰는 명령

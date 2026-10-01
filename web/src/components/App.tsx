@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, apiUrl, setApiUrl, setToken } from "@/lib/api";
 import { pct } from "@/lib/format";
 import type { DatasetInfo, RunResult, SingleResult, Spec, Strategy } from "@/lib/types";
+import { useAIStatus } from "./AIAsk";
 import Editor, { DEFAULT_SPEC } from "./Editor";
 import Results from "./Results";
 
@@ -33,6 +34,7 @@ export default function App() {
   const [result, setResult] = useState<RunResult | null>(null);
   const [detail, setDetail] = useState<SingleResult | null>(null);
   const [running, setRunning] = useState(false);
+  const [runSpec, setRunSpec] = useState<Spec>(DEFAULT_SPEC);
   const [error, setError] = useState<string | null>(null);
   const [datasets, setDatasets] = useState<DatasetInfo[]>([]);
   const [dataset, setDataset] = useState("kr");
@@ -71,6 +73,7 @@ export default function App() {
       const r = await api<RunResult>("/api/run", { body: { dataset, spec: s } });
       if (keepSweep && r.kind === "single") setDetail(r);
       else {
+        setRunSpec(s);
         setResult(r);
         setDetail(null);
       }
@@ -144,8 +147,19 @@ export default function App() {
               <Results
                 result={result}
                 detail={detail}
+                runSpec={runSpec}
                 onPick={(s) => run(s, true)}
                 onBack={() => setDetail(null)}
+                onLoadText={async (text) => {
+                  try {
+                    const r = await api<{ spec: Spec }>("/api/parse", { body: { text } });
+                    setSpec(r.spec);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                    flash("조건을 불러왔습니다. '검증 실행'을 누르세요");
+                  } catch (e) {
+                    setError((e as Error).message);
+                  }
+                }}
               />
             </section>
           )}
@@ -364,7 +378,7 @@ function Settings({ onSaved }: { onSaved: () => void }) {
     <div className="space-y-4">
       <section className="space-y-3 rounded-xl border border-border bg-card p-4">
         <h2 className="font-semibold">분석 서버 주소</h2>
-        <p className="text-sm text-muted">오라클 서버의 Cloudflare 주소 (예: https://api.내도메인.com). 비우면 이 화면과 같은 주소를 씁니다.</p>
+        <p className="text-sm text-muted">보통은 비워 두면 됩니다(이 화면을 연 주소의 서버를 사용). 화면을 다른 곳(예: Vercel)에 올린 경우에만 서버 주소를 넣으세요.</p>
         <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." autoCapitalize="off" />
         <div className="flex gap-2">
           <button
@@ -397,10 +411,83 @@ function Settings({ onSaved }: { onSaved: () => void }) {
         </div>
         {msg && <p className="text-sm text-muted">{msg}</p>}
       </section>
-      <section className="rounded-xl border border-border bg-card p-4 text-sm text-muted">
-        <h2 className="mb-1 font-semibold text-foreground">AI 질문 (다음 단계)</h2>
-        말로 질문하는 기능은 조건식 단계가 안정되면 추가합니다. AI 사용 시에만 Anthropic API 요금이 발생하며, 이 화면에서 사용 한도를 정할 수 있게 됩니다.
-      </section>
+      <AISettings />
     </div>
+  );
+}
+
+function AISettings() {
+  const { status, reload } = useAIStatus();
+  const [limitKrw, setLimitKrw] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [prevLimit, setPrevLimit] = useState<number | null>(null);
+  if (status && status.limit_krw !== prevLimit) {
+    setPrevLimit(status.limit_krw);
+    setLimitKrw(String(status.limit_krw));
+  }
+  if (!status) return null;
+
+  const save = async (body: Record<string, unknown>) => {
+    try {
+      await api("/api/ai/settings", { method: "PUT", body });
+      setMsg("저장했습니다");
+      reload();
+    } catch (e) {
+      setMsg((e as Error).message);
+    }
+  };
+
+  return (
+    <section className="space-y-3 rounded-xl border border-border bg-card p-4 text-sm">
+      <h2 className="font-semibold">AI 질문·해설</h2>
+      {!status.enabled ? (
+        <p className="text-muted">
+          꺼져 있음. 서버 <code>.env</code> 에 <code>ANTHROPIC_API_KEY</code> 를 넣고 <code>sudo systemctl restart sbt-api</code> 를
+          실행하면 켜집니다. 키는 console.anthropic.com 에서 발급하고 크레딧을 선불 충전해 사용합니다.
+        </p>
+      ) : (
+        <>
+          <div className="tabular rounded-lg bg-background p-3">
+            이번 달 사용: <b>{status.month_krw.toLocaleString("ko-KR")}원</b> / 한도 {status.limit_krw.toLocaleString("ko-KR")}원 ·{" "}
+            {status.month_count}회
+            <div className="mt-2 h-2 rounded-full bg-[var(--bar-track)]">
+              <div
+                className="h-2 rounded-full bg-accent"
+                style={{ width: `${Math.min(100, (status.month_krw / Math.max(1, status.limit_krw)) * 100)}%` }}
+              />
+            </div>
+            <div className="mt-1 text-xs text-faint">
+              1회 예상: 질문 약 {status.estimate_krw.translate.toLocaleString("ko-KR")}원 · 해설 약{" "}
+              {status.estimate_krw.explain.toLocaleString("ko-KR")}원 (환율 {status.krw_rate.toLocaleString("ko-KR")}원/$ 기준 추정)
+            </div>
+          </div>
+          <label className="block">
+            <span className="text-muted">모델</span>
+            <select className="mt-1" value={status.model} onChange={(e) => save({ model: e.target.value })}>
+              {status.models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-muted">월 한도 (원)</span>
+            <div className="mt-1 flex gap-2">
+              <input inputMode="numeric" value={limitKrw} onChange={(e) => setLimitKrw(e.target.value.replace(/[^0-9]/g, ""))} />
+              <button
+                type="button"
+                className="shrink-0 rounded-lg border border-border px-3"
+                onClick={() => save({ monthly_limit_usd: Number(limitKrw || 0) / status.krw_rate })}
+              >
+                저장
+              </button>
+            </div>
+            <span className="mt-1 block text-xs text-faint">한도에 도달하면 그달에는 AI 기능이 멈춥니다. 조건식 검증은 계속 무료입니다.</span>
+          </label>
+          {msg && <p className="text-muted">{msg}</p>}
+        </>
+      )}
+    </section>
   );
 }

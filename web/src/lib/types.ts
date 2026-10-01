@@ -128,3 +128,43 @@ export interface Bar {
   c: number;
   v: number;
 }
+
+export interface AIStatus {
+  enabled: boolean;
+  model: string;
+  monthly_limit_usd: number;
+  krw_rate: number;
+  models: { id: string; label: string }[];
+  month_count: number;
+  month_usd: number;
+  month_krw: number;
+  limit_krw: number;
+  estimate_krw: { translate: number; explain: number };
+}
+
+export interface AIUsage {
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  cost_krw: number;
+}
+
+export interface TranslateResult {
+  ok: boolean;
+  reply: string;
+  spec?: Spec;
+  text?: string;
+  interpretation?: string[];
+  assumptions?: { item: string; chosen: string; alternatives: string[] }[];
+  unsupported?: string[];
+  usage?: AIUsage;
+}
+
+export interface ExplainResult {
+  verdict: string;
+  points: string[];
+  risks: string[];
+  suggestions: { title: string; why: string; text: string }[];
+  usage: AIUsage;
+}
