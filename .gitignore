@@ -7,3 +7,5 @@ server/data/
 .env
 node_modules/
 .next/
+web/out/
+*.tsbuildinfo

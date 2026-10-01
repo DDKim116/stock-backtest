@@ -1,0 +1,9 @@
+[Unit]
+Description=stock-backtest 새 버전 자동 적용
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=__USER__
+WorkingDirectory=__REPO__
+ExecStart=/usr/bin/bash __REPO__/deploy/update.sh

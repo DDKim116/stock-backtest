@@ -1,0 +1,10 @@
+[Unit]
+Description=국내 데이터 매일 갱신 (KRX 는 전일 데이터를 다음 날 제공)
+
+[Timer]
+OnCalendar=Mon..Sat 09:10
+OnCalendar=Mon..Sat 18:40
+Persistent=true
+
+[Install]
+WantedBy=timers.target

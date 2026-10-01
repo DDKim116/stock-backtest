@@ -1,0 +1,14 @@
+[Unit]
+Description=stock-backtest API
+After=network-online.target
+
+[Service]
+User=__USER__
+WorkingDirectory=__REPO__/server
+EnvironmentFile=__REPO__/.env
+ExecStart=__REPO__/.venv/bin/uvicorn sbt.api.app:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,110 @@
+@import "tailwindcss";
+@import "pretendard/dist/web/static/pretendard.css";
+
+:root {
+  color-scheme: light;
+  --background: #f6f6f4;
+  --foreground: #0b0b0b;
+  --card: #fcfcfb;
+  --border: #e3e2de;
+  --muted: #52514e;
+  --faint: #8a8984;
+  --accent: #2a78d6;
+  --accent-soft: #e6f0fc;
+  /* 국내 관례: 상승 빨강 / 하락 파랑 */
+  --up: #e34948;
+  --down: #2a78d6;
+  --good: #0ca30c;
+  --warning: #c98500;
+  --critical: #d03b3b;
+  --bar-track: #ecebe7;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --background: #111110;
+    --foreground: #ffffff;
+    --card: #1a1a19;
+    --border: #2f2f2c;
+    --muted: #c3c2b7;
+    --faint: #8f8e86;
+    --accent: #3987e5;
+    --accent-soft: #1b2a3e;
+    --up: #e66767;
+    --down: #3987e5;
+    --good: #0ca30c;
+    --warning: #fab219;
+    --critical: #e66767;
+    --bar-track: #2a2a27;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #111110;
+  --foreground: #ffffff;
+  --card: #1a1a19;
+  --border: #2f2f2c;
+  --muted: #c3c2b7;
+  --faint: #8f8e86;
+  --accent: #3987e5;
+  --accent-soft: #1b2a3e;
+  --up: #e66767;
+  --down: #3987e5;
+  --good: #0ca30c;
+  --warning: #fab219;
+  --critical: #e66767;
+  --bar-track: #2a2a27;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-border: var(--border);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-up: var(--up);
+  --color-down: var(--down);
+  --color-good: var(--good);
+  --color-warning: var(--warning);
+  --color-critical: var(--critical);
+  --font-sans: "Pretendard", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+select,
+textarea {
+  background: var(--card);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 16px; /* iOS 확대 방지 */
+  width: 100%;
+}
+
+input[type="checkbox"] {
+  width: auto;
+  accent-color: var(--accent);
+}
+
+textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}

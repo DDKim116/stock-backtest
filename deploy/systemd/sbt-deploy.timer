@@ -1,0 +1,9 @@
+[Unit]
+Description=GitHub 새 커밋 확인 (15분마다)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target

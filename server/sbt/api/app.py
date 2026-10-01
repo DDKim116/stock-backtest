@@ -11,6 +11,7 @@ import json
 import os
 import threading
 import time
+from pathlib import Path
 
 import numpy as np
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -306,3 +307,12 @@ def _f(x: float):
     x = float(x)
     return None if not np.isfinite(x) else round(x, 2)
 
+
+
+# ---------------------------------------------------------------- 웹 화면 (정적 파일)
+# web/ 를 'next build' 하면 생기는 out/ 폴더가 있으면 같은 주소에서 함께 서비스한다.
+_WEB_DIR = Path(os.environ.get("SBT_WEB_DIR", Path(__file__).resolve().parents[3] / "web" / "out"))
+if _WEB_DIR.exists():
+    from fastapi.staticfiles import StaticFiles
+
+    app.mount("/", StaticFiles(directory=_WEB_DIR, html=True), name="web")
