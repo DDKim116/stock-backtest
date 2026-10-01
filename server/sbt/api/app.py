@@ -27,9 +27,16 @@ from ..engine.run import Runner, SpecError
 from ..engine.spec import MARKET_LABEL, Spec, parse_text, to_text
 from .store import Store
 
+KR_COSTS = {"buy_fee_pct": 0.015, "sell_fee_pct": 0.015, "sell_tax_pct": 0.20, "slippage_pct": 0.0}
+# 국내 증권사 미국 주식 온라인 수수료 수준. 세금(양도세)은 매매 단위로 계산할 수 없어 제외
+US_COSTS = {"buy_fee_pct": 0.07, "sell_fee_pct": 0.07, "sell_tax_pct": 0.0, "slippage_pct": 0.0}
 DATASETS = {
-    "kr": {"label": "국내 (KRX)", "synthetic": False, "survivorship": False},
-    "demo": {"label": "데모 (가상 데이터)", "synthetic": True, "survivorship": False},
+    "kr": {"label": "국내 (KRX)", "synthetic": False, "survivorship": False, "currency": "KRW",
+           "markets": ["KOSPI", "KOSDAQ"], "costs": KR_COSTS},
+    "us": {"label": "미국 (NASDAQ·NYSE·AMEX)", "synthetic": False, "survivorship": True, "currency": "USD",
+           "markets": ["NASDAQ", "NYSE", "AMEX"], "costs": US_COSTS},
+    "demo": {"label": "데모 (가상 데이터)", "synthetic": True, "survivorship": False, "currency": "KRW",
+             "markets": ["KOSPI", "KOSDAQ"], "costs": KR_COSTS},
 }
 
 app = FastAPI(title="stock-backtest")
@@ -54,7 +61,8 @@ class _Loaded:
             raise HTTPException(404, f"알 수 없는 데이터셋 {name}")
         path = config.dataset_dir(name) / "prices.parquet"
         if not path.exists():
-            hint = "python -m sbt.data.cli demo" if name == "demo" else "python -m sbt.data.cli kr-collect"
+            hint = {"demo": "python -m sbt.data.cli demo", "us": "python -m sbt.data.cli us-collect"}.get(
+                name, "python -m sbt.data.cli kr-collect")
             raise HTTPException(409, f"{DATASETS[name]['label']} 데이터가 아직 없습니다. 서버에서 '{hint}' 를 실행하세요.")
         mtime = path.stat().st_mtime
         with self.lock:
@@ -137,8 +145,8 @@ def reference():
         "fields": [
             {"name": "시가", "desc": "당일 시가"}, {"name": "고가", "desc": "당일 고가"},
             {"name": "저가", "desc": "당일 저가"}, {"name": "종가", "desc": "당일 종가"},
-            {"name": "거래량", "desc": "당일 거래량(주)"}, {"name": "거래대금", "desc": "당일 거래대금(원). 예: 거래대금 >= 100억"},
-            {"name": "시가총액", "desc": "당일 시가총액(원)"}, {"name": "등락률", "desc": "전일 종가 대비 당일 종가 변화율(%)"},
+            {"name": "거래량", "desc": "당일 거래량(주)"}, {"name": "거래대금", "desc": "당일 거래대금(국내 원, 미국 달러). 예: 거래대금 >= 100억"},
+            {"name": "시가총액", "desc": "당일 시가총액(원). 미국 데이터에는 없음"}, {"name": "등락률", "desc": "전일 종가 대비 당일 종가 변화율(%)"},
         ],
         "functions": [
             {"name": "필드(n)", "desc": "n 거래일 전 값", "example": "거래량(1)"},
@@ -386,6 +394,7 @@ class TranslateIn(BaseModel):
     question: str
     current_text: str | None = None
     history: list[str] = []
+    dataset: str = config.DEFAULT_DATASET
 
 
 @app.post("/api/ai/translate", dependencies=[Depends(auth)])
@@ -396,7 +405,9 @@ def ai_translate(body: TranslateIn):
         raise HTTPException(422, "질문이 너무 깁니다 (2000자 이하)")
     st = _ai_guard()
     try:
-        out = ai_service.translate(body.question.strip(), body.current_text, st["model"], body.history[-6:])
+        ds = DATASETS.get(body.dataset, DATASETS["kr"])
+        out = ai_service.translate(body.question.strip(), body.current_text, st["model"], body.history[-6:],
+                                   dataset=ds)
     except ai_client.AIError as e:
         raise HTTPException(e.status, str(e))
     if out.get("usage"):

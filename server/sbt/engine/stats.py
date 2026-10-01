@@ -61,11 +61,15 @@ def summarize(t: Trades, spec: Spec, mask: np.ndarray | None = None) -> dict:
     }
 
 
-PRICE_BUCKETS = [(0, 1000, "1천원 미만"), (1000, 5000, "1천~5천"), (5000, 10000, "5천~1만"),
-                 (10000, 50000, "1만~5만"), (50000, 200000, "5만~20만"), (200000, np.inf, "20만 이상")]
+PRICE_BUCKETS = {
+    "KRW": [(0, 1000, "1천원 미만"), (1000, 5000, "1천~5천"), (5000, 10000, "5천~1만"),
+            (10000, 50000, "1만~5만"), (50000, 200000, "5만~20만"), (200000, np.inf, "20만 이상")],
+    "USD": [(0, 1, "$1 미만"), (1, 5, "$1~5"), (5, 20, "$5~20"), (20, 100, "$20~100"),
+            (100, 500, "$100~500"), (500, np.inf, "$500 이상")],
+}
 
 
-def breakdowns(t: Trades, panel: Panel, spec: Spec) -> dict:
+def breakdowns(t: Trades, panel: Panel, spec: Spec, currency: str = "KRW") -> dict:
     sig = t.sig
     out: dict[str, list] = {}
     years = panel.dates[sig].astype("datetime64[Y]").astype(int) + 1970
@@ -74,7 +78,7 @@ def breakdowns(t: Trades, panel: Panel, spec: Spec) -> dict:
     out["market"] = [{"key": MARKET_LABEL.get(m, m), **summarize(t, spec, mk == m)} for m in np.unique(mk)]
     px = panel.df["close_raw"].to_numpy()[sig] if "close_raw" in panel.df else panel.cols["close"][sig]
     rows = []
-    for lo, hi, label in PRICE_BUCKETS:
+    for lo, hi, label in PRICE_BUCKETS.get(currency, PRICE_BUCKETS["KRW"]):
         m = (px >= lo) & (px < hi)
         if m.any():
             rows.append({"key": label, **summarize(t, spec, m)})
@@ -91,7 +95,10 @@ def checks(summary: dict, baseline: dict | None, bd: dict, t: Trades, panel: Pan
     if dataset.get("synthetic"):
         add("danger", "가상(데모) 데이터로 계산한 결과입니다. 실제 시장과 무관합니다.")
     if dataset.get("survivorship"):
-        add("warn", "이 데이터에는 상장폐지 종목이 빠져 있어 결과가 실제보다 좋게 나올 수 있습니다.")
+        add("warn", "무료 미국 데이터에는 수집 시작 전에 상장폐지된 종목이 빠져 있어 결과가 실제보다 좋게 나올 수 있습니다.")
+    if dataset.get("currency") == "USD":
+        add("info", "수익률은 원화 기준(환율 변동 포함)입니다." if dataset.get("fx_applied")
+            else "수익률은 달러 기준이며 환율 변동은 반영하지 않았습니다. [옵션] 원화환산 = 예 로 바꿀 수 있습니다.")
 
     n = summary["n_complete"]
     if n == 0:

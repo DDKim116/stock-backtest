@@ -67,6 +67,22 @@ bash deploy/setup.sh
    ```
    이후로는 평일 아침과 저녁에 자동으로 갱신됩니다.
 
+## 4-2. 미국 데이터 첫 수집
+
+키 발급 없이 바로 됩니다(야후 파이낸스 무료 데이터). 나스닥·뉴욕·아멕스 보통주 약 6천 종목, 2010년부터.
+```bash
+cd ~/stock-backtest/server
+set -a; . ../.env; set +a
+nohup ../.venv/bin/python -m sbt.data.cli us-collect > ~/collect-us.log 2>&1 &
+tail -f ~/collect-us.log
+```
+- 1~3시간 걸립니다. 끝나면 자동으로 분석용 파일까지 만듭니다. 이후 `sudo systemctl restart sbt-api`
+- 확인: `../.venv/bin/python -m sbt.data.cli check --dataset us --code AAPL`
+- 야후가 일시적으로 막으면 중단될 수 있습니다. 같은 명령을 다시 실행하면 받지 못한 종목만 이어서 받습니다.
+- 이후 화~토 아침 7시 40분에 자동 갱신됩니다(미국 장 마감 후).
+- **한계:** 무료 데이터라 수집 시작 전에 상장폐지된 종목은 빠져 있습니다(결과가 실제보다 좋게 나올 수 있음, 화면에 경고 표시).
+  시가총액 값이 없고, 가격은 액면분할만 반영(배당 미반영)입니다.
+
 ## 5. 휴대폰·태블릿에서 접속
 
 서버의 포트를 인터넷에 열지 않고 안전하게 접속하는 방법 두 가지입니다.
@@ -109,7 +125,7 @@ AI를 쓰지 않아도 조건식 검증은 모두 무료로 됩니다. 말로 �
 |---|---|
 | 서버 상태 | `systemctl status sbt-api` |
 | 서버 로그 | `journalctl -u sbt-api -n 100` |
-| 데이터 갱신 기록 | `journalctl -u sbt-update -n 50` |
+| 데이터 갱신 기록 | `journalctl -u sbt-update -n 50` (미국: `sbt-update-us`) |
 | 자동 업데이트 기록 | `journalctl -u sbt-deploy -n 50` |
 | 지금 바로 업데이트 | `bash ~/stock-backtest/deploy/update.sh --force` |
 | 비밀번호 변경 | `.env` 의 `SBT_PASSWORD` 수정 후 `sudo systemctl restart sbt-api` |

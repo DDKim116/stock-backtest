@@ -12,6 +12,8 @@ import numpy as np
 import pandas as pd
 
 PRICE_COLS = ["open", "high", "low", "close", "volume", "value", "mktcap"]
+# 미국 스팩(기업인수목적회사) 이름 패턴
+SPAC_US = r"\bAcquisition (?:Corp|Corporation|Co|Company|Ltd|Limited|Inc|Holdings)\b"
 
 
 @dataclass
@@ -43,8 +45,12 @@ class Panel:
         self.codes = codes
         self.markets = df["market"].to_numpy()
         self.names = df["name"].to_numpy()
-        self.is_spac = df["name"].astype(str).str.contains("스팩", regex=False).to_numpy()
         kr = np.isin(self.markets, ["KOSPI", "KOSDAQ", "KONEX"])
+        names = df["name"].astype(str)
+        us_spac = names.str.contains(SPAC_US, case=False, regex=True).to_numpy()
+        self.is_spac = np.where(kr, names.str.contains("스팩", regex=False).to_numpy(), us_spac)
+        # 원/달러 환율 (미국 데이터에만 있음)
+        self.fx = df["fx"].to_numpy(dtype=np.float64) if "fx" in df else None
         self.is_preferred = kr & (df["code"].astype(str).str[-1] != "0").to_numpy()
 
     def __len__(self) -> int:

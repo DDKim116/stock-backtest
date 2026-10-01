@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { joinAnd, parseNumList, showNumList, splitTopLevelAnd } from "@/lib/format";
-import type { Spec } from "@/lib/types";
+import type { DatasetInfo, Spec } from "@/lib/types";
 import AIAsk from "./AIAsk";
 
 export const DEFAULT_SPEC: Spec = {
@@ -20,6 +20,7 @@ export const DEFAULT_SPEC: Spec = {
   },
   costs: { buy_fee_pct: 0.015, sell_fee_pct: 0.015, sell_tax_pct: 0.2, slippage_pct: 0 },
   dedupe_days: 0,
+  fx_krw: false,
 };
 
 const TEMPLATES = [
@@ -34,10 +35,13 @@ const TEMPLATES = [
   { label: "가격대", expr: "종가 >= 1000" },
 ];
 
-const MARKETS = [
-  { code: "KOSPI", label: "코스피" },
-  { code: "KOSDAQ", label: "코스닥" },
-];
+const MARKET_LABEL: Record<string, string> = {
+  KOSPI: "코스피",
+  KOSDAQ: "코스닥",
+  NASDAQ: "나스닥",
+  NYSE: "뉴욕",
+  AMEX: "아멕스",
+};
 
 function ExprInput({ value, onChange, onRemove }: { value: string; onChange: (v: string) => void; onRemove?: () => void }) {
   const [err, setErr] = useState<string | null>(null);
@@ -128,12 +132,14 @@ export default function Editor({
   spec,
   setSpec,
   onRun,
+  dataset,
   running,
   onSave,
 }: {
   spec: Spec;
   setSpec: (s: Spec) => void;
   onRun: (s: Spec) => void;
+  dataset: DatasetInfo | undefined;
   running: boolean;
   onSave: (s: Spec) => void;
 }) {
@@ -226,6 +232,7 @@ export default function Editor({
       {/* 대화 내용이 유지되도록 탭을 옮겨도 숨기기만 한다 */}
       <div className={mode === "ai" ? "" : "hidden"}>
         <AIAsk
+          dataset={dataset?.name ?? "kr"}
           onApply={(s) => {
             setSpec(s);
             setMode("build");
@@ -354,19 +361,19 @@ export default function Editor({
           <div className="rounded-xl border border-border bg-card p-4">
             <h3 className="mb-3 font-semibold">대상</h3>
             <div className="flex flex-wrap gap-4">
-              {MARKETS.map((m) => (
-                <label key={m.code} className="flex items-center gap-2">
+              {(dataset?.markets ?? ["KOSPI", "KOSDAQ"]).map((code) => (
+                <label key={code} className="flex items-center gap-2">
                   <input
                     type="checkbox"
-                    checked={spec.universe.markets.includes(m.code)}
+                    checked={spec.universe.markets.includes(code)}
                     onChange={(e) => {
                       const ms = e.target.checked
-                        ? [...spec.universe.markets, m.code]
-                        : spec.universe.markets.filter((x) => x !== m.code);
+                        ? [...spec.universe.markets, code]
+                        : spec.universe.markets.filter((x) => x !== code);
                       update({ universe: { ...spec.universe, markets: ms } });
                     }}
                   />
-                  {m.label}
+                  {MARKET_LABEL[code] ?? code}
                 </label>
               ))}
               <label className="flex items-center gap-2">
@@ -377,14 +384,26 @@ export default function Editor({
                 />
                 스팩 제외
               </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={spec.universe.exclude_preferred}
-                  onChange={(e) => update({ universe: { ...spec.universe, exclude_preferred: e.target.checked } })}
-                />
-                우선주 제외
-              </label>
+              {dataset?.currency !== "USD" && (
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={spec.universe.exclude_preferred}
+                    onChange={(e) => update({ universe: { ...spec.universe, exclude_preferred: e.target.checked } })}
+                  />
+                  우선주 제외
+                </label>
+              )}
+              {dataset?.currency === "USD" && (
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={spec.fx_krw}
+                    onChange={(e) => update({ fx_krw: e.target.checked })}
+                  />
+                  원화 기준 수익률 (환율 반영)
+                </label>
+              )}
             </div>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <label className="block">

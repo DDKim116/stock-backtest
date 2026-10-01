@@ -75,7 +75,8 @@ def _gather(arr: np.ndarray, idx: np.ndarray, valid: np.ndarray) -> np.ndarray:
     return np.where(valid, out, np.nan)
 
 
-def simulate(panel: Panel, sig: np.ndarray, spec: Spec, limit_price: np.ndarray | None) -> Trades:
+def simulate(panel: Panel, sig: np.ndarray, spec: Spec, limit_price: np.ndarray | None,
+             fx: np.ndarray | None = None) -> Trades:
     """sig: 신호 행 인덱스 배열. limit_price: 행 전체에 대한 지정가 배열 (limit 방식일 때)."""
     o, h, lo, c = (panel.cols[k] for k in ("open", "high", "low", "close"))
     gend = panel.gend
@@ -221,9 +222,14 @@ def simulate(panel: Panel, sig: np.ndarray, spec: Spec, limit_price: np.ndarray 
     buy_cost = 1 + (cs.buy_fee_pct + cs.slippage_pct) / 100
     sell_keep = 1 - (cs.sell_fee_pct + cs.sell_tax_pct + cs.slippage_pct) / 100
 
-    def net(price):
+    def net(price, exit_row):
+        buy, sell = fill_price, price
+        if fx is not None:
+            # 원화 기준: 체결일·청산일 환율을 곱한다
+            buy = fill_price * np.where(filled, fx[np.clip(fill_row, 0, None)], np.nan)
+            sell = price * np.where(exit_row >= 0, fx[np.clip(exit_row, 0, None)], np.nan)
         with np.errstate(invalid="ignore"):
-            return ((price * sell_keep) / (fill_price * buy_cost) - 1) * 100
+            return ((sell * sell_keep) / (buy * buy_cost) - 1) * 100
 
     return Trades(
         sig=sig, limit=lim, fill_row=fill_row, fill_kind=fill_kind, fill_price=fill_price,
@@ -231,5 +237,5 @@ def simulate(panel: Panel, sig: np.ndarray, spec: Spec, limit_price: np.ndarray 
         exit_row_c=res["c"][1], exit_row_o=res["o"][1],
         exit_price_c=res["c"][2], exit_price_o=res["o"][2],
         days_c=res["c"][3], days_o=res["o"][3],
-        mfe=mfe, mae=mae, ret_c=net(res["c"][2]), ret_o=net(res["o"][2]),
+        mfe=mfe, mae=mae, ret_c=net(res["c"][2], res["c"][1]), ret_o=net(res["o"][2], res["o"][1]),
     )

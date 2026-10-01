@@ -16,8 +16,10 @@ def _one(v: list):
     return v[0] if len(v) == 1 else list(v)
 
 
-def ai_spec_to_spec(a: dict, base: Spec | None) -> Spec:
+def ai_spec_to_spec(a: dict, base: Spec | None, dataset: dict | None = None) -> Spec:
     d = (base.model_dump(mode="json") if base else Spec(signal="종가 > 0").model_dump(mode="json"))
+    if not base and dataset:
+        d["costs"] = dict(dataset["costs"])
     d["signal"] = a["signal"]
     d["entry"] = {
         "type": a["entry_type"],
@@ -31,17 +33,19 @@ def ai_spec_to_spec(a: dict, base: Spec | None) -> Spec:
         "max_days": _one(a["max_days"]) or 10,
     }
     d["universe"] = {
-        "markets": a["markets"] or ["KOSPI", "KOSDAQ"],
+        "markets": a["markets"] or (dataset or {}).get("markets") or ["KOSPI", "KOSDAQ"],
         "start": a["start"] or "2010-01-01",
         "end": a["end"] or None,
         "exclude_spac": a["exclude_spac"],
         "exclude_preferred": a["exclude_preferred"],
     }
     d["dedupe_days"] = max(0, int(a["dedupe_days"]))
+    d["fx_krw"] = bool(a.get("fx_krw")) and (dataset or {}).get("currency") == "USD"
     return Spec.model_validate(d)
 
 
-def translate(question: str, current_text: str | None, model: str, history: list[str] | None = None) -> dict:
+def translate(question: str, current_text: str | None, model: str, history: list[str] | None = None,
+              dataset: dict | None = None) -> dict:
     base = None
     if current_text:
         try:
@@ -49,6 +53,9 @@ def translate(question: str, current_text: str | None, model: str, history: list
         except Exception:
             base = None
     parts = [f"오늘 날짜: {dt.date.today().isoformat()}"]
+    if dataset:
+        parts.append(f"사용 중인 데이터: {dataset['label']} / 시장 코드: {', '.join(dataset['markets'])} / "
+                     f"통화: {dataset['currency']}")
     if base:
         parts.append("현재 조건:\n" + to_text(base))
     if history:
@@ -68,7 +75,7 @@ def translate(question: str, current_text: str | None, model: str, history: list
         if not out.get("is_backtest", True):
             return {"ok": False, "reply": out.get("reply", ""), "usage": total}
         try:
-            spec = ai_spec_to_spec(out["spec"], base)
+            spec = ai_spec_to_spec(out["spec"], base, dataset)
             last_err = validate(spec)
         except Exception as e:  # 형식 오류
             last_err = [str(e)]

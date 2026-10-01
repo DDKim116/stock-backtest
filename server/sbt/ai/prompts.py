@@ -48,7 +48,12 @@ TRANSLATE_SYSTEM = """\
 - '거래량이 전일 대비 500% 이상 상승/증가' → 거래량 >= 거래량(1) * 5 (전일의 5배 이상). 다른 해석(6배)은 assumptions 에 적기
 - '주가가 N% 이상 상승' → 등락률 >= N (전일 종가 대비 당일 종가)
 - 매수 유효기간 5거래일, 보유기간 10거래일, 목표 판정은 고가 기준
-- 대상: 코스피·코스닥, 2010-01-01 ~ 오늘, 스팩·우선주 제외, 중복 신호 제외 0
+- 대상: 사용자 메시지의 '사용 중인 데이터'의 시장 전체, 2010-01-01 ~ 오늘, 스팩·우선주 제외, 중복 신호 제외 0
+- 데이터가 미국(USD)이면: 가격은 달러, 시가총액 값은 없음, 거래대금은 달러(예: 거래대금 >= 1000만 = 1천만 달러).
+  미국은 가격제한폭이 없습니다. fx_krw 는 사용자가 '원화 기준/환율 반영'을 원할 때만 true.
+- 데이터가 국내이면 fx_krw 는 항상 false.
+- 사용 중인 데이터와 다른 나라 시장을 물으면 unsupported 에 '화면 위쪽에서 데이터를 바꿔 주세요'라고 적고,
+  나머지 조건은 현재 데이터 기준으로 만듭니다.
 - 사용자가 기존 조건을 고쳐 달라고 하면 '현재 조건'에서 말한 부분만 바꾸고 나머지는 그대로 둡니다.
 
 # 출력 규칙
@@ -93,9 +98,11 @@ EXPLAIN_SYSTEM = """\
 손절 = n         (없으면 '없음')
 보유기간 = n
 [대상]
-시장 = 코스피, 코스닥
+시장 = 코스피, 코스닥      (미국: 나스닥, 뉴욕, 아멕스)
 기간 = YYYY-MM-DD ~ 오늘
 제외 = 스팩, 우선주
+[옵션]
+원화환산 = 예             (미국 데이터에서 원화 기준 수익률을 볼 때만)
 """
 
 _LIST_NUM = {"type": "array", "items": {"type": "number"}}
@@ -132,16 +139,18 @@ TRANSLATE_SCHEMA = {
                 "target_basis": {"type": "string", "enum": ["high", "close"]},
                 "stop_pct": _LIST_NUM,
                 "max_days": _LIST_INT,
-                "markets": {"type": "array", "items": {"type": "string", "enum": ["KOSPI", "KOSDAQ"]}},
+                "markets": {"type": "array",
+                            "items": {"type": "string", "enum": ["KOSPI", "KOSDAQ", "NASDAQ", "NYSE", "AMEX"]}},
                 "start": {"type": "string"},
                 "end": {"type": "string"},
                 "exclude_spac": {"type": "boolean"},
                 "exclude_preferred": {"type": "boolean"},
                 "dedupe_days": {"type": "integer"},
+                "fx_krw": {"type": "boolean"},
             },
             "required": ["signal", "entry_type", "entry_price", "valid_days", "target_pct", "target_basis",
                          "stop_pct", "max_days", "markets", "start", "end", "exclude_spac", "exclude_preferred",
-                         "dedupe_days"],
+                         "dedupe_days", "fx_krw"],
             "additionalProperties": False,
         },
     },

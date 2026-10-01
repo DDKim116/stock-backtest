@@ -29,11 +29,13 @@ export default function TradeChart({
   trade,
   spec,
   dataset,
+  currency,
   onClose,
 }: {
   trade: Trade;
   spec: Spec;
   dataset: string;
+  currency: string;
   onClose: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -66,7 +68,7 @@ export default function TradeChart({
       grid: { vertLines: { visible: false }, horzLines: { color: grid } },
       rightPriceScale: { borderVisible: false },
       timeScale: { borderVisible: false },
-      localization: { locale: "ko-KR", priceFormatter: (p: number) => price(p) },
+      localization: { locale: "ko-KR", priceFormatter: (p: number) => price(p, currency) },
     });
     const candles = chart.addSeries(CandlestickSeries, {
       upColor: up,
@@ -137,7 +139,7 @@ export default function TradeChart({
       setHover(p.time ? (byTime.get(String(p.time)) ?? null) : null);
     });
     return () => chart.remove();
-  }, [bars, trade, spec]);
+  }, [bars, trade, spec, currency]);
 
   const shown = hover ?? bars?.find((b) => b.t === trade.signal_date) ?? null;
 
@@ -161,10 +163,10 @@ export default function TradeChart({
         {shown ? (
           <>
             <span>{shown.t}</span>
-            <span>시 {price(shown.o)}</span>
-            <span>고 {price(shown.h)}</span>
-            <span>저 {price(shown.l)}</span>
-            <span>종 {price(shown.c)}</span>
+            <span>시 {price(shown.o, currency)}</span>
+            <span>고 {price(shown.h, currency)}</span>
+            <span>저 {price(shown.l, currency)}</span>
+            <span>종 {price(shown.c, currency)}</span>
             <span>량 {Math.round(shown.v).toLocaleString("ko-KR")}</span>
           </>
         ) : (
@@ -178,9 +180,9 @@ export default function TradeChart({
       </div>
       <dl className="tabular grid grid-cols-3 gap-px border-t border-border bg-border text-center text-sm">
         {[
-          ["지정가", price(trade.limit)],
-          ["매수", trade.fill_date ? `${price(trade.fill_price)}` : "미체결"],
-          ["매도", trade.exit_date ? price(trade.exit_price) : "–"],
+          ["지정가", price(trade.limit, currency)],
+          ["매수", trade.fill_date ? `${price(trade.fill_price, currency)}` : "미체결"],
+          ["매도", trade.exit_date ? price(trade.exit_price, currency) : "–"],
           ["수익률", pct(trade.ret, 2, true)],
           ["최고", pct(trade.mfe, 1, true)],
           ["최저", pct(trade.mae, 1, true)],

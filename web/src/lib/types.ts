@@ -19,6 +19,7 @@ export interface Spec {
   };
   costs: { buy_fee_pct: number; sell_fee_pct: number; sell_tax_pct: number; slippage_pct: number };
   dedupe_days: number;
+  fx_krw: boolean;
 }
 
 export interface Summary {
@@ -82,6 +83,9 @@ export interface DatasetInfo {
   name: string;
   label: string;
   synthetic: boolean;
+  currency: "KRW" | "USD";
+  markets: string[];
+  costs: Spec["costs"];
   ready: boolean;
   meta: { rows: number; codes: number; start: string; end: string; built_at: string } | null;
 }
@@ -97,7 +101,7 @@ export interface SingleResult {
   trades: Trade[];
   trades_truncated: boolean;
   elapsed: number;
-  dataset: { name: string; label: string };
+  dataset: { name: string; label: string; currency?: string };
 }
 
 export interface SweepResult {

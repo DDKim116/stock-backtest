@@ -7,7 +7,7 @@ import numpy as np
 
 from ..data.panel import Panel
 from . import dsl, event, stats
-from .spec import Spec, expand, validate
+from .spec import MARKET_LABEL, Spec, expand, validate
 
 BASELINE_SAMPLE = 200_000
 
@@ -62,17 +62,30 @@ class Runner:
             raise SpecError(["신호는 비교식(>=, < 등)이어야 합니다. 예: 등락률 >= 12"])
         sig = np.flatnonzero(cond & uni)
         sig = event.dedupe(sig, self.panel, spec.dedupe_days)
-        return event.simulate(self.panel, sig, spec, self._limit(spec))
+        return event.simulate(self.panel, sig, spec, self._limit(spec), self._fx(spec))
+
+    def _fx(self, spec: Spec):
+        if not spec.fx_krw:
+            return None
+        if self.panel.fx is None:
+            raise SpecError(["이 데이터에는 환율이 없어 원화 환산을 할 수 없습니다 (미국 데이터에서만 가능)"])
+        return self.panel.fx
+
+    def _check_markets(self, spec: Spec) -> None:
+        have = self.dataset.get("markets")
+        if have and not set(spec.universe.markets) & set(have):
+            label = ", ".join(MARKET_LABEL.get(m, m) for m in have)
+            raise SpecError([f"이 데이터셋의 시장은 {label} 입니다. [대상] 시장을 바꿔 주세요."])
 
     def baseline(self, spec: Spec) -> dict:
         key = spec.universe.model_dump_json() + spec.entry.model_dump_json() + spec.exit.model_dump_json() \
-            + spec.costs.model_dump_json()
+            + spec.costs.model_dump_json() + str(spec.fx_krw)
         if key in self._base_cache:
             return self._base_cache[key]
         uni = np.flatnonzero(self._universe(spec))
         rng = np.random.default_rng(42)
         sample = np.sort(rng.choice(uni, size=min(BASELINE_SAMPLE, len(uni)), replace=False)) if len(uni) else uni
-        t = event.simulate(self.panel, sample, spec, self._limit(spec))
+        t = event.simulate(self.panel, sample, spec, self._limit(spec), self._fx(spec))
         s = stats.summarize(t, spec)
         res = {"n": s["n_complete"], "success_rate": s["success_rate"], "avg_ret": s["avg_ret"],
                "fill_rate": s["fill_rate"]}
@@ -85,6 +98,7 @@ class Runner:
         errs = validate(spec)
         if errs:
             raise SpecError(errs)
+        self._check_markets(spec)
         t0 = time.time()
         variants = expand(spec)
         if len(variants) > 1:
@@ -104,15 +118,16 @@ class Runner:
         base = self.baseline(s)
         if summ["success_rate"] is not None and base["success_rate"] is not None:
             summ["edge_pp"] = round(summ["success_rate"] - base["success_rate"], 1)
-        bd = stats.breakdowns(t, self.panel, s)
+        bd = stats.breakdowns(t, self.panel, s, self.dataset.get("currency", "KRW"))
+        ds = {**self.dataset, "fx_applied": s.fx_krw}
         out = {
             "kind": "single",
             "spec": s.model_dump(mode="json"),
             "summary": summ,
             "baseline": base,
             "breakdowns": bd,
-            "checks": stats.checks(summ, base, bd, t, self.panel, self.dataset),
-            "dataset": self.dataset,
+            "checks": stats.checks(summ, base, bd, t, self.panel, ds),
+            "dataset": ds,
         }
         if with_trades:
             out["trades"] = stats.trade_rows(t, self.panel)

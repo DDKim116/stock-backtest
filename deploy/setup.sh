@@ -51,7 +51,7 @@ done
 echo "$USER_NAME ALL=(root) NOPASSWD: /usr/bin/systemctl restart sbt-api.service" \
   | sudo tee /etc/sudoers.d/sbt >/dev/null
 sudo systemctl daemon-reload
-sudo systemctl enable --now sbt-api.service sbt-update.timer sbt-deploy.timer
+sudo systemctl enable --now sbt-api.service sbt-update.timer sbt-update-us.timer sbt-deploy.timer
 
 echo "== 6/6 데모 데이터 (실제 데이터 수집 전 화면 확인용)"
 set -a; . ./.env; set +a

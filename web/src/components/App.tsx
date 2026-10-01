@@ -28,6 +28,17 @@ function writeLS(k: string, v: string) {
   }
 }
 
+/** 데이터셋을 바꾸면 시장·비용 기본값을 그 나라에 맞춘다 (같은 나라면 그대로). */
+function fitToDataset(s: Spec, d: DatasetInfo): Spec {
+  if (s.universe.markets.some((m) => d.markets.includes(m))) return s;
+  return {
+    ...s,
+    universe: { ...s.universe, markets: d.markets },
+    costs: { ...d.costs },
+    fx_krw: false,
+  };
+}
+
 export default function App() {
   const [tab, setTab] = useState<Tab>("run");
   const [spec, setSpec] = useState<Spec>(DEFAULT_SPEC);
@@ -49,7 +60,10 @@ export default function App() {
       const saved = readLS(KEY_DATASET);
       const ready = ds.filter((d) => d.ready);
       const pick = ready.find((d) => d.name === saved) ?? ready.find((d) => !d.synthetic) ?? ready[0];
-      if (pick) setDataset(pick.name);
+      if (pick) {
+        setDataset(pick.name);
+        setSpec((s) => fitToDataset(s, pick));
+      }
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) setNeedLogin(true);
       else setError((e as Error).message);
@@ -112,6 +126,8 @@ export default function App() {
             onChange={(e) => {
               setDataset(e.target.value);
               writeLS(KEY_DATASET, e.target.value);
+              const d = datasets.find((x) => x.name === e.target.value);
+              if (d) setSpec(fitToDataset(spec, d));
             }}
             className="!w-auto py-1 text-sm"
           >
@@ -135,7 +151,14 @@ export default function App() {
               {current.synthetic && " · ⚠ 가상 데이터"}
             </p>
           )}
-          <Editor spec={spec} setSpec={setSpec} onRun={(s) => run(s)} running={running} onSave={save} />
+          <Editor
+            spec={spec}
+            setSpec={setSpec}
+            onRun={(s) => run(s)}
+            dataset={current}
+            running={running}
+            onSave={save}
+          />
           {error && (
             <p className="mt-4 whitespace-pre-wrap rounded-xl border border-critical/40 bg-card p-3 text-sm text-critical">
               ⚠ {error}

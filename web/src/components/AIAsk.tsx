@@ -29,9 +29,11 @@ export function useAIStatus() {
 }
 
 export default function AIAsk({
+  dataset,
   onApply,
   onRun,
 }: {
+  dataset: string;
   onApply: (s: Spec) => void;
   onRun: (s: Spec) => void;
 }) {
@@ -50,7 +52,7 @@ export default function AIAsk({
     setTurns((ts) => [...ts, { question, result: null, error: null }]);
     try {
       const r = await api<TranslateResult>("/api/ai/translate", {
-        body: { question, current_text: lastOk?.result?.text ?? null, history },
+        body: { question, current_text: lastOk?.result?.text ?? null, history, dataset },
       });
       setTurns((ts) => ts.map((t, i) => (i === ts.length - 1 ? { ...t, result: r } : t)));
     } catch (e) {

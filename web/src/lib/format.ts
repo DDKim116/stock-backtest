@@ -9,8 +9,10 @@ export function num(x: number | null | undefined): string {
   return Math.round(x).toLocaleString("ko-KR");
 }
 
-export function price(x: number | null | undefined): string {
+export function price(x: number | null | undefined, currency: string = "KRW"): string {
   if (x === null || x === undefined || Number.isNaN(x)) return "–";
+  if (currency === "USD")
+    return "$" + x.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: x < 1 ? 4 : 2 });
   return x >= 100 ? Math.round(x).toLocaleString("ko-KR") : x.toLocaleString("ko-KR", { maximumFractionDigits: 2 });
 }
 

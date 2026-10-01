@@ -13,6 +13,7 @@ dependencies = [
   "uvicorn[standard]>=0.30",
   "pydantic>=2.7",
   "anthropic>=1.11",
+  "yfinance>=0.2.50",
 ]
 
 [project.optional-dependencies]

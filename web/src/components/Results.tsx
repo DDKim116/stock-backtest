@@ -99,6 +99,7 @@ function Single({ r, onBack }: { r: SingleResult; onBack?: () => void }) {
   const [copied, setCopied] = useState(false);
   const s = r.summary;
   const b = r.baseline;
+  const cur = r.dataset.currency ?? "KRW";
 
   const trades = useMemo(() => {
     if (filter === "전체") return r.trades;
@@ -227,7 +228,7 @@ function Single({ r, onBack }: { r: SingleResult; onBack?: () => void }) {
                 </div>
                 <div className="tabular text-right">
                   <div className={`text-sm font-semibold ${retClass(t.ret)}`}>{pct(t.ret, 2, true)}</div>
-                  <div className="text-xs text-faint">{t.fill_price ? price(t.fill_price) : "미체결"}</div>
+                  <div className="text-xs text-faint">{t.fill_price ? price(t.fill_price, cur) : "미체결"}</div>
                 </div>
               </button>
             </li>
@@ -247,7 +248,9 @@ function Single({ r, onBack }: { r: SingleResult; onBack?: () => void }) {
       <p className="text-xs text-faint">
         계산 {r.elapsed}초 · {r.dataset.label} · 수정주가·일봉 기준
       </p>
-      {open && <TradeChart trade={open} spec={r.spec} dataset={r.dataset.name} onClose={() => setOpen(null)} />}
+      {open && (
+        <TradeChart trade={open} spec={r.spec} dataset={r.dataset.name} currency={cur} onClose={() => setOpen(null)} />
+      )}
     </div>
   );
 }

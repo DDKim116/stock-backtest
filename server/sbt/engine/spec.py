@@ -100,6 +100,8 @@ class Spec(BaseModel):
     costs: Costs = Field(default_factory=Costs)
     # 같은 종목에서 앞 신호 후 n 거래일 이내에 다시 나온 신호는 제외 (0 이면 모두 포함)
     dedupe_days: int = 0
+    # 미국 주식: 매수·매도 시점 환율을 반영한 원화 기준 수익률
+    fx_krw: bool = False
 
 
 # ---------------------------------------------------------------- 스윕(여러 값 비교)
@@ -323,8 +325,10 @@ def parse_text(text: str) -> Spec:
             d["dedupe_days"] = int(_num_or_list(v) or 0)
         elif k in ("이름", "name"):
             d["name"] = v
+        elif k in ("원화환산", "fx_krw"):
+            d["fx_krw"] = v.strip() in ("예", "yes", "true", "1", "켜기", "on")
         else:
-            raise ValueError(f"[옵션] 알 수 없는 항목 '{k}'. 사용 가능: 이름, 중복제외")
+            raise ValueError(f"[옵션] 알 수 없는 항목 '{k}'. 사용 가능: 이름, 중복제외, 원화환산")
 
     return Spec.model_validate(d)
 
@@ -360,10 +364,12 @@ def to_text(spec: Spec) -> str:
     c = spec.costs
     lines += ["", "[비용]", f"매수수수료 = {_fmt(c.buy_fee_pct)}", f"매도수수료 = {_fmt(c.sell_fee_pct)}",
               f"세금 = {_fmt(c.sell_tax_pct)}", f"슬리피지 = {_fmt(c.slippage_pct)}"]
-    if spec.dedupe_days or spec.name:
+    if spec.dedupe_days or spec.name or spec.fx_krw:
         lines += ["", "[옵션]"]
         if spec.name:
             lines.append(f"이름 = {spec.name}")
         if spec.dedupe_days:
             lines.append(f"중복제외 = {spec.dedupe_days}")
+        if spec.fx_krw:
+            lines.append("원화환산 = 예")
     return "\n".join(lines) + "\n"
