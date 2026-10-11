@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import sys
 
 import pandas as pd
 
@@ -22,6 +23,8 @@ from . import build, krx, synthetic, us
 
 
 def main(argv: list[str] | None = None) -> None:
+    # tee·로그 파일로 보낼 때도 진행 상황이 바로 보이게
+    sys.stdout.reconfigure(line_buffering=True)
     ap = argparse.ArgumentParser(prog="sbt.data.cli")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("demo")
