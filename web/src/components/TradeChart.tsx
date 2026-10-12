@@ -6,6 +6,7 @@ import {
   createChart,
   createSeriesMarkers,
   HistogramSeries,
+  LineSeries,
   LineStyle,
   type IChartApi,
   type SeriesMarker,
@@ -13,6 +14,7 @@ import {
 } from "lightweight-charts";
 import { api } from "@/lib/api";
 import { pct, price } from "@/lib/format";
+import { bollinger, rsi, sma } from "@/lib/indicators";
 import type { Bar, Spec, Trade } from "@/lib/types";
 
 function cssVar(name: string): string {
@@ -25,6 +27,31 @@ const RANGES = [
   { label: "1년", bars: 250 },
   { label: "2년", bars: 500 },
 ];
+
+// 이평선 색: 5·20·60·120 은 증권사 차트에서 흔히 쓰는 구분
+const MA_COLORS: Record<number, string> = { 5: "#e5a50a", 20: "#2e9e6b", 60: "#8a5cd0", 120: "#8a8f98" };
+const EXTRA_COLORS = ["#d9620f", "#1f8fb5", "#c2418a"];
+const DEFAULT_MA = [5, 20, 60, 120];
+
+interface Ind {
+  ma: boolean;
+  bb: boolean;
+  rsi: boolean;
+}
+const IND_KEY = "sbt-chart-ind";
+function loadInd(): Ind {
+  try {
+    const v = JSON.parse(localStorage.getItem(IND_KEY) ?? "");
+    if (v && typeof v === "object") return { ma: !!v.ma, bb: !!v.bb, rsi: !!v.rsi };
+  } catch {}
+  return { ma: true, bb: false, rsi: false };
+}
+
+// 조건식에 쓴 이평 기간도 차트에 함께 그린다 (예: 이평(종가, 33))
+function maPeriods(signal: string): number[] {
+  const extra = [...signal.matchAll(/(?:이평|ma)\(\s*종가\s*,\s*(\d+)\s*\)/g)].map((m) => +m[1]);
+  return [...new Set([...DEFAULT_MA, ...extra])].filter((n) => n >= 2 && n <= 300).sort((a, b) => a - b);
+}
 
 function shiftDate(d: string, days: number): string {
   const t = new Date(d + "T00:00:00Z");
@@ -50,6 +77,17 @@ export default function TradeChart({
   const [err, setErr] = useState<string | null>(null);
   const [hover, setHover] = useState<Bar | null>(null);
   const [span, setSpan] = useState(RANGES[1].bars);
+  const [ind, setInd] = useState<Ind>(loadInd);
+  const toggle = (k: keyof Ind) =>
+    setInd((v) => {
+      const n = { ...v, [k]: !v[k] };
+      try {
+        localStorage.setItem(IND_KEY, JSON.stringify(n));
+      } catch {}
+      return n;
+    });
+  const periods = maPeriods(spec.signal);
+  const maColor = (n: number) => MA_COLORS[n] ?? EXTRA_COLORS[periods.filter((p) => !MA_COLORS[p]).indexOf(n) % EXTRA_COLORS.length];
   const chartRef = useRef<IChartApi | null>(null);
 
   useEffect(() => {
@@ -73,7 +111,12 @@ export default function TradeChart({
     const grid = cssVar("--border");
     const chart: IChartApi = createChart(box.current, {
       autoSize: true,
-      layout: { background: { color: "transparent" }, textColor: text, fontFamily: "Pretendard, sans-serif" },
+      layout: {
+        background: { color: "transparent" },
+        textColor: text,
+        fontFamily: "Pretendard, sans-serif",
+        panes: { separatorColor: grid },
+      },
       grid: { vertLines: { visible: false }, horzLines: { color: grid } },
       rightPriceScale: { borderVisible: false },
       timeScale: { borderVisible: false },
@@ -100,9 +143,42 @@ export default function TradeChart({
       },
       1,
     );
-    const [pricePane, volPane] = chart.panes();
-    pricePane.setStretchFactor(4);
-    volPane.setStretchFactor(1);
+    // 보조지표
+    const closes = bars.map((b) => b.c);
+    const line = (vals: (number | null)[], color: string, pane = 0, style = LineStyle.Solid) => {
+      const ls = chart.addSeries(
+        LineSeries,
+        {
+          color,
+          lineWidth: 1,
+          lineStyle: style,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+          priceFormat: pane === 0 ? { type: "custom", formatter: (p: number) => price(p, currency), minMove: 0.01 } : undefined,
+        },
+        pane,
+      );
+      ls.setData(bars.map((b, i) => (vals[i] == null ? { time: b.t as Time } : { time: b.t as Time, value: vals[i] as number })));
+      return ls;
+    };
+    if (ind.ma) for (const n of periods) line(sma(closes, n), maColor(n));
+    if (ind.bb) {
+      const bb = bollinger(closes, 20, 2);
+      const c = cssVar("--muted");
+      line(bb.up, c, 0, LineStyle.Dashed);
+      line(bb.mid, c, 0, LineStyle.Dotted);
+      line(bb.lo, c, 0, LineStyle.Dashed);
+    }
+    if (ind.rsi) {
+      const r = line(rsi(closes, 14), cssVar("--accent"), 2);
+      r.createPriceLine({ price: 70, color: up, lineStyle: LineStyle.Dotted, lineWidth: 1, title: "70" });
+      r.createPriceLine({ price: 30, color: down, lineStyle: LineStyle.Dotted, lineWidth: 1, title: "30" });
+    }
+    const panes = chart.panes();
+    panes[0].setStretchFactor(4);
+    panes[1].setStretchFactor(1);
+    if (panes[2]) panes[2].setStretchFactor(1.2);
     candles.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.05 } });
     vol.setData(
       bars.map((b) => ({ time: b.t as Time, value: b.v, color: (b.c >= b.o ? up : down) + "66" })),
@@ -155,7 +231,8 @@ export default function TradeChart({
       chartRef.current = null;
       chart.remove();
     };
-  }, [bars, trade, spec, currency]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- periods·maColor 는 spec 에서 나옴
+  }, [bars, trade, spec, currency, ind]);
 
   // 보이는 기간: 매수·매도 지점이 오른쪽에 오도록 앞쪽을 span 만큼 보여 준다
   useEffect(() => {
@@ -165,7 +242,7 @@ export default function TradeChart({
     const exitIdx = bars.findIndex((b) => b.t >= (trade.exit_date ?? trade.signal_date));
     const right = Math.min(bars.length - 1, Math.max(idx, exitIdx) + Math.max(10, Math.round(span * 0.12)));
     chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, right - span), to: right + 1 });
-  }, [bars, trade, span]);
+  }, [bars, trade, span, ind]);
 
   const shown = hover ?? bars?.find((b) => b.t === trade.signal_date) ?? null;
 
@@ -199,7 +276,7 @@ export default function TradeChart({
           <span>차트를 눌러 가격 확인</span>
         )}
       </div>
-      <div className="flex gap-1 px-4 pb-1">
+      <div className="flex flex-wrap items-center gap-1 px-4 pb-1">
         {RANGES.map((r) => (
           <button
             key={r.label}
@@ -210,7 +287,37 @@ export default function TradeChart({
             {r.label}
           </button>
         ))}
+        <span className="mx-1 h-4 w-px bg-border" />
+        {(
+          [
+            ["ma", "이평선"],
+            ["bb", "볼린저"],
+            ["rsi", "RSI"],
+          ] as const
+        ).map(([k, label]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => toggle(k)}
+            aria-pressed={ind[k]}
+            className={`rounded-md px-2.5 py-1 text-xs ${ind[k] ? "border border-accent text-accent" : "border border-border text-muted"}`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
+      {ind.ma && (
+        <div className="flex flex-wrap gap-x-3 px-4 pb-1 text-[11px] text-muted">
+          {periods.map((n) => (
+            <span key={n} className="inline-flex items-center gap-1">
+              <span className="inline-block h-0.5 w-3 rounded" style={{ background: maColor(n) }} />
+              {n}일
+            </span>
+          ))}
+          {ind.bb && <span>볼린저 20일 ±2σ (점선)</span>}
+        </div>
+      )}
+      {!ind.ma && ind.bb && <div className="px-4 pb-1 text-[11px] text-muted">볼린저 20일 ±2σ (점선)</div>}
       <div className="relative min-h-0 flex-1">
         {err && <p className="p-4 text-sm text-critical">⚠ {err}</p>}
         {!bars && !err && <p className="p-4 text-sm text-muted">불러오는 중…</p>}
