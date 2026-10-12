@@ -14,14 +14,66 @@ const CHECK_STYLE: Record<Check["level"], { icon: string; cls: string; label: st
   danger: { icon: "✕", cls: "text-critical", label: "경고" },
 };
 
-function Tile({ label, value, sub, cls }: { label: string; value: string; sub?: string; cls?: string }) {
+function Tile({
+  label,
+  value,
+  sub,
+  cls,
+  help,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  cls?: string;
+  help?: string;
+}) {
+  const [open, setOpen] = useState(false);
   return (
-    <div className="rounded-xl border border-border bg-card px-3 py-2.5">
-      <div className="text-xs text-muted">{label}</div>
+    <div className={`rounded-xl border border-border bg-card px-3 py-2.5 ${open ? "col-span-2 sm:col-span-3" : ""}`}>
+      <div className="flex items-start justify-between gap-1 text-xs text-muted">
+        <span>{label}</span>
+        {help && (
+          <button
+            type="button"
+            onClick={() => setOpen(!open)}
+            aria-expanded={open}
+            aria-label={`${label} 설명`}
+            className={`-mr-1 -mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] ${open ? "border-accent text-accent" : "border-border text-faint"}`}
+          >
+            ?
+          </button>
+        )}
+      </div>
       <div className={`tabular text-xl font-semibold ${cls ?? ""}`}>{value}</div>
       {sub && <div className="tabular text-xs text-faint">{sub}</div>}
+      {open && help && <p className="mt-2 whitespace-pre-line border-t border-border pt-2 text-xs leading-relaxed text-muted">{help}</p>}
     </div>
   );
+}
+
+// 결과 칸마다 (?) 를 누르면 나오는 설명
+function helpTexts(s: SingleResult["summary"], b: SingleResult["baseline"], spec: Spec) {
+  const c = spec.costs;
+  const cost = (c.buy_fee_pct + c.sell_fee_pct + c.sell_tax_pct + c.slippage_pct).toFixed(2);
+  const tgt = typeof spec.exit.target_pct === "number" ? spec.exit.target_pct : null;
+  const days = spec.exit.max_days;
+  return {
+    success: tgt != null
+      ? `매수가 체결된 거래 중 보유기간(${days}거래일) 안에 목표가(+${tgt}%)에 닿은 비율입니다. ${spec.exit.target_basis === "high" ? "고가 기준이라 장중에 한 번이라도 닿으면 성공입니다." : "종가 기준이라 종가가 목표 이상이어야 성공입니다."}
+'기준'은 같은 매수·청산 규칙으로 아무 날이나 샀을 때의 성공률(${pct(b.success_rate)})입니다. 주식은 원래 일정 확률로 목표에 닿기 때문에, 성공률 자체보다 기준과의 차이(%p)가 이 조건의 실력입니다.`
+      : "목표가 없어서, 결과가 확정된 거래 중 비용을 빼고 수익이 난 비율입니다. '기준'은 아무 날이나 샀을 때의 같은 비율입니다.",
+    complete: `신호가 ${num(s.n_signals)}번 났고, 그중 매수가 실제로 체결된 건 ${pct(s.fill_rate)}입니다 (지정가면 가격에 닿아야 체결).
+체결된 거래 중 결과가 정해진 것만 셉니다. 최근 신호처럼 보유기간이 아직 안 끝난 거래(${num(s.n_open)}건)는 빠집니다. 많을수록 믿을 만하고 100건 이상을 권장합니다.`,
+    ret: `거래 한 번당 평균 수익률입니다. 매수 수수료 ${c.buy_fee_pct}%, 매도 수수료 ${c.sell_fee_pct}%, 세금 ${c.sell_tax_pct}%${c.slippage_pct ? `, 슬리피지 ${c.slippage_pct}%` : ""} (합계 약 ${cost}%)를 뺀 실제로 손에 쥐는 수익입니다.
+성공한 거래는 목표 수익에서 비용을 뺀 값, 실패한 거래는 손절가나 보유기간 마지막 날 종가에 판 값입니다.
+중앙값은 거래를 수익률 순으로 줄 세운 가운데 값입니다. 중앙값은 높은데 평균이 낮으면 '대부분 조금 벌지만 가끔 크게 잃는' 구조라는 뜻입니다.`,
+    uncertain: `일봉은 하루의 시가·고가·저가·종가만 있어서 장중 순서를 모릅니다. 예를 들어 매수가 체결된 날의 고가가 매수 전이었는지 후였는지, 같은 날 목표가와 손절가 중 어느 쪽에 먼저 닿았는지 알 수 없습니다.
+이런 거래는 기본 통계에서 불리하게(실패로) 계산합니다. 유리하게 보면 성공률은 ${pct(s.success_rate_opt)}이고, 실제는 그 사이에 있다고 보면 됩니다.`,
+    mfe: `매수한 뒤 청산할 때까지, 매수가 대비 가장 많이 올랐을 때(고가 기준)와 가장 많이 빠졌을 때(저가 기준)의 평균입니다.
+최고가 목표보다 훨씬 크면 목표를 높여 볼 만하고, 최저가 깊으면 중간 손실을 견뎌야 한다는 뜻이라 손절 규칙을 검토할 이유가 됩니다.`,
+    days: `성공한 거래가 매수 후 평균 며칠(거래일) 만에 목표가에 닿았는지입니다.
+아래 숫자는 거래가 끝난 이유별 건수입니다. 목표: 목표가 도달, 손절: 손절가 도달, 만료: 보유기간(${days}일)이 끝나 마지막 날 종가에 정리.`,
+  };
 }
 
 function RateBar({ value, base }: { value: number | null; base?: number | null }) {
@@ -126,6 +178,7 @@ function Single({ r, onBack }: { r: SingleResult; onBack?: () => void }) {
   };
 
   const hasTarget = typeof r.spec.exit.target_pct === "number";
+  const h = helpTexts(s, b, r.spec);
 
   return (
     <div className="space-y-4">
@@ -151,20 +204,23 @@ function Single({ r, onBack }: { r: SingleResult; onBack?: () => void }) {
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <Tile
+          help={h.success}
           label={hasTarget ? "성공률 (목표 도달)" : "수익 확률"}
           value={pct(s.success_rate)}
           sub={`기준 ${pct(b.success_rate)} · ${s.edge_pp !== undefined ? (s.edge_pp > 0 ? "+" : "") + s.edge_pp + "%p" : "–"}`}
         />
-        <Tile label="결과 확정 건수" value={num(s.n_complete)} sub={`신호 ${num(s.n_signals)} · 체결률 ${pct(s.fill_rate, 0)}`} />
+        <Tile help={h.complete} label="결과 확정 건수" value={num(s.n_complete)} sub={`신호 ${num(s.n_signals)} · 체결률 ${pct(s.fill_rate, 0)}`} />
         <Tile
+          help={h.ret}
           label="평균 수익률 (비용 차감)"
           value={pct(s.avg_ret, 2, true)}
           cls={retClass(s.avg_ret)}
           sub={`중앙값 ${pct(s.median_ret, 2, true)}`}
         />
-        <Tile label="불확실 (일봉 한계)" value={num(s.n_uncertain)} sub={`낙관적 성공률 ${pct(s.success_rate_opt)}`} />
-        <Tile label="보유 중 평균 최고/최저" value={`${pct(s.avg_mfe, 1, true)}`} sub={`최저 ${pct(s.avg_mae, 1, true)}`} />
+        <Tile help={h.uncertain} label="불확실 (일봉 한계)" value={num(s.n_uncertain)} sub={`낙관적 성공률 ${pct(s.success_rate_opt)}`} />
+        <Tile help={h.mfe} label="보유 중 평균 최고/최저" value={`${pct(s.avg_mfe, 1, true)}`} sub={`최저 ${pct(s.avg_mae, 1, true)}`} />
         <Tile
+          help={h.days}
           label="목표까지 평균"
           value={s.avg_days_to_target !== null ? `${s.avg_days_to_target}일` : "–"}
           sub={`목표 ${s.n_target} · 손절 ${s.n_stop} · 만료 ${s.n_timeout}`}
@@ -196,6 +252,10 @@ function Single({ r, onBack }: { r: SingleResult; onBack?: () => void }) {
           </span>
         </div>
         <BreakdownTable rows={r.breakdowns[tab]} base={b.success_rate} />
+        <p className="mt-2 text-[11px] leading-relaxed text-faint">
+          막대의 세로선은 아무 날이나 샀을 때의 성공률(기준)입니다. 해마다 막대가 세로선보다 오른쪽이고 평균이 플러스면 꾸준한 전략,
+          특정 해만 좋거나 기준선 근처를 오가면 시장 분위기에 기댄 결과일 수 있습니다.
+        </p>
       </div>
 
       <div>

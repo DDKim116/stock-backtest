@@ -131,6 +131,19 @@ export default function App() {
     try {
       const { text } = await api<{ text: string }>("/api/to-text", { body: { ...s, name: name.trim() } });
       const summary = result?.kind === "single" && !detail ? result.summary : (detail?.summary ?? null);
+      // 같은 이름이 있으면 덮어쓸지 묻는다
+      const same = (await api<Strategy[]>("/api/strategies")).find((x) => x.name === name.trim());
+      if (same) {
+        if (!confirm(`'${same.name}' 이(가) 이미 저장돼 있습니다.\n덮어쓸까요? (취소하면 저장하지 않습니다. 다른 이름으로 저장하려면 취소 후 다시 저장을 누르세요.)`))
+          return;
+        await api(`/api/strategies/${same.id}`, {
+          method: "PUT",
+          body: { name: same.name, text, note: same.note, last_summary: summary },
+        });
+        setSpec({ ...s, name: name.trim() });
+        flash("덮어썼습니다");
+        return;
+      }
       await api("/api/strategies", { body: { name: name.trim(), text, last_summary: summary } });
       setSpec({ ...s, name: name.trim() });
       flash("저장했습니다");
