@@ -78,3 +78,17 @@ export function joinAnd(rows: string[]): string {
     .map((r) => (/\s(OR|or|또는)\s/.test(stripParens(r)) ? `(${r})` : r))
     .join(" AND ");
 }
+
+/** 손익 금액: 원은 정수 + '원', 달러는 $와 소수 2자리 */
+export function money(x: number | null | undefined, currency: string = "KRW", sign = false): string {
+  if (x === null || x === undefined || Number.isNaN(x)) return "–";
+  const s = sign && x > 0 ? "+" : x < 0 ? "-" : "";
+  const a = Math.abs(x);
+  if (currency === "USD") return `${s}$${a.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `${s}${Math.round(a).toLocaleString("ko-KR")}원`;
+}
+
+export function today(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}

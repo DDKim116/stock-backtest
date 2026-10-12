@@ -3,14 +3,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, apiUrl, setApiUrl, setToken } from "@/lib/api";
 import { pct } from "@/lib/format";
-import type { DatasetInfo, RunResult, ScanResult, SingleResult, Spec, Strategy } from "@/lib/types";
+import type { DatasetInfo, JournalPrefill, RunResult, ScanResult, SingleResult, Spec, Strategy } from "@/lib/types";
 import { useAIStatus } from "./AIAsk";
 import Editor, { DEFAULT_SPEC } from "./Editor";
 import Results from "./Results";
 import ScanResults from "./ScanResults";
 import Explore from "./Explore";
+import Journal from "./Journal";
 
-type Tab = "run" | "explore" | "saved" | "help" | "settings";
+type Tab = "run" | "explore" | "journal" | "saved" | "more";
 
 const KEY_DATASET = "sbt.dataset";
 
@@ -46,6 +47,8 @@ export default function App() {
   const [spec, setSpec] = useState<Spec>(DEFAULT_SPEC);
   const [result, setResult] = useState<RunResult | null>(null);
   const [scan, setScan] = useState<ScanResult | null>(null);
+  const [journalPrefill, setJournalPrefill] = useState<JournalPrefill | null>(null);
+  const clearPrefill = useCallback(() => setJournalPrefill(null), []);
   const [detail, setDetail] = useState<SingleResult | null>(null);
   const [running, setRunning] = useState(false);
   const [runSpec, setRunSpec] = useState<Spec>(DEFAULT_SPEC);
@@ -190,7 +193,28 @@ export default function App() {
           {scan && (
             <section id="scan" className="mt-6 scroll-mt-4">
               <h2 className="mb-3 text-lg font-bold">오늘 신호</h2>
-              <ScanResults r={scan} onBacktest={() => run(scan.spec)} />
+              <ScanResults
+                r={scan}
+                onBacktest={() => run(scan.spec)}
+                onRecord={async (row) => {
+                  let text = "";
+                  try {
+                    text = (await api<{ text: string }>("/api/to-text", { body: scan.spec })).text;
+                  } catch {}
+                  setJournalPrefill({
+                    code: row.code,
+                    name: row.name,
+                    market: row.market,
+                    signal_date: row.signal_date,
+                    strategy_id: null,
+                    strategy_name: scan.spec.name || "오늘 신호 조건",
+                    strategy_text: text,
+                    price: row.fill_price ?? row.limit ?? row.close,
+                    date: row.fill_date,
+                  });
+                  setTab("journal");
+                }}
+              />
             </section>
           )}
           {result && (
@@ -259,8 +283,20 @@ export default function App() {
           }}
         />
       )}
-      {!needLogin && tab === "help" && <Help />}
-      {tab === "settings" && <Settings onSaved={loadDatasets} />}
+      {!needLogin && tab === "journal" && (
+        <Journal dataset={current} prefill={journalPrefill} onPrefillUsed={clearPrefill} />
+      )}
+      {tab === "more" && (
+        <div className="space-y-8">
+          <Settings onSaved={loadDatasets} />
+          {!needLogin && (
+            <section>
+              <h2 className="mb-3 text-lg font-bold">도움말</h2>
+              <Help />
+            </section>
+          )}
+        </div>
+      )}
 
       {toast && (
         <div className="fixed inset-x-0 bottom-24 z-40 mx-auto w-fit rounded-full bg-foreground px-4 py-2 text-sm text-background">
@@ -274,9 +310,9 @@ export default function App() {
             [
               ["run", "검증"],
               ["explore", "탐색"],
+              ["journal", "일지"],
               ["saved", "저장"],
-              ["help", "도움말"],
-              ["settings", "설정"],
+              ["more", "더보기"],
             ] as const
           ).map(([k, label]) => (
             <button

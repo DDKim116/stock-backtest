@@ -57,7 +57,15 @@ function asTrade(r: ScanRow): Trade {
   };
 }
 
-export default function ScanResults({ r, onBacktest }: { r: ScanResult; onBacktest: () => void }) {
+export default function ScanResults({
+  r,
+  onBacktest,
+  onRecord,
+}: {
+  r: ScanResult;
+  onBacktest: () => void;
+  onRecord: (row: ScanRow) => void;
+}) {
   const cur = r.dataset.currency ?? "KRW";
   const [filter, setFilter] = useState<ScanRow["kind"] | "all">("all");
   const [open, setOpen] = useState<Trade | null>(null);
@@ -110,14 +118,14 @@ export default function ScanResults({ r, onBacktest }: { r: ScanResult; onBackte
       ) : (
         <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
           {rows.map((x) => (
-            <li key={`${x.code}-${x.signal_date}`}>
+            <li key={`${x.code}-${x.signal_date}`} className="flex items-stretch">
               <button
                 type="button"
                 onClick={() => {
                   back.push();
                   setOpen(asTrade(x));
                 }}
-                className="flex w-full items-center gap-3 px-3 py-2.5 text-left"
+                className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left"
               >
                 <div className="min-w-0 flex-1 space-y-0.5">
                   <div className="truncate text-sm font-medium">
@@ -152,6 +160,14 @@ export default function ScanResults({ r, onBacktest }: { r: ScanResult; onBackte
                     </>
                   )}
                 </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => onRecord(x)}
+                className="shrink-0 border-l border-border px-3 text-xs font-medium text-accent"
+                aria-label={`${x.name} 매매 기록`}
+              >
+                기록
               </button>
             </li>
           ))}

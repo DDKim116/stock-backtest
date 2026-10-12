@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import base64
+import datetime as dt
 import hashlib
 import hmac
 import json
@@ -23,6 +24,7 @@ from .. import config
 from ..ai import client as ai_client
 from ..ai import service as ai_service
 from ..data.panel import Panel
+from .. import journal
 from ..engine import dsl
 from ..engine.run import Runner, SpecError
 from ..engine.spec import MARKET_LABEL, Spec, parse_text, to_text
@@ -568,6 +570,172 @@ def ai_explore_review(body: ReviewIn):
     store.add_usage("review", out["usage"])
     out["usage"] = _usage_out(out["usage"], st)
     job["review"] = out
+    return out
+
+
+# ---------------------------------------------------------------- 매매일지
+
+class FillIn(BaseModel):
+    side: str
+    date: str
+    price: float
+    qty: float
+    fee: float | None = None
+    memo: str = ""
+
+
+class JournalIn(BaseModel):
+    dataset: str = config.DEFAULT_DATASET
+    code: str
+    signal_date: str | None = None
+    strategy_id: int | None = None
+    strategy_name: str = ""
+    strategy_text: str = ""
+    memo: str = ""
+    fills: list[FillIn] = []
+
+
+class JournalPatch(BaseModel):
+    memo: str | None = None
+    signal_date: str | None = None
+    strategy_id: int | None = None
+    strategy_name: str | None = None
+    strategy_text: str | None = None
+
+
+def _check_fill(f: FillIn) -> dict:
+    if f.side not in ("buy", "sell"):
+        raise HTTPException(422, "side 는 buy 또는 sell 입니다")
+    if f.price <= 0 or f.qty <= 0:
+        raise HTTPException(422, "가격과 수량은 0보다 커야 합니다")
+    try:
+        dt.date.fromisoformat(f.date)
+    except ValueError:
+        raise HTTPException(422, f"날짜 형식이 올바르지 않습니다: {f.date}")
+    return f.model_dump()
+
+
+def _sorted_fills(fills: list[dict]) -> list[dict]:
+    return sorted(fills, key=lambda f: (f["date"], 0 if f["side"] == "buy" else 1, f.get("id") or 1e12))
+
+
+def _journal_view(t: dict) -> dict:
+    """저장된 거래 + 손익 계산 + 전략 비교."""
+    ds = DATASETS.get(t["dataset"], {})
+    try:
+        runner = loaded.get(t["dataset"])
+        last_date, last_close, _, _ = runner.last_close(t["code"])
+    except HTTPException:
+        runner, last_date, last_close = None, None, None
+    try:
+        pos = journal.position(_sorted_fills(t["fills"]), ds.get("costs", {}), last_close)
+    except journal.JournalError as e:
+        pos = {"error": str(e), "status": "error", "closed": False, "ret": None, "pnl": None, "invested": 0,
+               "unrealized": None, "holding_days": None, "first_buy": None, "last_sell": None}
+    comp = None
+    if runner and t.get("strategy_text") and t.get("signal_date"):
+        try:
+            strat = runner.simulate_one(parse_text(t["strategy_text"]), t["code"], t["signal_date"])
+            comp = journal.compare(pos, strat) if "error" not in pos else None
+        except Exception:  # noqa: BLE001 — 전략 글이 지금 문법과 안 맞아도 일지는 보여 준다
+            comp = None
+    return {**t, "currency": ds.get("currency", "KRW"), "last_date": last_date, "last_close": last_close,
+            "pos": pos, "compare": comp}
+
+
+@app.get("/api/journal", dependencies=[Depends(auth)])
+def journal_list(dataset: str | None = None):
+    return [_journal_view(t) for t in store.journal_list(dataset)]
+
+
+@app.get("/api/journal/stats", dependencies=[Depends(auth)])
+def journal_stats(dataset: str = config.DEFAULT_DATASET):
+    views = [_journal_view(t) for t in store.journal_list(dataset)]
+    views = [v for v in views if v["pos"].get("status") != "error"]
+    strategies = {s["id"]: s for s in store.list()}
+    return {"dataset": dataset, "currency": DATASETS.get(dataset, {}).get("currency", "KRW"),
+            **journal.stats(views, strategies)}
+
+
+@app.post("/api/journal", dependencies=[Depends(auth)])
+def journal_create(body: JournalIn):
+    runner = loaded.get(body.dataset)
+    _, _, name, market = runner.last_close(body.code)
+    if not name:
+        raise HTTPException(404, f"{body.code} 종목을 찾을 수 없습니다")
+    fills = [_check_fill(f) for f in body.fills]
+    try:
+        journal.position(_sorted_fills(fills), DATASETS[body.dataset].get("costs", {}), None)
+    except journal.JournalError as e:
+        raise HTTPException(422, str(e))
+    tid = store.journal_create({**body.model_dump(exclude={"fills"}), "name": name, "market": market})
+    for f in fills:
+        store.fill_add(tid, f)
+    return _journal_view(store.journal_get(tid))
+
+
+@app.get("/api/journal/{tid}", dependencies=[Depends(auth)])
+def journal_get(tid: int):
+    t = store.journal_get(tid)
+    if not t:
+        raise HTTPException(404, "기록이 없습니다")
+    return _journal_view(t)
+
+
+@app.put("/api/journal/{tid}", dependencies=[Depends(auth)])
+def journal_update(tid: int, body: JournalPatch):
+    if not store.journal_get(tid):
+        raise HTTPException(404, "기록이 없습니다")
+    store.journal_update(tid, body.model_dump(exclude_none=True))
+    return _journal_view(store.journal_get(tid))
+
+
+@app.delete("/api/journal/{tid}", dependencies=[Depends(auth)])
+def journal_delete(tid: int):
+    store.journal_delete(tid)
+    return {"ok": True}
+
+
+@app.post("/api/journal/{tid}/fills", dependencies=[Depends(auth)])
+def journal_add_fill(tid: int, body: FillIn):
+    t = store.journal_get(tid)
+    if not t:
+        raise HTTPException(404, "기록이 없습니다")
+    f = _check_fill(body)
+    try:  # 넣었을 때 보유 수량이 마이너스가 되지 않는지 먼저 확인
+        journal.position(_sorted_fills(t["fills"] + [f]), DATASETS.get(t["dataset"], {}).get("costs", {}), None)
+    except journal.JournalError as e:
+        raise HTTPException(422, str(e))
+    store.fill_add(tid, f)
+    return _journal_view(store.journal_get(tid))
+
+
+@app.delete("/api/journal/fills/{fid}", dependencies=[Depends(auth)])
+def journal_delete_fill(fid: int):
+    f = store.fill_get(fid)
+    if not f:
+        raise HTTPException(404, "체결 기록이 없습니다")
+    t = store.journal_get(f["trade_id"])
+    rest = [x for x in t["fills"] if x["id"] != fid]
+    try:
+        journal.position(_sorted_fills(rest), DATASETS.get(t["dataset"], {}).get("costs", {}), None)
+    except journal.JournalError as e:
+        raise HTTPException(422, "이 매수를 지우면 매도 수량이 보유 수량보다 많아집니다. 매도 기록을 먼저 지우세요. (" + str(e) + ")")
+    store.fill_delete(fid)
+    return _journal_view(store.journal_get(t["id"]))
+
+
+@app.get("/api/stocks", dependencies=[Depends(auth)])
+def stock_search(q: str, dataset: str = config.DEFAULT_DATASET, limit: int = 20):
+    q = q.strip().lower()
+    if not q:
+        return []
+    out = []
+    for code, name, market in loaded.get(dataset).stock_list():
+        if code.lower().startswith(q) or q in name.lower():
+            out.append({"code": code, "name": name, "market": market})
+            if len(out) >= limit:
+                break
     return out
 
 

@@ -286,3 +286,114 @@ export interface ExploreReview {
   next_ideas: { title: string; why: string; text: string }[];
   usage: AIUsage;
 }
+
+export interface JournalFill {
+  id: number;
+  trade_id: number;
+  side: "buy" | "sell";
+  date: string;
+  price: number;
+  qty: number;
+  fee: number | null;
+  memo: string;
+}
+
+export interface JournalPos {
+  qty: number;
+  avg_cost: number | null;
+  avg_buy: number | null;
+  avg_sell: number | null;
+  bought_qty: number;
+  sold_qty: number;
+  invested: number;
+  fees: number;
+  realized: number;
+  unrealized: number | null;
+  pnl: number | null;
+  ret: number | null;
+  closed: boolean;
+  status: "open" | "closed" | "empty" | "error";
+  first_buy: string | null;
+  last_sell: string | null;
+  holding_days: number | null;
+  error?: string;
+}
+
+export interface JournalCompare {
+  strategy: {
+    signal_date: string;
+    limit: number | null;
+    fill_date: string | null;
+    fill_price: number | null;
+    outcome: string;
+    exit_date: string | null;
+    exit_price: number | null;
+    ret: number | null;
+    mfe: number | null;
+    mae: number | null;
+  };
+  verdict: string;
+  followed: boolean;
+  buy_diff_pct?: number | null;
+  sell_timing?: string;
+  ret_diff?: number | null;
+}
+
+export interface JournalTrade {
+  id: number;
+  dataset: string;
+  code: string;
+  name: string;
+  market: string;
+  strategy_id: number | null;
+  strategy_name: string;
+  strategy_text: string;
+  signal_date: string | null;
+  memo: string;
+  created_at: string;
+  updated_at: string;
+  fills: JournalFill[];
+  currency: string;
+  last_date: string | null;
+  last_close: number | null;
+  pos: JournalPos;
+  compare: JournalCompare | null;
+}
+
+export interface JournalAgg {
+  n: number;
+  win_rate: number | null;
+  avg_ret: number | null;
+  total_pnl: number;
+  best: number | null;
+  worst: number | null;
+  avg_days: number | null;
+}
+
+export interface JournalStats {
+  dataset: string;
+  currency: string;
+  closed: JournalAgg;
+  open: { n: number; invested: number; unrealized: number };
+  monthly: (JournalAgg & { month: string })[];
+  by_strategy: (JournalAgg & {
+    name: string;
+    strategy_avg_ret: number | null;
+    backtest_success: number | null;
+    backtest_avg_ret: number | null;
+  })[];
+  followed: JournalAgg;
+  deviated: JournalAgg;
+}
+
+export interface JournalPrefill {
+  code: string;
+  name: string;
+  market: string;
+  signal_date: string | null;
+  strategy_id: number | null;
+  strategy_name: string;
+  strategy_text: string;
+  price: number | null;
+  date: string | null;
+}

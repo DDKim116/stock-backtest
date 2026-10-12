@@ -65,12 +65,16 @@ export default function TradeChart({
   dataset,
   currency,
   onClose,
+  mine,
+  strategy = true,
 }: {
   trade: Trade;
   spec: Spec;
   dataset: string;
   currency: string;
   onClose: () => void;
+  mine?: { date: string; side: "buy" | "sell"; price: number }[]; // 매매일지의 내 체결
+  strategy?: boolean; // false 면 전략 표시(신호·매수·청산·가격선)를 빼고 내 체결만
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [bars, setBars] = useState<Bar[] | null>(null);
@@ -185,19 +189,29 @@ export default function TradeChart({
     );
 
     const fg = cssVar("--foreground");
-    const markers: SeriesMarker<Time>[] = [
-      { time: trade.signal_date as Time, position: "aboveBar", shape: "circle", color: fg, text: "신호" },
-    ];
-    if (trade.fill_date)
-      markers.push({ time: trade.fill_date as Time, position: "belowBar", shape: "arrowUp", color: up, text: "매수" });
-    if (trade.exit_date) {
+    const tag = mine ? "전략 " : "";
+    const markers: SeriesMarker<Time>[] = strategy
+      ? [{ time: trade.signal_date as Time, position: "aboveBar", shape: "circle", color: fg, text: "신호" }]
+      : [];
+    if (strategy && trade.fill_date)
+      markers.push({ time: trade.fill_date as Time, position: "belowBar", shape: "arrowUp", color: up, text: tag + "매수" });
+    if (strategy && trade.exit_date) {
       const label = trade.outcome === "목표도달" ? "목표" : trade.outcome === "손절" ? "손절" : "청산";
-      markers.push({ time: trade.exit_date as Time, position: "aboveBar", shape: "arrowDown", color: down, text: label });
+      markers.push({ time: trade.exit_date as Time, position: "aboveBar", shape: "arrowDown", color: down, text: tag + label });
     }
+    const acc = cssVar("--accent");
+    for (const f of mine ?? [])
+      markers.push(
+        f.side === "buy"
+          ? { time: f.date as Time, position: "belowBar", shape: "square", color: acc, text: "내 매수" }
+          : { time: f.date as Time, position: "aboveBar", shape: "square", color: acc, text: "내 매도" },
+      );
     markers.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
     createSeriesMarkers(candles, markers);
 
-    if (trade.fill_price) {
+    if (!strategy) {
+      // 내 매매만 볼 때는 전략 가격선을 그리지 않는다
+    } else if (trade.fill_price) {
       candles.createPriceLine({ price: trade.fill_price, color: fg, lineStyle: LineStyle.Dashed, lineWidth: 1, title: "매수가" });
       const t = spec.exit.target_pct;
       if (typeof t === "number")
@@ -232,7 +246,7 @@ export default function TradeChart({
       chart.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- periods·maColor 는 spec 에서 나옴
-  }, [bars, trade, spec, currency, ind]);
+  }, [bars, trade, spec, currency, ind, mine, strategy]);
 
   // 보이는 기간: 매수·매도 지점이 오른쪽에 오도록 앞쪽을 span 만큼 보여 준다
   useEffect(() => {
@@ -254,7 +268,7 @@ export default function TradeChart({
             {trade.name} <span className="text-sm font-normal text-muted">{trade.code} · {trade.market}</span>
           </div>
           <div className="text-xs text-muted">
-            신호 {trade.signal_date} · {trade.outcome}
+            {strategy ? `신호 ${trade.signal_date} · ${trade.outcome}` : "내 매수·매도 표시"}
             {trade.uncertain && ` (낙관적: ${trade.outcome_opt})`}
           </div>
         </div>
@@ -323,6 +337,7 @@ export default function TradeChart({
         {!bars && !err && <p className="p-4 text-sm text-muted">불러오는 중…</p>}
         <div ref={box} className="absolute inset-0" />
       </div>
+      {strategy && !mine && (
       <dl className="tabular grid grid-cols-3 gap-px border-t border-border bg-border text-center text-sm">
         {[
           ["지정가", price(trade.limit, currency)],
@@ -338,6 +353,7 @@ export default function TradeChart({
           </div>
         ))}
       </dl>
+      )}
       <p className="bg-card px-4 pb-3 text-[11px] text-faint">수정주가 기준 · 일봉 · 최고/최저는 보유기간 중 고가/저가 기준</p>
     </div>
   );

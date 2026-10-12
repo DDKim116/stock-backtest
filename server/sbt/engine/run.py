@@ -277,3 +277,38 @@ class Runner:
             "axis_effects": effects,
             "dataset": self.dataset,
         }
+
+    # ------------------------------------------------------------ 매매일지 지원
+    def simulate_one(self, spec: Spec, code: str, signal_date: str) -> dict | None:
+        """한 종목·한 신호일을 전략 규칙대로 매매했을 때의 결과."""
+        p = self.panel
+        rows = p.rows_for(code)
+        if len(rows) == 0:
+            return None
+        hit = rows[p.dates[rows] == np.datetime64(signal_date, "D")]
+        if len(hit) == 0:
+            return None
+        variants = expand(spec)
+        s = variants[0][1]
+        with self.lock:
+            t = event.simulate(p, hit[:1], s, self._limit(s), self._fx(s))
+            r = stats.trade_rows(t, p)[0]
+        return {k: r[k] for k in ("signal_date", "limit", "fill_date", "fill_price", "outcome", "exit_date",
+                                  "exit_price", "ret", "mfe", "mae")}
+
+    def last_close(self, code: str) -> tuple[str | None, float | None, str, str]:
+        p = self.panel
+        rows = p.rows_for(code)
+        if len(rows) == 0:
+            return None, None, "", ""
+        i = rows[-1]
+        return str(p.dates[i]), float(p.cols["close"][i]), str(p.names[i]), MARKET_LABEL.get(p.markets[i], p.markets[i])
+
+    def stock_list(self) -> list[tuple[str, str, str]]:
+        if not hasattr(self, "_stocks"):
+            p = self.panel
+            last = np.unique(p.gend)
+            order = np.argsort(p.dates[last])[::-1]  # 최근까지 거래된 종목 먼저
+            self._stocks = [(str(p.codes[i]), str(p.names[i]), MARKET_LABEL.get(p.markets[i], p.markets[i]))
+                            for i in last[order]]
+        return self._stocks

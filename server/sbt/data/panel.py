@@ -63,4 +63,7 @@ class Panel:
         return cls(df)
 
     def rows_for(self, code: str) -> np.ndarray:
-        return np.flatnonzero(self.codes == code)
+        # 행이 (종목, 날짜) 순으로 정렬돼 있어 이분 탐색으로 찾는다
+        lo = np.searchsorted(self.codes, code, "left")
+        hi = np.searchsorted(self.codes, code, "right")
+        return np.arange(lo, hi)
