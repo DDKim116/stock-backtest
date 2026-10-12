@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, apiUrl, setApiUrl, setToken } from "@/lib/api";
 import { pct } from "@/lib/format";
+import { idbGet, idbSet } from "@/lib/persist";
 import type { DatasetInfo, JournalPrefill, RunResult, ScanResult, SingleResult, Spec, Strategy } from "@/lib/types";
 import { useAIStatus } from "./AIAsk";
 import Editor, { DEFAULT_SPEC } from "./Editor";
@@ -12,6 +13,20 @@ import Explore from "./Explore";
 import Journal from "./Journal";
 
 type Tab = "run" | "explore" | "journal" | "saved" | "more";
+
+// 다시 열었을 때 이어 볼 화면
+interface Session {
+  v: 1;
+  savedAt: string;
+  dataset: string;
+  tab: Tab;
+  spec: Spec;
+  runSpec: Spec;
+  result: RunResult | null;
+  detail: SingleResult | null;
+  scan: ScanResult | null;
+}
+const SESSION_KEY = "session";
 
 const KEY_DATASET = "sbt.dataset";
 
@@ -48,6 +63,8 @@ export default function App() {
   const [result, setResult] = useState<RunResult | null>(null);
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [journalPrefill, setJournalPrefill] = useState<JournalPrefill | null>(null);
+  const [restored, setRestored] = useState(false); // 저장된 화면을 읽기 전에는 덮어쓰지 않도록
+  const [restoredAt, setRestoredAt] = useState<string | null>(null);
   const clearPrefill = useCallback(() => setJournalPrefill(null), []);
   const [detail, setDetail] = useState<SingleResult | null>(null);
   const [running, setRunning] = useState(false);
@@ -81,6 +98,42 @@ export default function App() {
     loadDatasets();
   }, [loadDatasets]);
 
+  // 마지막 화면 불러오기
+  useEffect(() => {
+    idbGet<Session>(SESSION_KEY).then((ss) => {
+      if (ss && ss.v === 1 && ss.dataset === (readLS(KEY_DATASET) || ss.dataset)) {
+        setSpec(ss.spec);
+        setRunSpec(ss.runSpec);
+        setResult(ss.result);
+        setDetail(ss.detail);
+        setScan(ss.scan);
+        setTab(ss.tab);
+        if (ss.result || ss.scan) setRestoredAt(ss.savedAt);
+      }
+      setRestored(true);
+    });
+  }, []);
+
+  // 바뀔 때마다 저장 (0.5초 모아서)
+  useEffect(() => {
+    if (!restored) return;
+    const t = setTimeout(() => {
+      const ss: Session = {
+        v: 1,
+        savedAt: new Date().toISOString(),
+        dataset,
+        tab,
+        spec,
+        runSpec,
+        result,
+        detail,
+        scan,
+      };
+      idbSet(SESSION_KEY, ss);
+    }, 500);
+    return () => clearTimeout(t);
+  }, [restored, dataset, tab, spec, runSpec, result, detail, scan]);
+
   const flash = (m: string) => {
     setToast(m);
     setTimeout(() => setToast(null), 2000);
@@ -97,6 +150,7 @@ export default function App() {
         setResult(r);
         setDetail(null);
         setScan(null);
+        setRestoredAt(null);
       }
       setTimeout(() => document.getElementById("results")?.scrollIntoView({ behavior: "smooth" }), 50);
     } catch (e) {
@@ -116,6 +170,7 @@ export default function App() {
       setScan(r);
       setResult(null);
       setDetail(null);
+      setRestoredAt(null);
       setTimeout(() => document.getElementById("scan")?.scrollIntoView({ behavior: "smooth" }), 50);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) setNeedLogin(true);
@@ -202,6 +257,22 @@ export default function App() {
             <p className="mt-4 whitespace-pre-wrap rounded-xl border border-critical/40 bg-card p-3 text-sm text-critical">
               ⚠ {error}
             </p>
+          )}
+          {restoredAt && (result || scan) && (
+            <div className="mt-6 flex items-center justify-between gap-2 rounded-xl border border-border bg-card px-3 py-2 text-xs text-muted">
+              <span>
+                지난번 {scan ? "오늘 신호" : "검증"} 결과입니다 ({new Date(restoredAt).toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "short" })}
+                ). 그 뒤 데이터가 갱신됐을 수 있어요.
+              </span>
+              <button
+                type="button"
+                disabled={running}
+                onClick={() => (scan ? doScan(scan.spec) : run(runSpec))}
+                className="shrink-0 rounded-lg border border-accent px-2.5 py-1 font-semibold text-accent disabled:opacity-50"
+              >
+                다시 실행
+              </button>
+            </div>
           )}
           {scan && (
             <section id="scan" className="mt-6 scroll-mt-4">
