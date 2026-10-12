@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { joinAnd, parseNumList, showNumList, splitTopLevelAnd } from "@/lib/format";
 import type { DatasetInfo, Spec } from "@/lib/types";
+import SentenceConvert from "./SentenceConvert";
 import AIAsk from "./AIAsk";
 
 export const DEFAULT_SPEC: Spec = {
@@ -143,7 +144,7 @@ export default function Editor({
   running: boolean;
   onSave: (s: Spec) => void;
 }) {
-  const [mode, setMode] = useState<"build" | "text" | "ai">("build");
+  const [mode, setMode] = useState<"build" | "text" | "sentence" | "ai">("build");
   const [rows, setRows] = useState<string[]>(() => splitTopLevelAnd(spec.signal));
   const [text, setText] = useState("");
   const [textErr, setTextErr] = useState<string | null>(null);
@@ -166,7 +167,7 @@ export default function Editor({
     update({ signal: sig });
   };
 
-  const switchMode = async (m: "build" | "text" | "ai") => {
+  const switchMode = async (m: "build" | "text" | "sentence" | "ai") => {
     if (m === "text" && mode !== "text") {
       try {
         const r = await api<{ text: string }>("/api/to-text", { body: spec });
@@ -211,7 +212,7 @@ export default function Editor({
     } else onSave(spec);
   };
 
-  const tab = (m: "build" | "text" | "ai", label: string) => (
+  const tab = (m: "build" | "text" | "sentence" | "ai", label: string) => (
     <button
       type="button"
       onClick={() => switchMode(m)}
@@ -226,6 +227,7 @@ export default function Editor({
       <div className="flex gap-1 rounded-lg bg-border/60 p-1">
         {tab("build", "조립")}
         {tab("text", "조건식")}
+        {tab("sentence", "문장")}
         {tab("ai", "AI 질문")}
       </div>
 
@@ -233,6 +235,20 @@ export default function Editor({
       <div className={mode === "ai" ? "" : "hidden"}>
         <AIAsk
           dataset={dataset?.name ?? "kr"}
+          onApply={(s) => {
+            setSpec(s);
+            setMode("build");
+          }}
+          onRun={(s) => {
+            setSpec(s);
+            onRun(s);
+          }}
+        />
+      </div>
+
+      <div className={mode === "sentence" ? "" : "hidden"}>
+        <SentenceConvert
+          spec={spec}
           onApply={(s) => {
             setSpec(s);
             setMode("build");
@@ -466,7 +482,7 @@ export default function Editor({
         </div>
       )}
 
-      {mode !== "ai" && (
+      {(mode === "build" || mode === "text") && (
         <div className="sticky bottom-[68px] z-10 flex gap-2 bg-background/90 py-2 backdrop-blur">
           <button
             type="button"
