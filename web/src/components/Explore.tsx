@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { pct, retClass } from "@/lib/format";
 import ExploreReview from "./ExploreReview";
+import StartEditor from "./StartEditor";
 import type { DatasetInfo, ExploreAxis, ExploreJob, ExplorePlan, ExploreRow, Spec } from "@/lib/types";
 
 const JOB_KEY = "sbt-explore-job";
@@ -131,13 +132,13 @@ export default function Explore({
       <div className="rounded-xl border border-border bg-card p-3 text-sm">
         <h2 className="font-semibold">전략 탐색</h2>
         <p className="mt-1 text-muted">
-          검증 화면의 조건을 출발점으로, 숫자 조합을 자동으로 바꿔 가며 돌립니다. 기간을 <b>과거 구간</b>과 <b>검증 구간</b>으로 나눠, 과거에서
+          출발점 조건(여기서 바로 입력하거나 검증 화면의 조건)을 바탕으로 숫자 조합을 자동으로 바꿔 가며 돌립니다. 기간을 <b>과거 구간</b>과 <b>검증 구간</b>으로 나눠, 과거에서
           고른 조합이 보지 않은 기간에서도 통하는지 확인하고 운에 맞춘 조합은 걸러 냅니다. AI를 쓰지 않아 무료입니다.
         </p>
       </div>
 
       <section className="space-y-2 rounded-xl border border-border bg-card p-3 text-sm">
-        <h3 className="font-semibold">1. 출발점 (검증 화면의 조건)</h3>
+        <h3 className="font-semibold">1. 출발점</h3>
         <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg bg-background p-2 text-xs leading-relaxed">
           {spec.signal.replace(/\s+AND\s+/g, " 그리고 ").replace(/\s+OR\s+/g, " 또는 ")}
         </pre>
@@ -145,7 +146,8 @@ export default function Explore({
           매수: {ENTRY_LABEL[spec.entry.type]}
           {spec.entry.type === "limit" ? ` (${spec.entry.price})` : ""} · {dataset?.label ?? ""}
         </p>
-        <p className="text-xs text-faint">바꾸려면 아래 &apos;검증&apos; 탭에서 조건을 고친 뒤 돌아오세요.</p>
+        <StartEditor spec={spec} onApply={onSetSpec} />
+        <p className="text-[11px] text-faint">검증 탭의 조건과 같이 바뀝니다.</p>
       </section>
 
       <section className="space-y-2 rounded-xl border border-border bg-card p-3 text-sm">

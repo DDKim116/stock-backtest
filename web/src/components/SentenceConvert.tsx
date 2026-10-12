@@ -27,7 +27,7 @@ function sections(text: string): Map<string, string[]> {
 }
 
 // 문장에서 나온 구역만 현재 설정에 덮어쓴다 (나머지는 지금 설정 유지)
-function merge(current: string, patch: string): string {
+export function mergeSpecText(current: string, patch: string): string {
   const cur = sections(current);
   const add = sections(patch);
   const names = ["신호", "매수", "청산", "대상", "비용", "옵션"];
@@ -75,7 +75,7 @@ export default function SentenceConvert({
     setBusy(true);
     try {
       const cur = await api<{ text: string }>("/api/to-text", { body: spec });
-      const r = await api<{ spec: Spec }>("/api/parse", { body: { text: merge(cur.text, res.spec) } });
+      const r = await api<{ spec: Spec }>("/api/parse", { body: { text: mergeSpecText(cur.text, res.spec) } });
       setErr(null);
       return r.spec;
     } catch (e) {
