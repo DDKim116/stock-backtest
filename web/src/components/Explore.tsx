@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { pct, retClass } from "@/lib/format";
+import ExploreReview from "./ExploreReview";
 import type { DatasetInfo, ExploreAxis, ExploreJob, ExplorePlan, ExploreRow, Spec } from "@/lib/types";
 
 const JOB_KEY = "sbt-explore-job";
@@ -41,10 +42,12 @@ export default function Explore({
   spec,
   dataset,
   onUse,
+  onSetSpec,
 }: {
   spec: Spec;
   dataset: DatasetInfo | undefined;
   onUse: (s: Spec) => void;
+  onSetSpec: (s: Spec) => void;
 }) {
   const [plan, setPlan] = useState<ExplorePlan | null>(null);
   const [planErr, setPlanErr] = useState<string | null>(null);
@@ -52,6 +55,8 @@ export default function Explore({
   const [job, setJob] = useState<ExploreJob | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [showMiss, setShowMiss] = useState(false);
+  const [shown, setShown] = useState(10);
+  const [bestRank, setBestRank] = useState(0);
   const [jobId, setJobId] = useState<string | null>(readJob);
   const ds = dataset?.name ?? "kr";
 
@@ -256,15 +261,68 @@ export default function Explore({
             </p>
           </div>
 
+          {res.axis_effects && res.axis_effects.length > 0 && (
+            <details className="rounded-xl border border-border bg-card p-3 text-sm">
+              <summary className="cursor-pointer font-semibold">값별 평균 수익률</summary>
+              <p className="mt-1 text-[11px] text-faint">
+                그 값을 쓴 모든 조합의 평균 수익률(중앙값). 과거 → 검증 구간 순. 어느 쪽 값이 통하는지 방향을 볼 때 씁니다.
+              </p>
+              <div className="mt-2 space-y-2">
+                {res.axis_effects.map((a, k) => (
+                  <div key={a.key}>
+                    <div className="text-xs text-muted">{a.key}</div>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {a.values.map((v, i) => (
+                        <span key={i} className="tabular rounded bg-background px-1.5 py-0.5 text-xs">
+                          {fmtVal(res.axes[k], v.value)}:{" "}
+                          <span className={retClass(v.is_avg)}>{pct(v.is_avg, 2, true)}</span> →{" "}
+                          <span className={retClass(v.oos_avg)}>{pct(v.oos_avg, 2, true)}</span>
+                          <span className="text-faint"> · 통과 {v.passed}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+
+          {job && job.status !== "running" && (
+            <ExploreReview
+              key={job.id}
+              jobId={job.id}
+              initial={job.review}
+              onBest={(rank) => {
+                setBestRank(rank);
+                setShown((n) => Math.max(n, rank));
+              }}
+              onExplore={(sp) => {
+                onSetSpec(sp);
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+              onRun={onUse}
+            />
+          )}
+
           {res.passed.length === 0 && (
             <p className="rounded-xl border border-border bg-card p-4 text-center text-sm text-muted">
               통과한 조합이 없습니다. 이 아이디어는 비용을 빼고 나면 꾸준한 우위가 없다는 뜻일 수 있어요. 아래 &apos;아깝게 탈락&apos;을 참고해
               조건을 바꿔 보세요.
             </p>
           )}
-          {res.passed.map((r, i) => (
-            <Card key={i} rank={i + 1} r={r} axes={res.axes} onUse={onUse} />
+          {res.passed.slice(0, shown).map((r, i) => (
+            <Card key={i} rank={i + 1} best={bestRank === i + 1 || job?.review?.best.rank === i + 1} r={r} axes={res.axes} onUse={onUse} />
           ))}
+
+          {res.passed.length > shown && (
+            <button
+              type="button"
+              onClick={() => setShown(shown + 10)}
+              className="w-full rounded-xl border border-border bg-card py-2 text-sm text-muted"
+            >
+              더 보기 ({res.passed.length - shown}개 남음)
+            </button>
+          )}
 
           {res.near_miss.length > 0 && (
             <div>
@@ -296,11 +354,13 @@ function Card({
   r,
   axes,
   rank,
+  best,
   onUse,
 }: {
   r: ExploreRow;
   axes: ExploreAxis[];
   rank?: number;
+  best?: boolean;
   onUse: (s: Spec) => void;
 }) {
   const cell = (label: string, b: ExploreRow["is"]) => (
@@ -315,9 +375,10 @@ function Card({
     </div>
   );
   return (
-    <div className="space-y-2 rounded-xl border border-border bg-card p-3 text-sm">
+    <div className={`space-y-2 rounded-xl border bg-card p-3 text-sm ${best ? "border-accent" : "border-border"}`}>
       <div className="flex flex-wrap items-center gap-1.5">
         {rank && <span className="mr-1 font-bold text-accent">{rank}위</span>}
+        {best && <span className="rounded bg-accent px-1.5 py-0.5 text-[11px] font-semibold text-white">AI 추천</span>}
         {axes.map((a, k) => (
           <span key={a.key} className="tabular rounded bg-accent-soft px-1.5 py-0.5 text-xs text-accent">
             {shortKey(a)} {fmtVal(a, r.combo[k])}

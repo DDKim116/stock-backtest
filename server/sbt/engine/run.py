@@ -264,6 +264,7 @@ class Runner:
             if progress:
                 progress(k + 1, len(plan.combos))
         explore.judge(rows, plan)
+        effects = explore.axis_effects(rows, plan)
         dates = self.panel.dates[self._universe(spec)]
         return {
             "axes": [{"key": a.key, "kind": a.kind, "values": a.values} for a in plan.axes],
@@ -273,5 +274,6 @@ class Runner:
             "period": [str(dates.min()), str(dates.max())] if len(dates) else None,
             "elapsed": round(time.time() - t0, 1),
             **explore.summarize_run(rows),
+            "axis_effects": effects,
             "dataset": self.dataset,
         }

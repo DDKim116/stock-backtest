@@ -142,3 +142,47 @@ def explain(result: dict, spec_text: str, model: str) -> dict:
         "suggestions": sugg,
         "usage": usage,
     }
+
+
+def _compact_explore(res: dict) -> dict:
+    axes = res["axes"]
+
+    def params(r):
+        return {a["key"]: v for a, v in zip(axes, r["combo"])}
+
+    def slim(r, rank=None):
+        d = {"params": params(r), "is": r["is"], "oos": r["oos"], "pos_years": r["pos_years"],
+             "neighbor_avg": r["neighbor_avg"], "baseline_avg_ret": r["baseline"].get("avg_ret")}
+        if rank:
+            d["rank"] = rank
+        if r["reasons"]:
+            d["fail_reasons"] = r["reasons"]
+        return d
+
+    return {
+        "split": res["split"], "period": res["period"], "n_total": res["n_total"], "n_passed": res["n_passed"],
+        "fail_reasons": res["fail_reasons"], "axes": axes, "axis_effects": res.get("axis_effects", []),
+        "passed_top": [slim(r, i + 1) for i, r in enumerate(res["passed"][:10])],
+        "near_miss": [slim(r) for r in res["near_miss"][:5]],
+        "dataset": res["dataset"].get("label"), "synthetic_data": bool(res["dataset"].get("synthetic")),
+    }
+
+
+def review_explore(res: dict, base_text: str, model: str) -> dict:
+    user = ("출발점 조건:\n" + base_text + "\n\n탐색 결과(JSON):\n"
+            + json.dumps(_compact_explore(res), ensure_ascii=False))
+    out, usage = call_json(model, prompts.REVIEW_SYSTEM, user, prompts.REVIEW_SCHEMA)
+    ideas = []
+    for s in out.get("next_ideas", []):
+        try:
+            sp = parse_text(s["text"])
+            if validate(sp):
+                continue
+            ideas.append({"title": s["title"], "why": s["why"], "text": to_text(sp)})
+        except Exception:
+            continue
+    best = out.get("best") or {"rank": 0, "why": ""}
+    if not (0 <= int(best.get("rank", 0)) <= len(res["passed"])):
+        best = {"rank": 0, "why": best.get("why", "")}
+    return {"verdict": out.get("verdict", ""), "best": best, "patterns": out.get("patterns", []),
+            "risks": out.get("risks", []), "next_ideas": ideas, "usage": usage}

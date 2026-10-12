@@ -250,10 +250,12 @@ export default function App() {
         <Explore
           spec={spec}
           dataset={current}
+          onSetSpec={(s) => setSpec(current ? fitToDataset(s, current) : s)}
           onUse={(s) => {
-            setSpec(s);
+            const f = current ? fitToDataset(s, current) : s;
+            setSpec(f);
             setTab("run");
-            run(s);
+            run(f);
           }}
         />
       )}

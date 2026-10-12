@@ -143,7 +143,7 @@ export interface AIStatus {
   month_usd: number;
   month_krw: number;
   limit_krw: number;
-  estimate_krw: { translate: number; explain: number };
+  estimate_krw: { translate: number; explain: number; review?: number };
 }
 
 export interface AIUsage {
@@ -259,6 +259,11 @@ export interface ExploreResult {
   fail_reasons: [string, number][];
   passed: ExploreRow[];
   near_miss: ExploreRow[];
+  axis_effects?: {
+    key: string;
+    kind: ExploreAxis["kind"];
+    values: { value: number | null; is_avg: number | null; oos_avg: number | null; passed: number; n: number }[];
+  }[];
   dataset: { name: string; label: string; currency?: string };
 }
 
@@ -270,4 +275,14 @@ export interface ExploreJob {
   result: ExploreResult | null;
   error: string | null;
   elapsed: number;
+  review?: ExploreReview;
+}
+
+export interface ExploreReview {
+  verdict: string;
+  best: { rank: number; why: string };
+  patterns: string[];
+  risks: string[];
+  next_ideas: { title: string; why: string; text: string }[];
+  usage: AIUsage;
 }

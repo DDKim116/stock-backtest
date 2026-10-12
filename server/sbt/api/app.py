@@ -301,7 +301,7 @@ def explore_start(body: ExploreIn):
         if any(j["status"] == "running" for j in _jobs.values()):
             raise HTTPException(409, "다른 탐색이 진행 중입니다. 끝난 뒤 다시 시도하세요.")
         job_id = secrets.token_hex(6)
-        job = {"id": job_id, "status": "running", "done": 0, "total": len(plan.combos), "result": None,
+        job = {"id": job_id, "status": "running", "spec_text": to_text(spec), "dataset": body.dataset, "done": 0, "total": len(plan.combos), "result": None,
                "error": None, "started": time.time(), "cancel": False}
         _jobs[job_id] = job
         for k in [k for k, j in _jobs.items() if j["status"] != "running" and k != job_id][:-5]:
@@ -326,7 +326,8 @@ def explore_status(job_id: str):
     job = _jobs.get(job_id)
     if not job:
         raise HTTPException(404, "탐색 기록이 없습니다 (서버가 다시 시작되었을 수 있습니다)")
-    return {k: v for k, v in job.items() if k != "cancel"} | {"elapsed": round(time.time() - job["started"], 1)}
+    return {k: v for k, v in job.items() if k not in ("cancel", "spec_text")} | {
+        "elapsed": round(time.time() - job["started"], 1)}
 
 
 @app.delete("/api/explore/{job_id}", dependencies=[Depends(auth)])
@@ -440,7 +441,7 @@ def ai_status_dict() -> dict:
     st = ai_settings()
     used = store.month_usage()
     base = AI_EST.get(st["model"], 0.08)
-    est = {k: round(used["avg_by_kind"].get(k, base) * st["krw_rate"]) for k in ("translate", "explain")}
+    est = {k: round(used["avg_by_kind"].get(k, base) * st["krw_rate"]) for k in ("translate", "explain", "review")}
     return {
         "enabled": ai_client.enabled(),
         **st,
@@ -545,6 +546,28 @@ def ai_explain(body: ExplainIn):
         raise HTTPException(e.status, str(e))
     store.add_usage("explain", out["usage"])
     out["usage"] = _usage_out(out["usage"], st)
+    return out
+
+
+class ReviewIn(BaseModel):
+    job_id: str
+
+
+@app.post("/api/ai/explore-review", dependencies=[Depends(auth)])
+def ai_explore_review(body: ReviewIn):
+    st = _ai_guard()
+    job = _jobs.get(body.job_id)
+    if not job or not job.get("result"):
+        raise HTTPException(404, "탐색 결과가 없습니다. 탐색을 다시 실행해 주세요.")
+    if job.get("review"):
+        return job["review"]  # 같은 결과는 다시 요금을 내지 않도록
+    try:
+        out = ai_service.review_explore(job["result"], job["spec_text"], st["model"])
+    except ai_client.AIError as e:
+        raise HTTPException(e.status, str(e))
+    store.add_usage("review", out["usage"])
+    out["usage"] = _usage_out(out["usage"], st)
+    job["review"] = out
     return out
 
 

@@ -139,3 +139,27 @@ def test_disabled_without_key(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     with pytest.raises(ai_client.AIError):
         ai_client.call_json("claude-opus-5-5", "s", "u", {})
+
+
+def test_review_explore(monkeypatch):
+    from sbt.engine.spec import parse_text
+    from sbt.engine.run import Runner
+    from sbt.data.panel import Panel
+    from sbt.data import synthetic, build
+    import tempfile, pathlib
+    d = pathlib.Path(tempfile.mkdtemp()) / "demo"
+    synthetic.write(d, n_codes=30, start="2016-01-01", end="2020-12-31")
+    build.build(d, log=lambda *a: None)
+    runner = Runner(Panel.load(d / "prices.parquet"), {"name": "demo", "markets": ["KOSPI", "KOSDAQ"]})
+    spec = parse_text("[신호]\n등락률 >= [5, 8]\n[청산]\n목표 = [3, 5]\n")
+    res = runner.explore(spec, "2019-01-01")
+    assert res["axis_effects"] and res["axis_effects"][0]["values"][0]["n"] == 2
+    out = {"verdict": "좋음", "best": {"rank": 99, "why": "x"}, "patterns": ["p"], "risks": [],
+           "next_ideas": [{"title": "손절", "why": "w", "text": "[신호]\n등락률 >= [6, 7]\n[청산]\n손절 = 5\n"},
+                          {"title": "틀림", "why": "w", "text": "[신호]\n등락률 >= 12%\n"}]}
+    fake, calls = fake_calls([out])
+    monkeypatch.setattr(service, "call_json", fake)
+    r = service.review_explore(res, "[신호]\n등락률 >= [5, 8]\n", "claude-opus-5-5")
+    assert r["best"]["rank"] == 0  # 범위 밖 순위는 0 으로
+    assert len(r["next_ideas"]) == 1 and "[6, 7]" in r["next_ideas"][0]["text"]
+    assert "axis_effects" in calls[0] and "passed_top" in calls[0]

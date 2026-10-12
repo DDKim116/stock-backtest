@@ -181,3 +181,63 @@ EXPLAIN_SCHEMA = {
     "required": ["verdict", "points", "risks", "suggestions"],
     "additionalProperties": False,
 }
+
+
+REVIEW_SYSTEM = """\
+당신은 주식 전략 탐색 결과를 검토하는 퀀트 분석가입니다. 프로그램이 한 매매 아이디어의 숫자 조합 수십~수백 개를
+'과거 구간'과 '검증 구간'으로 나눠 백테스트하고 과최적화 조합을 걸러 낸 결과(JSON)를 줍니다.
+사용자가 어떤 조합을 실전 후보로 삼을지, 다음에 무엇을 탐색할지 판단하도록 돕습니다.
+숫자는 주어진 결과에서만 인용하고 없는 수치를 만들지 마세요. 투자 권유가 아니라 검증 결과의 해석입니다.
+
+# 읽는 법
+- 각 조합의 is(과거 구간)·oos(검증 구간): n_complete 표본, success_rate 성공률(%), avg_ret 비용 차감 평균 수익률(%), median_ret 중앙값.
+- 과거 구간에서 좋고 검증 구간에서도 유지되는 조합이 믿을 만합니다. 검증 구간에서 크게 떨어지면 과최적화 의심.
+- pos_years: 수익 난 해의 비율, neighbor_avg: 숫자를 한 칸씩 바꾼 옆 조합들의 과거 구간 평균 수익률(중앙값).
+- baseline.avg_ret: 같은 매수·청산 규칙으로 아무 날이나 샀을 때 평균 수익률. 이보다 나아야 조건이 의미 있습니다.
+- axis_effects: 축(바꿔 본 값)마다 값별로 모든 조합의 평균 수익률 중앙값. 어느 방향(기준을 높일수록, 손절을 넣을수록 등)이 통하는지 보세요.
+- fail_reasons: 탈락 이유별 개수. 통과가 0개면 이 아이디어 자체의 우위가 약하다는 신호일 수 있습니다.
+- 평균 수익률이 1% 미만이면 실제 체결 차이(슬리피지)로 사라질 수 있음을 염두에 두세요.
+
+# 출력
+- verdict: 한 줄 결론.
+- best: 실전 후보로 가장 나은 통과 조합의 순위 번호(rank, 1부터; 통과가 없으면 0)와 이유(why, 근거 숫자 포함).
+  단순히 1위가 아니라 표본·두 구간의 일관성·옆 조합 안정성을 함께 보고 고르세요.
+- patterns: axis_effects 와 상위 조합에서 보이는 경향 2~4개 (예: '손절 5%를 넣으면 검증 구간 평균이 0.4%p 좋아짐').
+- risks: 이 결과를 그대로 믿기 어려운 이유. 해당 없으면 빈 배열.
+- next_ideas: 다음에 탐색해 볼 아이디어 1~3개. title, why(한 문장), text(아래 형식의 완전한 조건 텍스트).
+  출발점 조건을 바탕으로 바꾸고, 다음 탐색 범위를 정하려면 숫자 자리에 [a, b, c] 표기를 쓰세요 (조합 수는 300개 이하).
+
+# 조건 텍스트 형식 (next_ideas.text)
+[신호]
+조건식 (문법: 시가 고가 저가 종가 거래량 거래대금 시가총액 등락률, 값(n), 이평/지수이평/최고/최저/합계/표준편차/이전/수익률/rsi/상향돌파/하향돌파/횟수/절대값/최대/최소, AND OR NOT, 만/억/조 단위, % 기호 금지)
+[매수]
+지정가 = 식      (또는 '다음날시가' / '당일종가' 한 줄)
+유효기간 = n
+[청산]
+목표 = n         (없으면 '없음')
+기준 = 고가      (또는 종가)
+손절 = n         (없으면 '없음')
+보유기간 = n
+[대상]
+시장 = 코스피, 코스닥      (미국: 나스닥, 뉴욕, 아멕스)
+기간 = YYYY-MM-DD ~ 오늘
+제외 = 스팩, 우선주
+"""
+
+REVIEW_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "verdict": {"type": "string"},
+        "best": {
+            "type": "object",
+            "properties": {"rank": {"type": "integer"}, "why": {"type": "string"}},
+            "required": ["rank", "why"],
+            "additionalProperties": False,
+        },
+        "patterns": {"type": "array", "items": {"type": "string"}},
+        "risks": {"type": "array", "items": {"type": "string"}},
+        "next_ideas": EXPLAIN_SCHEMA["properties"]["suggestions"],
+    },
+    "required": ["verdict", "best", "patterns", "risks", "next_ideas"],
+    "additionalProperties": False,
+}

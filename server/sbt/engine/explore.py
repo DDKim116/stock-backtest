@@ -195,6 +195,22 @@ def judge(rows: list[dict], plan: Plan) -> None:
         r["score"] = min(both) if len(both) == 2 else None
 
 
+def axis_effects(rows: list[dict], plan: Plan) -> list[dict]:
+    """축의 값마다, 그 값을 쓴 모든 조합의 평균 수익률 중앙값 (어느 방향이 통하는지 보기 위함)."""
+    out = []
+    for k, a in enumerate(plan.axes):
+        vals = []
+        for v in a.values:
+            sub = [r for r in rows if r["combo"][k] == v]
+            def med(part):
+                xs = [r[part]["avg_ret"] for r in sub if r[part]["avg_ret"] is not None]
+                return round(float(np.median(xs)), 2) if xs else None
+            vals.append({"value": v, "is_avg": med("is"), "oos_avg": med("oos"),
+                         "passed": sum(r["passed"] for r in sub), "n": len(sub)})
+        out.append({"key": a.key, "kind": a.kind, "values": vals})
+    return out
+
+
 def summarize_run(rows: list[dict]) -> dict:
     passed = [r for r in rows if r["passed"]]
     passed.sort(key=lambda r: r["score"], reverse=True)
