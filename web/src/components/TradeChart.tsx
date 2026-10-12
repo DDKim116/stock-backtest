@@ -68,7 +68,7 @@ export default function TradeChart({
       grid: { vertLines: { visible: false }, horzLines: { color: grid } },
       rightPriceScale: { borderVisible: false },
       timeScale: { borderVisible: false },
-      localization: { locale: "ko-KR", priceFormatter: (p: number) => price(p, currency) },
+      localization: { locale: "ko-KR" },
     });
     const candles = chart.addSeries(CandlestickSeries, {
       upColor: up,
@@ -78,16 +78,23 @@ export default function TradeChart({
       wickUpColor: up,
       wickDownColor: down,
       priceLineVisible: false,
+      priceFormat: { type: "custom", formatter: (p: number) => price(p, currency), minMove: 0.01 },
     });
     candles.setData(bars.map((b) => ({ time: b.t as Time, open: b.o, high: b.h, low: b.l, close: b.c })));
-    const vol = chart.addSeries(HistogramSeries, {
-      priceScaleId: "vol",
-      priceFormat: { type: "volume" },
-      lastValueVisible: false,
-      priceLineVisible: false,
-    });
-    chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
-    candles.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.25 } });
+    // 거래량은 아래 별도 칸에 (같은 축을 쓰면 가격 축에 0·음수 눈금이 생김)
+    const vol = chart.addSeries(
+      HistogramSeries,
+      {
+        priceFormat: { type: "volume" },
+        lastValueVisible: false,
+        priceLineVisible: false,
+      },
+      1,
+    );
+    const [pricePane, volPane] = chart.panes();
+    pricePane.setStretchFactor(4);
+    volPane.setStretchFactor(1);
+    candles.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.05 } });
     vol.setData(
       bars.map((b) => ({ time: b.t as Time, value: b.v, color: (b.c >= b.o ? up : down) + "66" })),
     );
