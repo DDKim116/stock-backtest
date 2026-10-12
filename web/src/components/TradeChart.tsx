@@ -19,6 +19,13 @@ function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
+const RANGES = [
+  { label: "3개월", bars: 63 },
+  { label: "6개월", bars: 126 },
+  { label: "1년", bars: 250 },
+  { label: "2년", bars: 500 },
+];
+
 function shiftDate(d: string, days: number): string {
   const t = new Date(d + "T00:00:00Z");
   t.setUTCDate(t.getUTCDate() + days);
@@ -42,14 +49,16 @@ export default function TradeChart({
   const [bars, setBars] = useState<Bar[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [hover, setHover] = useState<Bar | null>(null);
+  const [span, setSpan] = useState(RANGES[1].bars);
+  const chartRef = useRef<IChartApi | null>(null);
 
   useEffect(() => {
     const end = trade.exit_date ?? trade.fill_date ?? trade.signal_date;
     const q = new URLSearchParams({
       dataset,
       code: trade.code,
-      start: shiftDate(trade.signal_date, -150),
-      end: shiftDate(end, 45),
+      start: shiftDate(trade.signal_date, -760),
+      end: shiftDate(end, 370),
     });
     api<{ bars: Bar[] }>(`/api/chart?${q}`)
       .then((r) => setBars(r.bars))
@@ -136,17 +145,27 @@ export default function TradeChart({
       candles.createPriceLine({ price: trade.limit, color: fg, lineStyle: LineStyle.Dashed, lineWidth: 1, title: "지정가" });
     }
 
-    // 신호일 앞뒤가 보이도록 범위 설정
-    const idx = bars.findIndex((b) => b.t >= trade.signal_date);
-    const endIdx = Math.max(idx, bars.findIndex((b) => b.t >= (trade.exit_date ?? trade.signal_date)));
-    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, idx - 40), to: Math.min(bars.length, endIdx + 15) });
+    chartRef.current = chart;
 
     const byTime = new Map(bars.map((b) => [b.t, b]));
     chart.subscribeCrosshairMove((p) => {
       setHover(p.time ? (byTime.get(String(p.time)) ?? null) : null);
     });
-    return () => chart.remove();
+    return () => {
+      chartRef.current = null;
+      chart.remove();
+    };
   }, [bars, trade, spec, currency]);
+
+  // 보이는 기간: 매수·매도 지점이 오른쪽에 오도록 앞쪽을 span 만큼 보여 준다
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || !bars) return;
+    const idx = Math.max(0, bars.findIndex((b) => b.t >= trade.signal_date));
+    const exitIdx = bars.findIndex((b) => b.t >= (trade.exit_date ?? trade.signal_date));
+    const right = Math.min(bars.length - 1, Math.max(idx, exitIdx) + Math.max(10, Math.round(span * 0.12)));
+    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, right - span), to: right + 1 });
+  }, [bars, trade, span]);
 
   const shown = hover ?? bars?.find((b) => b.t === trade.signal_date) ?? null;
 
@@ -179,6 +198,18 @@ export default function TradeChart({
         ) : (
           <span>차트를 눌러 가격 확인</span>
         )}
+      </div>
+      <div className="flex gap-1 px-4 pb-1">
+        {RANGES.map((r) => (
+          <button
+            key={r.label}
+            type="button"
+            onClick={() => setSpan(r.bars)}
+            className={`rounded-md px-2.5 py-1 text-xs ${span === r.bars ? "bg-accent text-white" : "border border-border text-muted"}`}
+          >
+            {r.label}
+          </button>
+        ))}
       </div>
       <div className="relative min-h-0 flex-1">
         {err && <p className="p-4 text-sm text-critical">⚠ {err}</p>}

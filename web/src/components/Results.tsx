@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { num, pct, price, retClass } from "@/lib/format";
 import type { BreakdownRow, Check, RunResult, SingleResult, Spec, SweepResult, Trade } from "@/lib/types";
 import AIExplain from "./AIExplain";
@@ -96,6 +96,21 @@ function Single({ r, onBack }: { r: SingleResult; onBack?: () => void }) {
   const [filter, setFilter] = useState<(typeof OUTCOME_FILTERS)[number]>("전체");
   const [limit, setLimit] = useState(100);
   const [open, setOpen] = useState<Trade | null>(null);
+  // 차트를 열 때 기록을 하나 쌓아서 휴대폰 '뒤로 가기'로 차트만 닫히게 한다
+  const openChart = (t: Trade) => {
+    window.history.pushState({ sbtChart: true }, "");
+    setOpen(t);
+  };
+  const closeChart = () => {
+    if (window.history.state?.sbtChart) window.history.back();
+    else setOpen(null);
+  };
+  useEffect(() => {
+    if (!open) return;
+    const onPop = () => setOpen(null);
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [open]);
   const [copied, setCopied] = useState(false);
   const s = r.summary;
   const b = r.baseline;
@@ -215,7 +230,7 @@ function Single({ r, onBack }: { r: SingleResult; onBack?: () => void }) {
         <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
           {trades.slice(0, limit).map((t, i) => (
             <li key={`${t.code}-${t.signal_date}-${i}`}>
-              <button type="button" onClick={() => setOpen(t)} className="flex w-full items-center gap-3 px-3 py-2.5 text-left">
+              <button type="button" onClick={() => openChart(t)} className="flex w-full items-center gap-3 px-3 py-2.5 text-left">
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium">
                     {t.name} <span className="text-xs font-normal text-faint">{t.code}</span>
@@ -249,7 +264,7 @@ function Single({ r, onBack }: { r: SingleResult; onBack?: () => void }) {
         계산 {r.elapsed}초 · {r.dataset.label} · 수정주가·일봉 기준
       </p>
       {open && (
-        <TradeChart trade={open} spec={r.spec} dataset={r.dataset.name} currency={cur} onClose={() => setOpen(null)} />
+        <TradeChart trade={open} spec={r.spec} dataset={r.dataset.name} currency={cur} onClose={closeChart} />
       )}
     </div>
   );
