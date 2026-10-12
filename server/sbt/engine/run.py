@@ -7,6 +7,7 @@ import numpy as np
 
 from ..data.panel import Panel
 from . import dsl, event, stats
+from .stats import _r
 from .spec import MARKET_LABEL, Spec, expand, validate
 
 BASELINE_SAMPLE = 200_000
@@ -134,3 +135,85 @@ class Runner:
             out["trades_truncated"] = len(t) > len(out["trades"])
         out["elapsed"] = round(time.time() - t0, 2)
         return out
+
+
+    # ------------------------------------------------------------ 오늘 신호 (검색기)
+    def scan(self, spec: Spec, days: int | None = None, limit: int = 500) -> dict:
+        """최근 days 거래일 동안 신호가 난 종목과 지금 주문·보유 상태.
+
+        지정가 매수면 기본으로 유효기간만큼 거슬러 올라가 아직 주문이 살아 있는 신호까지 보여 준다.
+        """
+        errs = validate(spec)
+        if errs:
+            raise SpecError(errs)
+        self._check_markets(spec)
+        variants = expand(spec)
+        if len(variants) > 1:
+            raise SpecError(["검색에서는 숫자 자리에 값을 하나만 넣어 주세요 (비교표는 검증에서만 됩니다)"])
+        s = variants[0][1]
+        s = s.model_copy(update={"universe": s.universe.model_copy(update={"end": None})})
+        p = self.panel
+        if days is None:
+            days = int(s.entry.valid_days) if s.entry.type == "limit" else 1
+        days = max(1, min(int(days), 20))
+        tdays = np.unique(p.dates)
+        last = tdays[-1]
+        since = tdays[max(0, len(tdays) - days)]
+        cond = dsl.evaluate(s.signal, p, self.ev)
+        if cond.dtype != bool:
+            raise SpecError(["신호는 비교식(>=, < 등)이어야 합니다. 예: 등락률 >= 12"])
+        m = cond & np.isin(p.markets, s.universe.markets) & (p.dates >= since) & (p.pos > 0)
+        if s.universe.exclude_spac:
+            m &= ~p.is_spac
+        if s.universe.exclude_preferred:
+            m &= ~p.is_preferred
+        sig = np.flatnonzero(m)
+        t = event.simulate(p, sig, s, self._limit(s), self._fx(s))
+        day_idx = {d: k for k, d in enumerate(tdays)}
+        c = p.cols
+        rows = []
+        for k in range(len(t)):
+            i = int(t.sig[k])
+            after = len(tdays) - 1 - day_idx[p.dates[i]]  # 신호일 뒤로 지난 거래일 수
+            g_last = int(p.gend[i])  # 이 종목의 마지막 행
+            fr = int(t.fill_row[k])
+            er = int(t.exit_row_c[k])
+            outcome = event.OUTCOME_LABEL[int(t.outcome_c[k])]
+            ret_now = None
+            if s.entry.type == "close":
+                fr = i
+            if fr >= 0:
+                if er >= 0 and outcome != "진행중":
+                    status, kind = f"청산됨 · {outcome}", "closed"
+                else:
+                    status, kind = "보유 중", "holding"
+                    ret_now = _r((c["close"][g_last] / t.fill_price[k] - 1) * 100) if np.isfinite(t.fill_price[k]) else None
+            elif s.entry.type == "limit":
+                left = int(s.entry.valid_days) - after
+                status, kind = (f"주문 대기 · 남은 {left}일", "pending") if left > 0 else ("미체결 · 기간 끝남", "expired")
+            elif s.entry.type == "next_open":
+                status, kind = ("다음 거래일 시가 매수", "pending") if after == 0 else ("미체결", "expired")
+            else:
+                status, kind = "신호일 종가 매수", "holding"
+            prev = c["close"][i - 1]
+            rows.append({
+                "code": p.codes[i], "name": p.names[i], "market": MARKET_LABEL.get(p.markets[i], p.markets[i]),
+                "signal_date": str(p.dates[i]), "close": _r(c["close"][i]),
+                "change": _r((c["close"][i] / prev - 1) * 100) if prev > 0 else None,
+                "volume": _r(c["volume"][i], 0), "value": _r(c["value"][i], 0) if "value" in c else None,
+                "mktcap": _r(c["mktcap"][i], 0) if "mktcap" in c else None,
+                "limit": _r(t.limit[k]), "fill_date": str(p.dates[fr]) if fr >= 0 else None,
+                "fill_price": _r(t.fill_price[k]) if fr >= 0 else None,
+                "last_close": _r(c["close"][g_last]), "ret_now": ret_now,
+                "status": status, "kind": kind, "outcome": outcome,
+                "exit_date": str(p.dates[er]) if er >= 0 and kind == "closed" else None,
+                "exit_price": _r(t.exit_price_c[k]) if kind == "closed" else None,
+                "ret": _r(t.ret_c[k]) if kind == "closed" else None,
+                "mfe": _r(t.mfe[k]), "mae": _r(t.mae[k]),
+            })
+        order = {"pending": 0, "holding": 1, "closed": 2, "expired": 3}
+        rows.sort(key=lambda r: r["signal_date"], reverse=True)
+        rows.sort(key=lambda r: order[r["kind"]])
+        return {"as_of": str(last), "since": str(since), "days": days, "count": len(rows),
+                "rows": rows[:limit], "truncated": len(rows) > limit,
+                "spec": s.model_dump(mode="json"), "dataset": self.dataset}

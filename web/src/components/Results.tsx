@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useBackClose } from "@/lib/useBackClose";
 import { num, pct, price, retClass } from "@/lib/format";
 import type { BreakdownRow, Check, RunResult, SingleResult, Spec, SweepResult, Trade } from "@/lib/types";
 import AIExplain from "./AIExplain";
@@ -96,21 +97,13 @@ function Single({ r, onBack }: { r: SingleResult; onBack?: () => void }) {
   const [filter, setFilter] = useState<(typeof OUTCOME_FILTERS)[number]>("전체");
   const [limit, setLimit] = useState(100);
   const [open, setOpen] = useState<Trade | null>(null);
-  // 차트를 열 때 기록을 하나 쌓아서 휴대폰 '뒤로 가기'로 차트만 닫히게 한다
+  const closed = useCallback(() => setOpen(null), []);
+  const back = useBackClose(!!open, closed);
   const openChart = (t: Trade) => {
-    window.history.pushState({ sbtChart: true }, "");
+    back.push();
     setOpen(t);
   };
-  const closeChart = () => {
-    if (window.history.state?.sbtChart) window.history.back();
-    else setOpen(null);
-  };
-  useEffect(() => {
-    if (!open) return;
-    const onPop = () => setOpen(null);
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, [open]);
+  const closeChart = back.close;
   const [copied, setCopied] = useState(false);
   const s = r.summary;
   const b = r.baseline;

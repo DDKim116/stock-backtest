@@ -65,3 +65,21 @@ def test_strategies(client):
     assert any(s["id"] == sid for s in client.get("/api/strategies").json())
     client.delete(f"/api/strategies/{sid}")
     assert not any(s["id"] == sid for s in client.get("/api/strategies").json())
+
+
+def test_scan(client):
+    r = client.post("/api/scan", json={"dataset": "demo", "text": "[신호]\n등락률 >= 5\n"})
+    assert r.status_code == 200, r.text
+    j = r.json()
+    assert j["days"] == 5  # 지정가 기본 유효기간만큼
+    assert j["since"] <= j["as_of"]
+    for x in j["rows"]:
+        assert j["since"] <= x["signal_date"] <= j["as_of"]
+        assert x["change"] is None or x["change"] >= 5 - 1e-6
+        assert x["kind"] in ("pending", "holding", "closed", "expired")
+        if x["kind"] == "pending":
+            assert x["limit"] is not None and x["fill_date"] is None
+    r = client.post("/api/scan", json={"dataset": "demo", "text": "[신호]\n등락률 >= 5\n[매수]\n다음날시가\n"})
+    assert r.json()["days"] == 1
+    r = client.post("/api/scan", json={"dataset": "demo", "text": "[신호]\n등락률 >= [5, 6]\n"})
+    assert r.status_code == 422

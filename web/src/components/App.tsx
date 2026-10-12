@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError, apiUrl, setApiUrl, setToken } from "@/lib/api";
 import { pct } from "@/lib/format";
-import type { DatasetInfo, RunResult, SingleResult, Spec, Strategy } from "@/lib/types";
+import type { DatasetInfo, RunResult, ScanResult, SingleResult, Spec, Strategy } from "@/lib/types";
 import { useAIStatus } from "./AIAsk";
 import Editor, { DEFAULT_SPEC } from "./Editor";
 import Results from "./Results";
+import ScanResults from "./ScanResults";
 
 type Tab = "run" | "saved" | "help" | "settings";
 
@@ -43,6 +44,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("run");
   const [spec, setSpec] = useState<Spec>(DEFAULT_SPEC);
   const [result, setResult] = useState<RunResult | null>(null);
+  const [scan, setScan] = useState<ScanResult | null>(null);
   const [detail, setDetail] = useState<SingleResult | null>(null);
   const [running, setRunning] = useState(false);
   const [runSpec, setRunSpec] = useState<Spec>(DEFAULT_SPEC);
@@ -90,8 +92,27 @@ export default function App() {
         setRunSpec(s);
         setResult(r);
         setDetail(null);
+        setScan(null);
       }
       setTimeout(() => document.getElementById("results")?.scrollIntoView({ behavior: "smooth" }), 50);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) setNeedLogin(true);
+      setError((e as Error).message);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  // 오늘 신호: 마지막 거래일 기준으로 조건에 맞는 종목과 주문 상태
+  const doScan = async (s: Spec) => {
+    setRunning(true);
+    setError(null);
+    try {
+      const r = await api<ScanResult>("/api/scan", { body: { dataset, spec: s } });
+      setScan(r);
+      setResult(null);
+      setDetail(null);
+      setTimeout(() => document.getElementById("scan")?.scrollIntoView({ behavior: "smooth" }), 50);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) setNeedLogin(true);
       setError((e as Error).message);
@@ -155,6 +176,7 @@ export default function App() {
             spec={spec}
             setSpec={setSpec}
             onRun={(s) => run(s)}
+            onScan={doScan}
             dataset={current}
             running={running}
             onSave={save}
@@ -163,6 +185,12 @@ export default function App() {
             <p className="mt-4 whitespace-pre-wrap rounded-xl border border-critical/40 bg-card p-3 text-sm text-critical">
               ⚠ {error}
             </p>
+          )}
+          {scan && (
+            <section id="scan" className="mt-6 scroll-mt-4">
+              <h2 className="mb-3 text-lg font-bold">오늘 신호</h2>
+              <ScanResults r={scan} onBacktest={() => run(scan.spec)} />
+            </section>
           )}
           {result && (
             <section id="results" className="mt-6 scroll-mt-4">
@@ -191,6 +219,18 @@ export default function App() {
 
       {!needLogin && tab === "saved" && (
         <Saved
+          onScan={async (st) => {
+            try {
+              const r = await api<{ spec: Spec }>("/api/parse", { body: { text: st.text } });
+              const fitted = current ? fitToDataset(r.spec, current) : r.spec;
+              setSpec(fitted);
+              setTab("run");
+              await doScan(fitted);
+            } catch (e) {
+              setError((e as Error).message);
+              setTab("run");
+            }
+          }}
           onLoad={async (st) => {
             try {
               const r = await api<{ spec: Spec }>("/api/parse", { body: { text: st.text } });
@@ -264,7 +304,7 @@ function Login({ onDone }: { onDone: () => void }) {
   );
 }
 
-function Saved({ onLoad }: { onLoad: (s: Strategy) => void }) {
+function Saved({ onLoad, onScan }: { onLoad: (s: Strategy) => void; onScan: (s: Strategy) => void }) {
   const [items, setItems] = useState<Strategy[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const load = useCallback(() => {
@@ -291,6 +331,13 @@ function Saved({ onLoad }: { onLoad: (s: Strategy) => void }) {
                 </div>
               )}
               <div className="text-[11px] text-faint">{s.updated_at.replace("T", " ")}</div>
+            </button>
+            <button
+              type="button"
+              className="shrink-0 rounded-lg bg-accent px-2.5 py-1.5 text-xs font-semibold text-white"
+              onClick={() => onScan(s)}
+            >
+              오늘 신호
             </button>
             <button
               type="button"

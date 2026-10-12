@@ -172,3 +172,39 @@ export interface ExplainResult {
   suggestions: { title: string; why: string; text: string }[];
   usage: AIUsage;
 }
+
+export interface ScanRow {
+  code: string;
+  name: string;
+  market: string;
+  signal_date: string;
+  close: number | null;
+  change: number | null;
+  volume: number | null;
+  value: number | null;
+  mktcap: number | null;
+  limit: number | null;
+  fill_date: string | null;
+  fill_price: number | null;
+  last_close: number | null;
+  ret_now: number | null;
+  status: string;
+  kind: "pending" | "holding" | "closed" | "expired";
+  outcome: string;
+  exit_date: string | null;
+  exit_price: number | null;
+  ret: number | null;
+  mfe: number | null;
+  mae: number | null;
+}
+
+export interface ScanResult {
+  as_of: string;
+  since: string;
+  days: number;
+  count: number;
+  rows: ScanRow[];
+  truncated: boolean;
+  spec: Spec;
+  dataset: { name: string; label: string; currency?: string };
+}

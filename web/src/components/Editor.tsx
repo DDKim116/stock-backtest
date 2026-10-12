@@ -133,6 +133,7 @@ export default function Editor({
   spec,
   setSpec,
   onRun,
+  onScan,
   dataset,
   running,
   onSave,
@@ -140,6 +141,7 @@ export default function Editor({
   spec: Spec;
   setSpec: (s: Spec) => void;
   onRun: (s: Spec) => void;
+  onScan: (s: Spec) => void;
   dataset: DatasetInfo | undefined;
   running: boolean;
   onSave: (s: Spec) => void;
@@ -205,6 +207,13 @@ export default function Editor({
     }
   };
 
+  const scan = async () => {
+    if (mode === "text") {
+      const s = await applyText();
+      if (s) onScan(s);
+    } else onScan(spec);
+  };
+
   const save = async () => {
     if (mode === "text") {
       const s = await applyText();
@@ -249,6 +258,10 @@ export default function Editor({
       <div className={mode === "sentence" ? "" : "hidden"}>
         <SentenceConvert
           spec={spec}
+          onScan={(s) => {
+            setSpec(s);
+            onScan(s);
+          }}
           onApply={(s) => {
             setSpec(s);
             setMode("build");
@@ -492,7 +505,15 @@ export default function Editor({
           >
             {running ? "계산 중…" : "검증 실행"}
           </button>
-          <button type="button" onClick={save} className="rounded-xl border border-border bg-card px-4 text-sm">
+          <button
+            type="button"
+            onClick={scan}
+            disabled={running}
+            className="rounded-xl border border-accent bg-card px-3 text-sm font-semibold text-accent disabled:opacity-60"
+          >
+            오늘 신호
+          </button>
+          <button type="button" onClick={save} className="rounded-xl border border-border bg-card px-3 text-sm">
             저장
           </button>
         </div>

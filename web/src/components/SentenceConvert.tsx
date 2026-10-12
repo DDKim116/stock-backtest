@@ -53,10 +53,12 @@ export default function SentenceConvert({
   spec,
   onApply,
   onRun,
+  onScan,
 }: {
   spec: Spec;
   onApply: (s: Spec) => void;
   onRun: (s: Spec) => void;
+  onScan: (s: Spec) => void;
 }) {
   const [q, setQ] = useState("");
   const [res, setRes] = useState<SentenceResult | null>(null);
@@ -193,11 +195,22 @@ export default function SentenceConvert({
                 disabled={busy}
                 onClick={async () => {
                   const s = await build();
+                  if (s) onScan(s);
+                }}
+                className="rounded-xl border border-accent px-3 text-sm font-semibold text-accent"
+              >
+                오늘 신호
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={async () => {
+                  const s = await build();
                   if (s) onApply(s);
                 }}
                 className="rounded-xl border border-border px-3 text-sm"
               >
-                조립 화면에서 수정
+                수정
               </button>
             </div>
           )}

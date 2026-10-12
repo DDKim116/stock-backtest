@@ -231,6 +231,27 @@ def run(body: RunIn):
     return res
 
 
+class ScanIn(RunIn):
+    days: int | None = None
+
+
+@app.post("/api/scan", dependencies=[Depends(auth)])
+def scan(body: ScanIn):
+    if body.spec is None and not body.text:
+        raise HTTPException(422, "spec 또는 text 가 필요합니다")
+    try:
+        spec = body.spec or parse_text(body.text or "")
+    except Exception as e:
+        raise HTTPException(422, _err(e))
+    runner = loaded.get(body.dataset)
+    try:
+        return runner.scan(spec, body.days)
+    except SpecError as e:
+        raise HTTPException(422, "\n".join(e.errors))
+    except dsl.DSLError as e:
+        raise HTTPException(422, e.message)
+
+
 @app.get("/api/chart", dependencies=[Depends(auth)])
 def chart(code: str, dataset: str = config.DEFAULT_DATASET, start: str | None = None, end: str | None = None):
     runner = loaded.get(dataset)
