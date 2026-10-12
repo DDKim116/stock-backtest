@@ -208,3 +208,66 @@ export interface ScanResult {
   spec: Spec;
   dataset: { name: string; label: string; currency?: string };
 }
+
+export interface ExploreAxis {
+  key: string;
+  kind: "signal" | "target" | "stop" | "days" | "user";
+  values: (number | null)[];
+}
+
+export interface ExplorePlan {
+  axes: ExploreAxis[];
+  n_combos: number;
+  user_defined: boolean;
+  notes: string[];
+  split: string;
+}
+
+export interface ExploreBrief {
+  n_complete: number;
+  success_rate: number | null;
+  avg_ret: number | null;
+  median_ret: number | null;
+  fill_rate: number | null;
+  n_stop: number;
+}
+
+export interface ExploreRow {
+  combo: (number | null)[];
+  spec: Spec;
+  baseline: { n: number; success_rate: number | null; avg_ret: number | null };
+  all: ExploreBrief;
+  is: ExploreBrief;
+  oos: ExploreBrief;
+  pos_years: number | null;
+  n_years: number;
+  neighbor_avg: number | null;
+  reasons: string[];
+  passed: boolean;
+  score: number | null;
+}
+
+export interface ExploreResult {
+  axes: ExploreAxis[];
+  user_defined: boolean;
+  notes: string[];
+  split: string;
+  period: [string, string] | null;
+  elapsed: number;
+  n_total: number;
+  n_passed: number;
+  fail_reasons: [string, number][];
+  passed: ExploreRow[];
+  near_miss: ExploreRow[];
+  dataset: { name: string; label: string; currency?: string };
+}
+
+export interface ExploreJob {
+  id: string;
+  status: "running" | "done" | "error" | "cancelled";
+  done: number;
+  total: number;
+  result: ExploreResult | null;
+  error: string | null;
+  elapsed: number;
+}

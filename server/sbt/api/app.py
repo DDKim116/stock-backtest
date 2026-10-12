@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import json
 import os
+import secrets
 import threading
 import time
 from pathlib import Path
@@ -250,6 +251,90 @@ def scan(body: ScanIn):
         raise HTTPException(422, "\n".join(e.errors))
     except dsl.DSLError as e:
         raise HTTPException(422, e.message)
+
+
+# ---------------------------------------------------------------- 전략 탐색 (오래 걸려서 뒤에서 돌림)
+
+class ExploreIn(RunIn):
+    split: str | None = None
+
+
+_jobs: dict[str, dict] = {}
+_jobs_lock = threading.Lock()
+
+
+def _spec_of(body: RunIn) -> Spec:
+    if body.spec is None and not body.text:
+        raise HTTPException(422, "spec 또는 text 가 필요합니다")
+    try:
+        return body.spec or parse_text(body.text or "")
+    except Exception as e:
+        raise HTTPException(422, _err(e))
+
+
+@app.post("/api/explore/plan", dependencies=[Depends(auth)])
+def explore_plan(body: ExploreIn):
+    spec = _spec_of(body)
+    runner = loaded.get(body.dataset)
+    try:
+        plan, cut = runner.explore_plan(spec, body.split)
+    except SpecError as e:
+        raise HTTPException(422, "\n".join(e.errors))
+    except dsl.DSLError as e:
+        raise HTTPException(422, e.message)
+    return {"axes": [{"key": a.key, "kind": a.kind, "values": a.values} for a in plan.axes],
+            "n_combos": len(plan.combos), "user_defined": plan.user_defined, "notes": plan.notes,
+            "split": str(cut)}
+
+
+@app.post("/api/explore", dependencies=[Depends(auth)])
+def explore_start(body: ExploreIn):
+    spec = _spec_of(body)
+    runner = loaded.get(body.dataset)
+    try:
+        plan, _ = runner.explore_plan(spec, body.split)  # 잘못된 조건은 바로 알려 준다
+    except SpecError as e:
+        raise HTTPException(422, "\n".join(e.errors))
+    except dsl.DSLError as e:
+        raise HTTPException(422, e.message)
+    with _jobs_lock:
+        if any(j["status"] == "running" for j in _jobs.values()):
+            raise HTTPException(409, "다른 탐색이 진행 중입니다. 끝난 뒤 다시 시도하세요.")
+        job_id = secrets.token_hex(6)
+        job = {"id": job_id, "status": "running", "done": 0, "total": len(plan.combos), "result": None,
+               "error": None, "started": time.time(), "cancel": False}
+        _jobs[job_id] = job
+        for k in [k for k, j in _jobs.items() if j["status"] != "running" and k != job_id][:-5]:
+            _jobs.pop(k, None)  # 오래된 결과는 최근 5개만 남김
+
+    def work():
+        def prog(d, n):
+            job["done"] = d
+        try:
+            job["result"] = runner.explore(spec, body.split, prog, lambda: job["cancel"])
+            job["status"] = "cancelled" if job["cancel"] else "done"
+        except Exception as e:  # noqa: BLE001
+            job["status"] = "error"
+            job["error"] = getattr(e, "message", None) or str(e)
+
+    threading.Thread(target=work, daemon=True).start()
+    return {"id": job_id, "total": len(plan.combos)}
+
+
+@app.get("/api/explore/{job_id}", dependencies=[Depends(auth)])
+def explore_status(job_id: str):
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "탐색 기록이 없습니다 (서버가 다시 시작되었을 수 있습니다)")
+    return {k: v for k, v in job.items() if k != "cancel"} | {"elapsed": round(time.time() - job["started"], 1)}
+
+
+@app.delete("/api/explore/{job_id}", dependencies=[Depends(auth)])
+def explore_cancel(job_id: str):
+    job = _jobs.get(job_id)
+    if job and job["status"] == "running":
+        job["cancel"] = True
+    return {"ok": True}
 
 
 @app.get("/api/chart", dependencies=[Depends(auth)])

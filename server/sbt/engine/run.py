@@ -1,12 +1,13 @@
 """검증 실행 진입점."""
 from __future__ import annotations
 
+import threading
 import time
 
 import numpy as np
 
 from ..data.panel import Panel
-from . import dsl, event, stats
+from . import dsl, event, explore, stats
 from .stats import _r
 from .spec import MARKET_LABEL, Spec, expand, validate
 
@@ -42,6 +43,8 @@ class Runner:
         self.ev = dsl.Evaluator(panel)
         self._uni_cache: dict[str, np.ndarray] = {}
         self._base_cache: dict[str, dict] = {}
+        # 지표 캐시를 여러 요청이 동시에 건드리지 않도록 (탐색이 도는 중에도 검증은 조합 사이사이에 끼어 실행됨)
+        self.lock = threading.RLock()
 
     def _universe(self, spec: Spec) -> np.ndarray:
         key = spec.universe.model_dump_json()
@@ -96,6 +99,10 @@ class Runner:
         return res
 
     def run(self, spec: Spec, with_trades: bool = True) -> dict:
+        with self.lock:
+            return self._run(spec, with_trades)
+
+    def _run(self, spec: Spec, with_trades: bool = True) -> dict:
         errs = validate(spec)
         if errs:
             raise SpecError(errs)
@@ -139,6 +146,10 @@ class Runner:
 
     # ------------------------------------------------------------ 오늘 신호 (검색기)
     def scan(self, spec: Spec, days: int | None = None, limit: int = 500) -> dict:
+        with self.lock:
+            return self._scan(spec, days, limit)
+
+    def _scan(self, spec: Spec, days: int | None = None, limit: int = 500) -> dict:
         """최근 days 거래일 동안 신호가 난 종목과 지금 주문·보유 상태.
 
         지정가 매수면 기본으로 유효기간만큼 거슬러 올라가 아직 주문이 살아 있는 신호까지 보여 준다.
@@ -217,3 +228,50 @@ class Runner:
         return {"as_of": str(last), "since": str(since), "days": days, "count": len(rows),
                 "rows": rows[:limit], "truncated": len(rows) > limit,
                 "spec": s.model_dump(mode="json"), "dataset": self.dataset}
+
+    # ------------------------------------------------------------ 전략 탐색
+    def explore_plan(self, spec: Spec, split: str | None = None) -> tuple[explore.Plan, np.datetime64]:
+        errs = validate(spec)
+        if errs:
+            raise SpecError(errs)
+        self._check_markets(spec)
+        try:
+            plan = explore.make_plan(spec)
+        except ValueError as e:
+            raise SpecError([str(e)])
+        if len(plan.combos) > explore.MAX_COMBOS:
+            raise SpecError([f"조합이 {len(plan.combos)}개입니다. {explore.MAX_COMBOS}개 이하로 줄여 주세요"])
+        if split:
+            cut = np.datetime64(split, "D")
+        else:
+            uni = self._universe(spec)
+            cut = explore.default_split(self.panel.dates[uni])
+        return plan, cut
+
+    def explore(self, spec: Spec, split: str | None = None, progress=None, cancelled=lambda: False) -> dict:
+        plan, cut = self.explore_plan(spec, split)
+        t0 = time.time()
+        rows = []
+        for k, combo in enumerate(plan.combos):
+            if cancelled():
+                break
+            s = explore.apply(spec, plan, combo)
+            with self.lock:
+                t = self.trades(s)
+                ev = explore.evaluate(t, s, self.panel.dates[t.sig], cut)
+                base = self.baseline(s)
+            rows.append({"combo": list(combo), "spec": s.model_dump(mode="json"), "baseline": base, **ev})
+            if progress:
+                progress(k + 1, len(plan.combos))
+        explore.judge(rows, plan)
+        dates = self.panel.dates[self._universe(spec)]
+        return {
+            "axes": [{"key": a.key, "kind": a.kind, "values": a.values} for a in plan.axes],
+            "user_defined": plan.user_defined,
+            "notes": plan.notes,
+            "split": str(cut),
+            "period": [str(dates.min()), str(dates.max())] if len(dates) else None,
+            "elapsed": round(time.time() - t0, 1),
+            **explore.summarize_run(rows),
+            "dataset": self.dataset,
+        }

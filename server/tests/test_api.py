@@ -83,3 +83,29 @@ def test_scan(client):
     assert r.json()["days"] == 1
     r = client.post("/api/scan", json={"dataset": "demo", "text": "[신호]\n등락률 >= [5, 6]\n"})
     assert r.status_code == 422
+
+
+def test_explore(client):
+    import time as _t
+    text = "[신호]\n등락률 >= [5, 8]\n[청산]\n목표 = [3, 5]\n"
+    r = client.post("/api/explore/plan", json={"dataset": "demo", "text": text})
+    assert r.status_code == 200, r.text
+    assert r.json()["n_combos"] == 4 and r.json()["user_defined"]
+    r = client.post("/api/explore", json={"dataset": "demo", "text": text, "split": "2020-01-01"})
+    assert r.status_code == 200, r.text
+    jid = r.json()["id"]
+    for _ in range(120):
+        j = client.get(f"/api/explore/{jid}").json()
+        if j["status"] != "running":
+            break
+        _t.sleep(0.5)
+    assert j["status"] == "done", j
+    res = j["result"]
+    assert res["n_total"] == 4 and res["split"] == "2020-01-01"
+    for row in res["passed"] + res["near_miss"]:
+        assert row["is"]["n_complete"] + row["oos"]["n_complete"] == row["all"]["n_complete"]
+    # 자동 범위: 신호 기준값 ±30%, 청산 후보
+    r = client.post("/api/explore/plan", json={"dataset": "demo", "text": "[신호]\n등락률 >= 10\n"})
+    axes = r.json()["axes"]
+    assert axes[0]["values"] == [7.0, 10.0, 13.0]
+    assert r.json()["n_combos"] == 3 * 27

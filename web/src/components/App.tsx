@@ -8,8 +8,9 @@ import { useAIStatus } from "./AIAsk";
 import Editor, { DEFAULT_SPEC } from "./Editor";
 import Results from "./Results";
 import ScanResults from "./ScanResults";
+import Explore from "./Explore";
 
-type Tab = "run" | "saved" | "help" | "settings";
+type Tab = "run" | "explore" | "saved" | "help" | "settings";
 
 const KEY_DATASET = "sbt.dataset";
 
@@ -245,6 +246,17 @@ export default function App() {
           }}
         />
       )}
+      {!needLogin && tab === "explore" && (
+        <Explore
+          spec={spec}
+          dataset={current}
+          onUse={(s) => {
+            setSpec(s);
+            setTab("run");
+            run(s);
+          }}
+        />
+      )}
       {!needLogin && tab === "help" && <Help />}
       {tab === "settings" && <Settings onSaved={loadDatasets} />}
 
@@ -259,7 +271,8 @@ export default function App() {
           {(
             [
               ["run", "검증"],
-              ["saved", "저장 목록"],
+              ["explore", "탐색"],
+              ["saved", "저장"],
               ["help", "도움말"],
               ["settings", "설정"],
             ] as const
