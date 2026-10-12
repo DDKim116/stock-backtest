@@ -152,3 +152,47 @@ def stats(trades: list[dict], strategies: dict[int, dict]) -> dict:
         "followed": agg(followed),
         "deviated": agg(deviated),
     }
+
+
+def to_xlsx(views: list[dict], st: dict, currency: str) -> bytes:
+    """매매일지를 엑셀 파일로 (거래·체결·월별·전략별 시트)."""
+    import io
+
+    import pandas as pd
+
+    unit = "달러" if currency == "USD" else "원"
+    trades = []
+    fills = []
+    for t in views:
+        p, c = t["pos"], t.get("compare") or {}
+        s = c.get("strategy") or {}
+        trades.append({
+            "종목명": t["name"], "코드": t["code"], "시장": t.get("market", ""), "전략": t.get("strategy_name", ""),
+            "신호일": t.get("signal_date") or "", "첫 매수일": p.get("first_buy") or "", "마지막 매도일": p.get("last_sell") or "",
+            "상태": {"open": "보유 중", "closed": "청산", "error": "확인 필요"}.get(p.get("status"), ""),
+            "남은 수량": p.get("qty"), f"평균 매수가({unit})": p.get("avg_buy"), f"평균 매도가({unit})": p.get("avg_sell"),
+            f"투입 금액({unit})": p.get("invested"), f"실현 손익({unit})": p.get("realized"),
+            f"평가 손익({unit})": p.get("unrealized"), f"손익 합계({unit})": p.get("pnl"), "수익률(%)": p.get("ret"),
+            f"수수료·세금({unit})": p.get("fees"), "보유 일수": p.get("holding_days"),
+            "전략대로 수익률(%)": s.get("ret"), "전략 비교": c.get("verdict", ""), "메모": t.get("memo", ""),
+        })
+        for f in t["fills"]:
+            fills.append({"종목명": t["name"], "코드": t["code"], "구분": "매수" if f["side"] == "buy" else "매도",
+                          "날짜": f["date"], f"가격({unit})": f["price"], "수량": f["qty"],
+                          f"금액({unit})": round(f["price"] * f["qty"], 2), "메모": f.get("memo", "")})
+    monthly = [{"월": m["month"], "건수": m["n"], "승률(%)": m["win_rate"], "평균 수익률(%)": m["avg_ret"],
+                f"손익 합계({unit})": m["total_pnl"]} for m in st["monthly"]]
+    strat = [{"전략": r["name"], "건수": r["n"], "승률(%)": r["win_rate"], "내 평균(%)": r["avg_ret"],
+              "전략대로 평균(%)": r["strategy_avg_ret"], "백테스트 성공률(%)": r["backtest_success"],
+              "백테스트 평균(%)": r["backtest_avg_ret"], f"손익 합계({unit})": r["total_pnl"]} for r in st["by_strategy"]]
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as w:
+        for name, rows in (("거래", trades), ("체결", fills), ("월별", monthly), ("전략별", strat)):
+            df = pd.DataFrame(rows)
+            df.to_excel(w, sheet_name=name, index=False)
+            ws = w.sheets[name]
+            ws.freeze_panes = "A2"
+            for i, col in enumerate(df.columns, start=1):
+                width = max([len(str(col))] + [len(str(v)) for v in df[col].head(200)]) if len(df) else len(str(col))
+                ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = min(40, width * 1.6 + 2)
+    return buf.getvalue()

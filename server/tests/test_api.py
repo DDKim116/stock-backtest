@@ -147,5 +147,11 @@ def test_journal(client):
     st = client.get("/api/journal/stats", params={"dataset": "demo"}).json()
     assert st["closed"]["n"] == 1 and st["by_strategy"][0]["name"] == "테스트"
     assert client.get("/api/stocks", params={"dataset": "demo", "q": row["code"][:4]}).json()
+    x = client.get("/api/journal/export", params={"dataset": "demo"})
+    assert x.status_code == 200 and x.content[:2] == b"PK" and "attachment" in x.headers["content-disposition"]
+    import io as _io
+    import openpyxl as _ox
+    wb = _ox.load_workbook(_io.BytesIO(x.content))
+    assert wb.sheetnames == ["거래", "체결", "월별", "전략별"] and wb["체결"].max_row == 3
     assert client.delete(f"/api/journal/{t['id']}").json()["ok"]
     assert client.get("/api/journal", params={"dataset": "demo"}).json() == []

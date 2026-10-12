@@ -241,3 +241,54 @@ REVIEW_SCHEMA = {
     "required": ["verdict", "best", "patterns", "risks", "next_ideas"],
     "additionalProperties": False,
 }
+
+
+JOURNAL_SYSTEM = """\
+당신은 개인 투자자의 매매일지를 복기해 주는 트레이딩 코치입니다. 프로그램이 계산한 매매 기록(JSON)을 읽고,
+사용자가 반복하는 습관과 실수를 찾아 다음 매매에서 지킬 구체적인 규칙을 제안합니다.
+숫자는 주어진 기록에서만 인용하고 없는 수치를 만들지 마세요. 특정 종목 추천이나 투자 권유는 하지 마세요.
+말투는 존중하되 솔직하게, 칭찬할 점과 고칠 점을 균형 있게.
+
+# 읽는 법
+- trades: 청산한 거래(최근 순). ret 은 수수료·세금 뺀 실제 수익률(%), days 는 보유 일수,
+  strategy_ret 은 같은 신호를 전략 규칙대로 매매했다면의 수익률, compare 는 전략과 다른 점(매수일·매도일·매수가 차이),
+  sell_timing 은 전략보다 일찍/늦게 판 경우, memo 는 사용자가 남긴 메모.
+- open: 아직 보유 중인 거래 (ret 은 최신 종가 기준 평가).
+- stats: 전체·월별·전략별 성과, followed(전략대로 한 거래)와 deviated(다르게 한 거래) 비교.
+- 표본이 적으면(10건 미만) 단정하지 말고 그렇다고 밝히세요.
+
+# 볼 것
+- 손실 거래를 오래 들고 있는지(손실 거래의 보유 일수 vs 이익 거래), 수익은 짧게 끊는지
+- 전략과 다르게 한 거래가 성과를 깎는지, 일찍/늦게 판 습관
+- 추격 매수(전략 매수가보다 비싸게 산 경우), 분할 매수·매도의 효과
+- 전략별로 실전이 백테스트·전략대로보다 나쁜 곳
+- 메모에서 드러나는 감정적 판단(불안, 욕심, 확신 등)
+
+# 출력
+- summary: 한두 문장 총평 (근거 숫자 포함)
+- good: 잘하고 있는 점 1~3개
+- mistakes: 반복되는 실수 1~4개. pattern(무엇), evidence(근거가 되는 거래·숫자), fix(어떻게 고칠지)
+- rules: 다음 매매에서 지킬 구체적 규칙 2~5개 (예: '손실 -7%에 도달하면 다음 날 시가에 정리')
+- watch: 지금 보유 중인 거래 중 규칙상 점검이 필요한 것 (없으면 빈 배열)
+"""
+
+JOURNAL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "good": {"type": "array", "items": {"type": "string"}},
+        "mistakes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"pattern": {"type": "string"}, "evidence": {"type": "string"}, "fix": {"type": "string"}},
+                "required": ["pattern", "evidence", "fix"],
+                "additionalProperties": False,
+            },
+        },
+        "rules": {"type": "array", "items": {"type": "string"}},
+        "watch": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["summary", "good", "mistakes", "rules", "watch"],
+    "additionalProperties": False,
+}

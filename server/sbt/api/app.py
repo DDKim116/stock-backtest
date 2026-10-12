@@ -443,7 +443,7 @@ def ai_status_dict() -> dict:
     st = ai_settings()
     used = store.month_usage()
     base = AI_EST.get(st["model"], 0.08)
-    est = {k: round(used["avg_by_kind"].get(k, base) * st["krw_rate"]) for k in ("translate", "explain", "review")}
+    est = {k: round(used["avg_by_kind"].get(k, base) * st["krw_rate"]) for k in ("translate", "explain", "review", "journal")}
     return {
         "enabled": ai_client.enabled(),
         **st,
@@ -672,6 +672,47 @@ def journal_create(body: JournalIn):
     for f in fills:
         store.fill_add(tid, f)
     return _journal_view(store.journal_get(tid))
+
+
+def _journal_all(dataset: str) -> tuple[list[dict], dict]:
+    views = [_journal_view(t) for t in store.journal_list(dataset)]
+    views = [v for v in views if v["pos"].get("status") != "error"]
+    st = journal.stats(views, {s["id"]: s for s in store.list()})
+    return views, st
+
+
+@app.get("/api/journal/export", dependencies=[Depends(auth)])
+def journal_export(dataset: str = config.DEFAULT_DATASET):
+    from urllib.parse import quote
+
+    from fastapi.responses import Response
+
+    views, st = _journal_all(dataset)
+    data = journal.to_xlsx(views, st, DATASETS.get(dataset, {}).get("currency", "KRW"))
+    # 일부 브라우저가 한글 파일 이름을 'download' 로 바꿔 버려서 영문으로
+    name = f"trading-journal_{dataset}_{dt.date.today().isoformat()}.xlsx"
+    return Response(data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"})
+
+
+class JournalReviewIn(BaseModel):
+    dataset: str = config.DEFAULT_DATASET
+
+
+@app.post("/api/ai/journal-review", dependencies=[Depends(auth)])
+def ai_journal_review(body: JournalReviewIn):
+    st_ai = _ai_guard()
+    views, st = _journal_all(body.dataset)
+    if st["closed"]["n"] == 0 and st["open"]["n"] == 0:
+        raise HTTPException(422, "복기할 매매 기록이 없습니다")
+    try:
+        out = ai_service.review_journal(views, st, st_ai["model"])
+    except ai_client.AIError as e:
+        raise HTTPException(e.status, str(e))
+    store.add_usage("journal", out["usage"])
+    out["usage"] = _usage_out(out["usage"], st_ai)
+    out["n_closed"] = st["closed"]["n"]
+    return out
 
 
 @app.get("/api/journal/{tid}", dependencies=[Depends(auth)])

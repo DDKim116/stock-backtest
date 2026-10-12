@@ -143,7 +143,7 @@ export interface AIStatus {
   month_usd: number;
   month_krw: number;
   limit_krw: number;
-  estimate_krw: { translate: number; explain: number; review?: number };
+  estimate_krw: { translate: number; explain: number; review?: number; journal?: number };
 }
 
 export interface AIUsage {
@@ -396,4 +396,14 @@ export interface JournalPrefill {
   strategy_text: string;
   price: number | null;
   date: string | null;
+}
+
+export interface JournalReview {
+  summary: string;
+  good: string[];
+  mistakes: { pattern: string; evidence: string; fix: string }[];
+  rules: string[];
+  watch: string[];
+  usage: AIUsage;
+  n_closed: number;
 }

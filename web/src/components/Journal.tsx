@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, apiDownload } from "@/lib/api";
 import { money, pct, price, retClass, today } from "@/lib/format";
 import type {
   DatasetInfo,
@@ -13,6 +13,7 @@ import type {
   Trade,
 } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
+import JournalReview from "./JournalReview";
 import TradeChart from "./TradeChart";
 
 type View = "open" | "closed" | "stats";
@@ -74,13 +75,22 @@ export default function Journal({
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold">매매일지</h2>
-        <button
-          type="button"
-          onClick={() => setAdding("blank")}
-          className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white"
-        >
-          + 기록
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => apiDownload(`/api/journal/export?dataset=${ds}`, "trading-journal.xlsx").catch((e) => setErr((e as Error).message))}
+            className="rounded-lg border border-border bg-card px-3 py-1.5 text-sm"
+          >
+            엑셀
+          </button>
+          <button
+            type="button"
+            onClick={() => setAdding("blank")}
+            className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white"
+          >
+            + 기록
+          </button>
+        </div>
       </div>
       <p className="text-xs text-muted">
         {dataset?.label} · 보유 {openN}종목 (평가손익 <span className={retClass(unreal)}>{money(unreal, cur, true)}</span>) · 청산 {closedN}건
@@ -166,7 +176,12 @@ export default function Journal({
         </>
       )}
 
-      {view === "stats" && <Stats ds={ds} />}
+      {view === "stats" && (
+        <div className="space-y-4">
+          <JournalReview ds={ds} />
+          <Stats ds={ds} />
+        </div>
+      )}
 
       {openId !== null && (
         <Detail

@@ -186,3 +186,31 @@ def review_explore(res: dict, base_text: str, model: str) -> dict:
         best = {"rank": 0, "why": best.get("why", "")}
     return {"verdict": out.get("verdict", ""), "best": best, "patterns": out.get("patterns", []),
             "risks": out.get("risks", []), "next_ideas": ideas, "usage": usage}
+
+
+def _compact_journal(views: list[dict], st: dict) -> dict:
+    def one(t):
+        p, c = t["pos"], t.get("compare") or {}
+        d = {"name": t["name"], "strategy": t.get("strategy_name") or None, "first_buy": p.get("first_buy"),
+             "last_sell": p.get("last_sell"), "days": p.get("holding_days"), "ret": p.get("ret"),
+             "n_buys": sum(1 for f in t["fills"] if f["side"] == "buy"),
+             "n_sells": sum(1 for f in t["fills"] if f["side"] == "sell")}
+        if c:
+            d.update({"strategy_ret": (c.get("strategy") or {}).get("ret"), "compare": c.get("verdict"),
+                      "sell_timing": c.get("sell_timing"), "buy_diff_pct": c.get("buy_diff_pct")})
+        if t.get("memo"):
+            d["memo"] = t["memo"][:200]
+        return d
+
+    closed = sorted([v for v in views if v["pos"].get("closed")], key=lambda v: v["pos"]["last_sell"], reverse=True)
+    opened = [v for v in views if v["pos"].get("status") == "open"]
+    return {"trades": [one(t) for t in closed[:60]], "n_closed_total": len(closed),
+            "open": [one(t) for t in opened[:20]],
+            "stats": {k: st[k] for k in ("closed", "open", "monthly", "by_strategy", "followed", "deviated")}}
+
+
+def review_journal(views: list[dict], st: dict, model: str) -> dict:
+    user = "매매 기록(JSON):\n" + json.dumps(_compact_journal(views, st), ensure_ascii=False)
+    out, usage = call_json(model, prompts.JOURNAL_SYSTEM, user, prompts.JOURNAL_SCHEMA)
+    return {k: out.get(k, [] if k != "summary" else "") for k in ("summary", "good", "mistakes", "rules", "watch")} | {
+        "usage": usage}

@@ -163,3 +163,19 @@ def test_review_explore(monkeypatch):
     assert r["best"]["rank"] == 0  # 범위 밖 순위는 0 으로
     assert len(r["next_ideas"]) == 1 and "[6, 7]" in r["next_ideas"][0]["text"]
     assert "axis_effects" in calls[0] and "passed_top" in calls[0]
+
+
+def test_review_journal(monkeypatch):
+    views = [{"name": "A", "code": "1", "strategy_name": "s", "memo": "불안해서 팔았음", "fills": [
+        {"side": "buy"}, {"side": "sell"}],
+        "pos": {"closed": True, "status": "closed", "first_buy": "2020-01-02", "last_sell": "2020-01-09",
+                "holding_days": 7, "ret": -3.2},
+        "compare": {"strategy": {"ret": 2.1}, "verdict": "매도일이 다름", "sell_timing": "일찍 팖"}}]
+    st = {"closed": {"n": 1}, "open": {"n": 0}, "monthly": [], "by_strategy": [], "followed": {}, "deviated": {}}
+    out = {"summary": "s", "good": [], "mistakes": [{"pattern": "p", "evidence": "e", "fix": "f"}], "rules": ["r"],
+           "watch": []}
+    fake, calls = fake_calls([out])
+    monkeypatch.setattr(service, "call_json", fake)
+    r = service.review_journal(views, st, "claude-opus-5-5")
+    assert r["rules"] == ["r"] and r["usage"].model == "claude-opus-5-5"
+    assert "일찍 팖" in calls[0] and "불안해서" in calls[0]

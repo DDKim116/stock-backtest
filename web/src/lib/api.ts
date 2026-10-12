@@ -70,3 +70,23 @@ export async function api<T>(path: string, init?: { method?: string; body?: unkn
   }
   return res.json() as Promise<T>;
 }
+
+/** 파일 내려받기 (로그인 토큰이 필요해서 링크 대신 fetch 로 받아 저장) */
+export async function apiDownload(path: string, fallbackName: string): Promise<void> {
+  const headers: Record<string, string> = {};
+  const token = read(KEY_TOKEN);
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(apiUrl() + path, { headers });
+  if (!res.ok) throw new ApiError(`내려받기 실패 (${res.status})`, res.status);
+  const cd = res.headers.get("content-disposition") ?? "";
+  const m = cd.match(/filename\*=UTF-8''([^;]+)/);
+  const name = m ? decodeURIComponent(m[1]) : fallbackName;
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
