@@ -39,9 +39,17 @@ function isDark(): boolean {
 }
 const MA_WIDTH: Record<number, 1 | 2> = { 240: 2 };
 const DEFAULT_MA = [5, 20, 60, 120, 240];
+// 전략 이평선 (조건식에 쓴 기간 중 기본선에 없는 것). 점선으로 구분
+const STRAT_COLORS = ["#e9a96f", "#6fbcc8", "#d993bf", "#b5b86a"];
+function strategyPeriods(spec: Spec): number[] {
+  const text = `${spec.signal}\n${spec.exit?.exit_signal ?? ""}`;
+  const ns = [...text.matchAll(/(?:지수이평|이평|ema|ma)\(\s*종가\s*,\s*(\d+)\s*\)/gi)].map((m) => +m[1]);
+  return [...new Set(ns)].filter((n) => n >= 2 && n <= 300 && !DEFAULT_MA.includes(n)).sort((a, b) => a - b);
+}
 
 interface Ind {
   ma: boolean;
+  st: boolean; // 전략 이평선
   bb: boolean;
   rsi: boolean;
 }
@@ -49,12 +57,11 @@ const IND_KEY = "sbt-chart-ind";
 function loadInd(): Ind {
   try {
     const v = JSON.parse(localStorage.getItem(IND_KEY) ?? "");
-    if (v && typeof v === "object") return { ma: !!v.ma, bb: !!v.bb, rsi: !!v.rsi };
+    if (v && typeof v === "object") return { ma: !!v.ma, st: !!v.st, bb: !!v.bb, rsi: !!v.rsi };
   } catch {}
-  return { ma: true, bb: false, rsi: false };
+  return { ma: true, st: false, bb: false, rsi: false };
 }
 
-// 조건식에 쓴 이평 기간도 차트에 함께 그린다 (예: 이평(종가, 33))
 function shiftDate(d: string, days: number): string {
   const t = new Date(d + "T00:00:00Z");
   t.setUTCDate(t.getUTCDate() + days);
@@ -94,8 +101,12 @@ export default function TradeChart({
       } catch {}
       return n;
     });
-  const periods = DEFAULT_MA; // 조건식에 쓴 기간과 상관없이 정해진 이평선만 그린다
-  const maColor = (n: number) => (n === 240 && isDark() ? "#9a9ea6" : MA_COLORS[n]);
+  const stratMA = strategyPeriods(spec);
+  // 지금 그릴 이평선: 기본선(이평선 버튼) + 전략 이평선(전략 이평선 버튼)
+  const periods = [...(ind.ma ? DEFAULT_MA : []), ...(ind.st ? stratMA : [])];
+  const isStrat = (n: number) => !DEFAULT_MA.includes(n);
+  const maColor = (n: number) =>
+    isStrat(n) ? STRAT_COLORS[stratMA.indexOf(n) % STRAT_COLORS.length] : n === 240 && isDark() ? "#9a9ea6" : MA_COLORS[n];
   const chartRef = useRef<IChartApi | null>(null);
 
   useEffect(() => {
@@ -170,7 +181,7 @@ export default function TradeChart({
       ls.setData(bars.map((b, i) => (vals[i] == null ? { time: b.t as Time } : { time: b.t as Time, value: vals[i] as number })));
       return ls;
     };
-    if (ind.ma) for (const n of periods) line(sma(closes, n), maColor(n), 0, LineStyle.Solid, MA_WIDTH[n] ?? 1);
+    for (const n of periods) line(sma(closes, n), maColor(n), 0, isStrat(n) ? LineStyle.Dashed : LineStyle.Solid, MA_WIDTH[n] ?? 1);
     if (ind.bb) {
       const bb = bollinger(closes, 20, 2);
       const c = cssVar("--muted");
@@ -281,7 +292,7 @@ export default function TradeChart({
     if (i < 0) return null;
     const closes = bars.map((b) => b.c);
     const prev = i > 0 ? bars[i - 1].c : null;
-    const mas = ind.ma ? periods.map((n) => ({ n, v: sma(closes, n)[i] })) : [];
+    const mas = periods.map((n) => ({ n, v: sma(closes, n)[i] }));
     const r = ind.rsi ? rsi(closes, 14)[i] : null;
     const bb = ind.bb ? bollinger(closes, 20, 2) : null;
     const base = trade.fill_price ?? null;
@@ -313,9 +324,9 @@ export default function TradeChart({
     ];
     if (pinned.a != null) rows.push(["거래대금", bigMoney(pinned.a, currency)]);
     if (prev && i > 0 && bars[i - 1].v > 0) rows.push(["전일 대비 량", `${(pinned.v / bars[i - 1].v).toFixed(1)}배`]);
-    if (ind.ma) for (const n of periods) {
+    for (const n of periods) {
       const v = sma(closes, n)[i];
-      if (v != null) rows.push([`${n}일선`, price(v, currency)]);
+      if (v != null) rows.push([`${n}일선${isStrat(n) ? " (전략)" : ""}`, price(v, currency)]);
     }
     if (ind.bb) {
       const bb = bollinger(closes, 20, 2);
@@ -406,10 +417,13 @@ export default function TradeChart({
         {(
           [
             ["ma", "이평선"],
+            ["st", "전략 이평선"],
             ["bb", "볼린저"],
             ["rsi", "RSI"],
           ] as const
-        ).map(([k, label]) => (
+        )
+          .filter(([k]) => k !== "st" || stratMA.length > 0)
+          .map(([k, label]) => (
           <button
             key={k}
             type="button"
@@ -421,18 +435,22 @@ export default function TradeChart({
           </button>
         ))}
       </div>
-      {ind.ma && (
+      {periods.length > 0 && (
         <div className="flex flex-wrap gap-x-3 px-4 pb-1 text-[11px] text-muted">
           {periods.map((n) => (
             <span key={n} className="inline-flex items-center gap-1">
-              <span className={`inline-block w-3 rounded ${MA_WIDTH[n] === 2 ? "h-1" : "h-0.5"}`} style={{ background: maColor(n) }} />
-              {n}일
+              {isStrat(n) ? (
+                <span className="inline-block w-3 border-t-2 border-dashed" style={{ borderColor: maColor(n) }} />
+              ) : (
+                <span className={`inline-block w-3 rounded ${MA_WIDTH[n] === 2 ? "h-1" : "h-0.5"}`} style={{ background: maColor(n) }} />
+              )}
+              {n}일{isStrat(n) && " (전략)"}
             </span>
           ))}
           {ind.bb && <span>볼린저 20일 ±2σ (점선)</span>}
         </div>
       )}
-      {!ind.ma && ind.bb && <div className="px-4 pb-1 text-[11px] text-muted">볼린저 20일 ±2σ (점선)</div>}
+      {periods.length === 0 && ind.bb && <div className="px-4 pb-1 text-[11px] text-muted">볼린저 20일 ±2σ (점선)</div>}
       <div className="relative min-h-0 flex-1">
         {err && <p className="p-4 text-sm text-critical">⚠ {err}</p>}
         {!bars && !err && <p className="p-4 text-sm text-muted">불러오는 중…</p>}
