@@ -129,3 +129,16 @@ AI를 쓰지 않아도 조건식 검증은 모두 무료로 됩니다. 말로 �
 | 자동 업데이트 기록 | `journalctl -u sbt-deploy -n 50` |
 | 지금 바로 업데이트 | `bash ~/stock-backtest/deploy/update.sh --force` |
 | 비밀번호 변경 | `.env` 의 `SBT_PASSWORD` 수정 후 `sudo systemctl restart sbt-api` |
+
+## 지수 (지수 탭)
+
+- 미국(S&P 500·나스닥)은 야후에서 받으므로 신청이 필요 없습니다.
+- 한국(코스피·코스닥)은 KRX OpenAPI에서 **KOSPI 시리즈 일별시세정보**, **KOSDAQ 시리즈 일별시세정보** 이용 신청이 승인되어야 합니다.
+- 처음 한 번 받기 (한국은 2010년부터 약 8,400번 호출, 1~2시간):
+  ```bash
+  cd ~/stock-backtest/server
+  set -a; . ../.env; set +a
+  nohup ../.venv/bin/python -u -m sbt.data.cli index-update > ~/index.log 2>&1 &
+  tail -f ~/index.log
+  ```
+- 이후에는 매일 kr-update·us-update 때 함께 갱신됩니다. 중간에 끊기거나 호출 한도에 걸려도 다음 날 이어서 받습니다.
