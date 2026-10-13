@@ -94,7 +94,10 @@ export default function SentenceConvert({
     const ep: string[] = [];
     if (ex.target != null) ep.push(`목표 +${ex.target}%${ex.basis ? " (종가 기준)" : ""}`);
     if (ex.stop != null) ep.push(`손절 -${ex.stop}%`);
+    if (ex.trail != null) ep.push(`매수 후 최고가에서 -${ex.trail}% 빠지면 매도 (추적손절)`);
+    if (ex.signalDesc) ep.push(ex.signalDesc);
     if (ex.days != null) ep.push(`최대 ${ex.days}거래일 보유`);
+    else if (ex.trail != null || ex.signal) ep.push("최대 120거래일 보유 (기간을 적지 않아 기본값)");
     if (ep.length) extra.push("청산: " + ep.join(", "));
     if (rest.universe.markets) extra.push(`대상: ${rest.universe.markets}만`);
     if (rest.universe.start) extra.push(`기간: ${rest.universe.start}부터`);

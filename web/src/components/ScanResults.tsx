@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { pct, price, retClass } from "@/lib/format";
+import { bigMoney, pct, price, retClass } from "@/lib/format";
 import type { ScanResult, ScanRow, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
 import TradeChart from "./TradeChart";
@@ -20,19 +20,6 @@ const KIND_STYLE: Record<ScanRow["kind"], string> = {
   closed: "bg-border text-muted",
   expired: "bg-border text-faint",
 };
-
-// 거래대금처럼 큰 금액을 짧게
-function money(x: number | null, currency: string): string {
-  if (x == null) return "–";
-  if (currency === "USD") {
-    if (x >= 1e9) return `$${(x / 1e9).toFixed(1)}B`;
-    if (x >= 1e6) return `$${(x / 1e6).toFixed(0)}M`;
-    return `$${Math.round(x / 1e3)}K`;
-  }
-  if (x >= 1e12) return `${(x / 1e12).toFixed(1)}조`;
-  if (x >= 1e8) return `${Math.round(x / 1e8).toLocaleString("ko-KR")}억`;
-  return `${Math.round(x / 1e4).toLocaleString("ko-KR")}만`;
-}
 
 function asTrade(r: ScanRow): Trade {
   return {
@@ -134,7 +121,7 @@ export default function ScanResults({
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted">
                     <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${KIND_STYLE[x.kind]}`}>{x.status}</span>
                     <span className="tabular">신호 {x.signal_date.slice(5)}</span>
-                    <span className="tabular">대금 {money(x.value, cur)}</span>
+                    <span className="tabular">대금 {bigMoney(x.value, cur)}</span>
                   </div>
                 </div>
                 <div className="tabular shrink-0 text-right">

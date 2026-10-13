@@ -15,7 +15,7 @@ export interface SentenceResult {
   spec: string;
   rest: {
     buy: { type: "limit" | "next_open" | "close"; price?: string; valid?: number; desc: string } | null;
-    exit: { target?: number; stop?: number; days?: number; basis?: string };
+    exit: { target?: number; stop?: number; days?: number; basis?: string; trail?: number; signal?: string; signalDesc?: string };
     universe: { markets?: string; start?: string; spac?: boolean; pref?: boolean };
     notes: string[];
   };

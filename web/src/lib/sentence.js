@@ -376,12 +376,38 @@ const Conv = (() => {
       out.buy.valid = v ? +v[1] : 5;
     }
     // 청산
+    // 추적손절: "고점 대비 10% 빠지면 매도" — 손절보다 먼저 찾고 그 부분은 손절 찾기에서 뺀다
+    let afterS = after;
+    const trm = after.match(/(?:고점|최고가|최고점|최고치|꼭지)\s*(?:대비|에서|보다|기준)?\s*(?:으로\s*)?(?:-)?\s*(\d+(?:\.\d+)?)\s*%?\s*(?:이상)?\s*(?:하락|떨어|빠지|빠진|내리|밀리)?/) ||
+      after.match(/(?:추적\s*손절|트레일링\s*(?:스탑|스톱)?)\s*(?:을|를|은|는)?\s*(\d+(?:\.\d+)?)/);
+    if (trm) {
+      out.exit.trail = +trm[1];
+      afterS = after.replace(trm[0], " ");
+    }
+    // 청산 조건식: "20일선 이탈하면 매도", "10일 최저가 깨지면 매도"
+    const OUT = "(?:이탈|깨|깨지|붕괴|하회|밑돌|아래로|밑으로|하향\\s*돌파)";
+    const mam = after.match(new RegExp(`(\\d+)\\s*일\\s*(?:이동\\s*평균\\s*선?|이평\\s*선?|선|평균\\s*선)\\s*(?:을|를|이|가)?\\s*${OUT}`));
+    const lom = after.match(new RegExp(`(\\d+)\\s*일\\s*(?:최저\\s*가?|저점|신저가)\\s*(?:을|를|이|가)?\\s*${OUT}`));
+    if (mam) {
+      out.exit.signal = `종가 < 이평(종가, ${mam[1]})`;
+      out.exit.signalDesc = `종가가 ${mam[1]}일 이동평균 아래로 내려가면 다음 날 시가에 매도`;
+      afterS = afterS.replace(mam[0], " ");
+    } else if (lom) {
+      out.exit.signal = `종가 < 이전(최저(저가, ${lom[1]}), 1)`;
+      out.exit.signalDesc = `종가가 직전 ${lom[1]}일 최저가 아래로 내려가면 다음 날 시가에 매도`;
+      afterS = afterS.replace(lom[0], " ");
+    } else if (/데드\s*크로스/.test(after)) {
+      const dm = after.match(/(\d+)\s*일\s*(?:선)?\s*(?:이|가|과|와)?\s*(\d+)\s*일\s*(?:선)?\s*(?:을|를|의)?\s*데드\s*크로스/);
+      const [a, c] = dm ? [dm[1], dm[2]] : ["5", "20"];
+      out.exit.signal = `이평(종가, ${a}) < 이평(종가, ${c}) 그리고 이전(이평(종가, ${a}), 1) >= 이전(이평(종가, ${c}), 1)`;
+      out.exit.signalDesc = `${a}일선이 ${c}일선을 아래로 뚫으면(데드크로스) 다음 날 시가에 매도`;
+    }
     const tm = after.match(/(\d+(?:\.\d+)?)\s*%\s*(?:이상)?\s*(?:상승|오르|올라|오른|수익|익절|이익|먹|도달)/) ||
       after.match(/(?:목표|익절)\s*(?:가|수익률)?\s*(\d+(?:\.\d+)?)\s*%?/);
     if (tm) out.exit.target = +tm[1];
-    const sm = after.match(/손절\s*(?:선|가|은|는|라인)?\s*(?:-)?\s*(\d+(?:\.\d+)?)/) ||
-      after.match(/(\d+(?:\.\d+)?)\s*%\s*(?:이상)?\s*(?:하락|떨어|빠지|손실|내리)[^,.]*?(?:손절|팔|매도|정리)/) ||
-      full.match(/손절\s*(?:선|가|은|는|라인)?\s*(?:-)?\s*(\d+(?:\.\d+)?)/);
+    const sm = afterS.match(/(?<!추적\s*)손절\s*(?:선|가|은|는|라인)?\s*(?:-)?\s*(\d+(?:\.\d+)?)/) ||
+      afterS.match(/(\d+(?:\.\d+)?)\s*%\s*(?:이상)?\s*(?:하락|떨어|빠지|손실|내리)[^,.]*?(?:손절|팔|매도|정리)/) ||
+      full.match(/(?<!추적\s*)손절\s*(?:선|가|은|는|라인)?\s*(?:-)?\s*(\d+(?:\.\d+)?)/);
     if (sm) out.exit.stop = +sm[1];
     const hm = after.match(/(\d+)\s*(거래일|일|주|개월|달)\s*(?:이내|안에|동안|내|까지|보유|후)/) ||
       (/한\s*달/.test(after) ? [null, "1", "달"] : null);
@@ -445,9 +471,13 @@ const Conv = (() => {
     if (Object.keys(ex).length) {
       spec.push("", "[청산]");
       if (ex.target != null) spec.push(`목표 = ${fmt(ex.target)}`);
+      else if (ex.trail != null || ex.signal) spec.push("목표 = 없음");
       if (ex.basis) spec.push(`기준 = ${ex.basis}`);
       if (ex.stop != null) spec.push(`손절 = ${fmt(ex.stop)}`);
       if (ex.days != null) spec.push(`보유기간 = ${ex.days}`);
+      else if (ex.trail != null || ex.signal) spec.push("보유기간 = 120");
+      if (ex.trail != null) spec.push(`추적손절 = ${fmt(ex.trail)}`);
+      if (ex.signal) spec.push(`청산조건 = ${ex.signal}`);
     }
     const u = restInfo.universe;
     if (Object.keys(u).length) {

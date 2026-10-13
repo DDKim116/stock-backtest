@@ -92,3 +92,16 @@ export function today(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+
+// 거래대금처럼 큰 금액을 짧게 (억·조, $M·$B)
+export function bigMoney(x: number | null | undefined, currency: string = "KRW"): string {
+  if (x == null || Number.isNaN(x)) return "–";
+  if (currency === "USD") {
+    if (x >= 1e9) return `$${(x / 1e9).toFixed(1)}B`;
+    if (x >= 1e6) return `$${(x / 1e6).toFixed(0)}M`;
+    return `$${Math.round(x / 1e3)}K`;
+  }
+  if (x >= 1e12) return `${(x / 1e12).toFixed(1)}조`;
+  if (x >= 1e8) return `${Math.round(x / 1e8).toLocaleString("ko-KR")}억`;
+  return `${Math.round(x / 1e4).toLocaleString("ko-KR")}만`;
+}

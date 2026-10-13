@@ -72,7 +72,7 @@ function helpTexts(s: SingleResult["summary"], b: SingleResult["baseline"], spec
     mfe: `매수한 뒤 청산할 때까지, 매수가 대비 가장 많이 올랐을 때(고가 기준)와 가장 많이 빠졌을 때(저가 기준)의 평균입니다.
 최고가 목표보다 훨씬 크면 목표를 높여 볼 만하고, 최저가 깊으면 중간 손실을 견뎌야 한다는 뜻이라 손절 규칙을 검토할 이유가 됩니다.`,
     days: `성공한 거래가 매수 후 평균 며칠(거래일) 만에 목표가에 닿았는지입니다.
-아래 숫자는 거래가 끝난 이유별 건수입니다. 목표: 목표가 도달, 손절: 손절가 도달, 만료: 보유기간(${days}일)이 끝나 마지막 날 종가에 정리.`,
+아래 숫자는 거래가 끝난 이유별 건수입니다. 목표: 목표가 도달, 손절: 손절가 도달, 추적: 최고가 대비 추적손절, 조건: 청산 조건식 만족 후 다음 날 시가 매도, 만료: 보유기간(${days}일)이 끝나 마지막 날 종가에 정리.`,
   };
 }
 
@@ -120,7 +120,7 @@ function BreakdownTable({ rows, base }: { rows: BreakdownRow[]; base: number | n
   );
 }
 
-const OUTCOME_FILTERS = ["전체", "목표도달", "손절", "기간만료", "미체결", "불확실"] as const;
+const OUTCOME_FILTERS = ["전체", "목표도달", "손절", "추적손절", "조건청산", "기간만료", "미체결", "불확실"] as const;
 
 function summaryText(r: SingleResult): string {
   const s = r.summary;
@@ -223,7 +223,15 @@ function Single({ r, onBack }: { r: SingleResult; onBack?: () => void }) {
           help={h.days}
           label="목표까지 평균"
           value={s.avg_days_to_target !== null ? `${s.avg_days_to_target}일` : "–"}
-          sub={`목표 ${s.n_target} · 손절 ${s.n_stop} · 만료 ${s.n_timeout}`}
+          sub={[
+            `목표 ${s.n_target}`,
+            `손절 ${s.n_stop}`,
+            s.n_trail ? `추적 ${s.n_trail}` : "",
+            s.n_signal_exit ? `조건 ${s.n_signal_exit}` : "",
+            `만료 ${s.n_timeout}`,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         />
       </div>
 
@@ -266,7 +274,9 @@ function Single({ r, onBack }: { r: SingleResult; onBack?: () => void }) {
           </button>
         </div>
         <div className="mb-2 flex gap-1 overflow-x-auto text-xs">
-          {OUTCOME_FILTERS.map((f) => (
+          {OUTCOME_FILTERS.filter(
+            (f) => (f !== "추적손절" && f !== "조건청산") || r.trades.some((t) => t.outcome === f),
+          ).map((f) => (
             <button
               key={f}
               type="button"

@@ -31,6 +31,8 @@ def ai_spec_to_spec(a: dict, base: Spec | None, dataset: dict | None = None) -> 
         "target_basis": a["target_basis"],
         "stop_pct": _one(a["stop_pct"]),
         "max_days": _one(a["max_days"]) or 10,
+        "trail_pct": _one(a.get("trail_pct") or []),
+        "exit_signal": (a.get("exit_signal") or "").strip(),
     }
     d["universe"] = {
         "markets": a["markets"] or (dataset or {}).get("markets") or ["KOSPI", "KOSDAQ"],

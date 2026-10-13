@@ -82,6 +82,10 @@ class Exit(BaseModel):
     target_basis: Literal["high", "close"] = "high"
     stop_pct: Num | None = None
     max_days: Int = 10
+    # 추적손절: 매수 후 최고가(전날까지 고가 기준)에서 n% 빠지면 매도
+    trail_pct: Num | None = None
+    # 청산 조건식: 장 마감 때 만족하면 다음 날 시가에 매도 (예: 종가 < 이평(종가, 50))
+    exit_signal: str = ""
 
 
 class Costs(BaseModel):
@@ -122,11 +126,14 @@ def expand(spec: Spec) -> list[tuple[dict[str, float], Spec]]:
     scan_text("신호", spec.signal)
     if spec.entry.type == "limit":
         scan_text("매수가", spec.entry.price)
+    if spec.exit.exit_signal:
+        scan_text("청산조건", spec.exit.exit_signal)
     numeric = {
         "유효기간": spec.entry.valid_days,
         "목표": spec.exit.target_pct,
         "손절": spec.exit.stop_pct,
         "보유기간": spec.exit.max_days,
+        "추적손절": spec.exit.trail_pct,
     }
     for k, v in numeric.items():
         if isinstance(v, list):
@@ -162,6 +169,10 @@ def expand(spec: Spec) -> list[tuple[dict[str, float], Spec]]:
             d["exit"]["stop_pct"] = params["손절"]
         if "보유기간" in params:
             d["exit"]["max_days"] = int(params["보유기간"])
+        if "추적손절" in params:
+            d["exit"]["trail_pct"] = params["추적손절"]
+        if spec.exit.exit_signal:
+            d["exit"]["exit_signal"] = sub_text("청산조건", spec.exit.exit_signal)
         out.append((params, Spec.model_validate(d)))
     return out
 
@@ -191,6 +202,13 @@ def validate(spec: Spec) -> list[str]:
             errs.append("목표 수익률은 0보다 커야 합니다")
         if s.exit.stop_pct is not None and not 0 < s.exit.stop_pct < 100:
             errs.append("손절 비율은 0~100 사이여야 합니다 (예: 5 = -5%)")
+        if s.exit.trail_pct is not None and not 0 < s.exit.trail_pct < 100:
+            errs.append("추적손절 비율은 0~100 사이여야 합니다 (예: 10 = 최고가 대비 -10%)")
+        if s.exit.exit_signal:
+            try:
+                dsl.validate(s.exit.exit_signal)
+            except dsl.DSLError as e:
+                errs.append(f"청산 조건식: {e.message}" + (f" (위치 {e.pos + 1})" if e.pos is not None else ""))
         if errs:
             break
     return errs
@@ -283,8 +301,12 @@ def parse_text(text: str) -> Spec:
             ex["max_days"] = _int_or_list(v)
         elif k in ("기준", "basis"):
             ex["target_basis"] = {"고가": "high", "종가": "close"}.get(v, v)
+        elif k in ("추적손절", "트레일링", "트레일링스탑", "trail"):
+            ex["trail_pct"] = _num_or_list(v)
+        elif k in ("청산조건", "매도조건", "exit_signal"):
+            ex["exit_signal"] = "" if v.strip().lower() in _NONE_WORDS else v.strip()
         else:
-            raise ValueError(f"[청산] 알 수 없는 항목 '{k}'. 사용 가능: 목표, 손절, 보유기간, 기준")
+            raise ValueError(f"[청산] 알 수 없는 항목 '{k}'. 사용 가능: 목표, 손절, 보유기간, 기준, 추적손절, 청산조건")
     if ex:
         d["exit"] = ex
 
@@ -356,6 +378,10 @@ def to_text(spec: Spec) -> str:
     x = spec.exit
     lines += ["", "[청산]", f"목표 = {_v(x.target_pct)}", f"기준 = {'고가' if x.target_basis == 'high' else '종가'}",
               f"손절 = {_v(x.stop_pct)}", f"보유기간 = {_v(x.max_days)}"]
+    if x.trail_pct is not None:
+        lines.append(f"추적손절 = {_v(x.trail_pct)}")
+    if x.exit_signal:
+        lines.append(f"청산조건 = {x.exit_signal}")
     u = spec.universe
     excl = [w for w, on in (("스팩", u.exclude_spac), ("우선주", u.exclude_preferred)) if on]
     lines += ["", "[대상]", "시장 = " + ", ".join(MARKET_LABEL.get(m, m) for m in u.markets),

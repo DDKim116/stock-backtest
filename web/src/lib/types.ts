@@ -9,6 +9,8 @@ export interface Spec {
     target_basis: "high" | "close";
     stop_pct: NumOrList;
     max_days: number | number[];
+    trail_pct?: NumOrList;
+    exit_signal?: string;
   };
   universe: {
     markets: string[];
@@ -31,6 +33,8 @@ export interface Summary {
   n_target: number;
   n_stop: number;
   n_timeout: number;
+  n_trail?: number;
+  n_signal_exit?: number;
   success_rate: number | null;
   success_rate_opt: number | null;
   n_uncertain: number;
@@ -131,6 +135,7 @@ export interface Bar {
   l: number;
   c: number;
   v: number;
+  a?: number | null; // 거래대금
 }
 
 export interface AIStatus {

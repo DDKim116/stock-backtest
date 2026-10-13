@@ -16,7 +16,7 @@ def ai_out(**spec_over):
         "entry_type": "limit", "entry_price": "(시가 + 종가) / 2", "valid_days": [5],
         "target_pct": [3], "target_basis": "high", "stop_pct": [], "max_days": [10],
         "markets": ["KOSPI", "KOSDAQ"], "start": "2018-01-01", "end": "",
-        "exclude_spac": True, "exclude_preferred": True, "dedupe_days": 0,
+        "exclude_spac": True, "exclude_preferred": True, "dedupe_days": 0, "trail_pct": [], "exit_signal": "",
     }
     spec.update(spec_over)
     return {

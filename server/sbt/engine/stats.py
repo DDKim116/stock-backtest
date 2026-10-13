@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 
 from ..data.panel import Panel
-from .event import NO_FILL, OPEN, OUTCOME_LABEL, STOP, TARGET, TIMEOUT, Trades
+from .event import NO_FILL, OPEN, OUTCOME_LABEL, SIGNAL_EXIT, STOP, TARGET, TIMEOUT, TRAIL, Trades
 from .spec import MARKET_LABEL, Spec
 
 
@@ -48,6 +48,8 @@ def summarize(t: Trades, spec: Spec, mask: np.ndarray | None = None) -> dict:
         "n_target": int((oc == TARGET).sum()),
         "n_stop": int((oc == STOP).sum()),
         "n_timeout": int((oc == TIMEOUT).sum()),
+        "n_trail": int((oc == TRAIL).sum()),
+        "n_signal_exit": int((oc == SIGNAL_EXIT).sum()),
         "success_rate": _rate(win_c, n_done),
         "success_rate_opt": _rate(win_o, int(done_o.sum())),
         "n_uncertain": uncertain,

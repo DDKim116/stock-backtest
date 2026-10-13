@@ -517,6 +517,13 @@ AND 등락률 >= 12
 기간 = 2010-01-01 ~ 오늘
 제외 = 스팩, 우선주`;
 
+const TREND_EXIT = `[청산]
+목표 = 없음
+손절 = 8
+보유기간 = 120
+추적손절 = 10
+청산조건 = 종가 < 이평(종가, 20)`;
+
 function Help() {
   const [ref, setRef] = useState<Reference | null>(null);
   useEffect(() => {
@@ -530,6 +537,10 @@ function Help() {
           <li>대상 기간의 모든 종목·모든 날에서 신호 조건을 만족하는 날을 찾습니다.</li>
           <li>매수 방식에 따라 체결 여부를 봅니다. 지정가는 다음 날부터 유효기간 동안 저가가 지정가 이하로 내려오면 체결입니다 (시가가 더 낮으면 시가 체결).</li>
           <li>체결 후 보유기간 안에 목표가(고가 기준)에 닿으면 성공, 손절가(저가 기준)에 닿으면 손절, 둘 다 아니면 마지막 날 종가로 청산합니다.</li>
+          <li>
+            추적손절을 넣으면 매수 후 최고가(전날까지의 고가)에서 그 비율만큼 빠질 때 팝니다. 청산 조건식을 넣으면 장 마감 때 그 식이 참인
+            다음 날 시가에 팝니다. 여러 청산 규칙 중 먼저 걸리는 쪽으로 청산하며, 목표를 &apos;없음&apos;으로 두면 성공률은 &apos;이익으로 끝난 비율&apos;이 됩니다.
+          </li>
           <li>같은 날 목표와 손절에 모두 닿은 경우처럼 일봉으로 순서를 알 수 없으면 &apos;불확실&apos;로 표시하고, 기본 성공률은 불리한 쪽(보수적)으로 계산합니다.</li>
           <li>같은 매수·청산 규칙으로 &apos;아무 날이나 샀을 때&apos;의 성공률을 함께 계산해 조건의 효과를 비교합니다.</li>
         </ol>
@@ -537,6 +548,8 @@ function Help() {
       <section className="rounded-xl border border-border bg-card p-4">
         <h2 className="mb-2 font-semibold">조건식 예시</h2>
         <pre className="overflow-x-auto rounded-lg bg-background p-3 text-xs">{EXAMPLE_TEXT}</pre>
+        <p className="mt-2 text-muted">추세를 길게 따라가는 청산 예시 (목표 없이 추적손절·조건식으로 팔기):</p>
+        <pre className="mt-1 overflow-x-auto rounded-lg bg-background p-3 text-xs">{TREND_EXIT}</pre>
         <p className="mt-2 text-muted">
           숫자 자리에 <code>[10, 12, 15]</code> 처럼 쓰면 각 값으로 모두 돌려 비교표를 만듭니다. 조립 화면의 숫자 칸은 <code>3, 5, 7</code> 처럼 쉼표로 씁니다.
         </p>

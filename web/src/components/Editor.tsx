@@ -44,7 +44,17 @@ const MARKET_LABEL: Record<string, string> = {
   AMEX: "아멕스",
 };
 
-function ExprInput({ value, onChange, onRemove }: { value: string; onChange: (v: string) => void; onRemove?: () => void }) {
+function ExprInput({
+  value,
+  onChange,
+  onRemove,
+  placeholder = "예: 등락률 >= 12",
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onRemove?: () => void;
+  placeholder?: string;
+}) {
   const [err, setErr] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -64,7 +74,7 @@ function ExprInput({ value, onChange, onRemove }: { value: string; onChange: (v:
         <input
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="예: 등락률 >= 12"
+          placeholder={placeholder}
           autoCapitalize="off"
           autoCorrect="off"
           spellCheck={false}
@@ -80,6 +90,16 @@ function ExprInput({ value, onChange, onRemove }: { value: string; onChange: (v:
     </div>
   );
 }
+
+// 청산 조건식 예시
+const EXIT_PRESETS = [
+  { label: "20일선 이탈", expr: "종가 < 이평(종가, 20)" },
+  { label: "50일선 이탈", expr: "종가 < 이평(종가, 50)" },
+  { label: "5일선 위 회복 (평균회귀)", expr: "종가 > 이평(종가, 5)" },
+  { label: "10일 최저가 이탈 (거북이)", expr: "종가 < 이전(최저(저가, 10), 1)" },
+  { label: "데드크로스 5·20", expr: "하향돌파(이평(종가, 5), 이평(종가, 20))" },
+  { label: "RSI 70 이상", expr: "rsi(14) >= 70" },
+];
 
 function NumField({
   label,
@@ -382,8 +402,41 @@ export default function Editor({
                 suffix="거래일"
                 value={spec.exit.max_days}
                 onChange={(v) => update({ exit: { ...spec.exit, max_days: (v ?? 10) as number } })}
-                hint="끝나면 종가 청산"
+                hint="끝나면 종가 청산 (최대 250)"
               />
+              <NumField
+                label="추적손절 (트레일링 스탑)"
+                suffix="%"
+                allowEmpty
+                value={spec.exit.trail_pct ?? null}
+                onChange={(v) => update({ exit: { ...spec.exit, trail_pct: v } })}
+                hint="매수 후 최고가에서 이만큼 빠지면 매도. 비우면 사용 안 함"
+              />
+            </div>
+            <div className="mt-3">
+              <span className="text-sm text-muted">청산 조건식 (선택)</span>
+              <div className="mt-1">
+                <ExprInput
+                  value={spec.exit.exit_signal ?? ""}
+                  onChange={(v) => update({ exit: { ...spec.exit, exit_signal: v } })}
+                  placeholder="예: 종가 < 이평(종가, 20)"
+                />
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {EXIT_PRESETS.map((p) => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    onClick={() => update({ exit: { ...spec.exit, exit_signal: p.expr } })}
+                    className="rounded-full border border-border px-2.5 py-1 text-xs text-muted"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <span className="mt-1 block text-xs text-faint">
+                장 마감 때 이 조건을 만족하면 다음 날 시가에 팝니다. 목표·손절·추적손절·보유기간과 함께 쓰면 먼저 걸리는 쪽으로 청산합니다.
+              </span>
             </div>
           </div>
 

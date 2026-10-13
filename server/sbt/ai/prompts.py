@@ -12,7 +12,7 @@ TRANSLATE_SYSTEM = """\
 
 # 프로그램이 하는 일
 대상 기간의 모든 종목·모든 거래일에서 [신호] 조건을 만족하는 날(신호일)을 찾고,
-[매수] 규칙으로 체결 여부를 본 뒤, [청산] 규칙으로 결과(목표도달/손절/기간만료)를 집계합니다.
+[매수] 규칙으로 체결 여부를 본 뒤, [청산] 규칙으로 결과(목표도달/손절/추적손절/조건청산/기간만료)를 집계합니다.
 데이터는 일봉(시가·고가·저가·종가·거래량·거래대금·시가총액)뿐이며 수정주가 기준입니다.
 장중 시간대, 호가, 재무제표, 뉴스, 업종, 수급(외국인·기관) 데이터는 없습니다.
 
@@ -40,7 +40,12 @@ TRANSLATE_SYSTEM = """\
 
 # 청산 (exit) — 체결일부터 셈
 - target_pct: 목표 수익률(%) 목록. target_basis "high"면 고가가 한 번이라도 닿으면 성공, "close"면 종가 기준.
-- stop_pct: 손절(%) 목록, 손절 없으면 빈 배열. max_days: 보유기간(거래일) 목록. 끝나면 종가 청산.
+- stop_pct: 손절(%) 목록, 손절 없으면 빈 배열. max_days: 보유기간(거래일) 목록(최대 250). 끝나면 종가 청산.
+- trail_pct: 추적손절(트레일링 스탑, %) 목록. 매수 후 최고가(전날까지 고가)에서 n% 빠지면 매도. 없으면 빈 배열.
+- exit_signal: 청산 조건식(신호와 같은 문법). 장 마감 때 참이면 다음 날 시가에 매도. 없으면 빈 문자열.
+  예: '50일선 이탈하면 매도' → '종가 < 이평(종가, 50)', '5일선 위로 올라오면 매도' → '종가 > 이평(종가, 5)'.
+  추세추종처럼 '오를 때까지 들고 간다'는 질문이면 target_pct 를 빈 배열로, max_days 를 넉넉히(예: 120~250) 두고
+  exit_signal 이나 trail_pct 로 청산하세요.
 - 목표가 없는 질문(예: 'N일 뒤 수익률은?')이면 target_pct 를 빈 배열로 두고 max_days 를 N 으로 둡니다.
 - 목록에 값이 여러 개면 각 값으로 모두 돌려 비교표를 만듭니다. 보통은 값 1개.
 
@@ -96,7 +101,9 @@ EXPLAIN_SYSTEM = """\
 목표 = n         (없으면 '없음')
 기준 = 고가      (또는 종가)
 손절 = n         (없으면 '없음')
-보유기간 = n
+보유기간 = n     (최대 250)
+추적손절 = n     (선택: 최고가 대비 n% 하락 시 매도)
+청산조건 = 식    (선택: 장 마감 때 참이면 다음 날 시가 매도, 예: 종가 < 이평(종가, 50))
 [대상]
 시장 = 코스피, 코스닥      (미국: 나스닥, 뉴욕, 아멕스)
 기간 = YYYY-MM-DD ~ 오늘
@@ -139,6 +146,8 @@ TRANSLATE_SCHEMA = {
                 "target_basis": {"type": "string", "enum": ["high", "close"]},
                 "stop_pct": _LIST_NUM,
                 "max_days": _LIST_INT,
+                "trail_pct": _LIST_NUM,
+                "exit_signal": {"type": "string"},
                 "markets": {"type": "array",
                             "items": {"type": "string", "enum": ["KOSPI", "KOSDAQ", "NASDAQ", "NYSE", "AMEX"]}},
                 "start": {"type": "string"},
@@ -149,7 +158,7 @@ TRANSLATE_SCHEMA = {
                 "fx_krw": {"type": "boolean"},
             },
             "required": ["signal", "entry_type", "entry_price", "valid_days", "target_pct", "target_basis",
-                         "stop_pct", "max_days", "markets", "start", "end", "exclude_spac", "exclude_preferred",
+                         "stop_pct", "max_days", "trail_pct", "exit_signal", "markets", "start", "end", "exclude_spac", "exclude_preferred",
                          "dedupe_days", "fx_krw"],
             "additionalProperties": False,
         },
@@ -217,7 +226,9 @@ REVIEW_SYSTEM = """\
 목표 = n         (없으면 '없음')
 기준 = 고가      (또는 종가)
 손절 = n         (없으면 '없음')
-보유기간 = n
+보유기간 = n     (최대 250)
+추적손절 = n     (선택: 최고가 대비 n% 하락 시 매도)
+청산조건 = 식    (선택: 장 마감 때 참이면 다음 날 시가 매도, 예: 종가 < 이평(종가, 50))
 [대상]
 시장 = 코스피, 코스닥      (미국: 나스닥, 뉴욕, 아멕스)
 기간 = YYYY-MM-DD ~ 오늘

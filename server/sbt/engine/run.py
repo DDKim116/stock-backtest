@@ -66,7 +66,15 @@ class Runner:
             raise SpecError(["신호는 비교식(>=, < 등)이어야 합니다. 예: 등락률 >= 12"])
         sig = np.flatnonzero(cond & uni)
         sig = event.dedupe(sig, self.panel, spec.dedupe_days)
-        return event.simulate(self.panel, sig, spec, self._limit(spec), self._fx(spec))
+        return event.simulate(self.panel, sig, spec, self._limit(spec), self._fx(spec), self._exit(spec))
+
+    def _exit(self, spec: Spec):
+        if not spec.exit.exit_signal:
+            return None
+        cond = dsl.evaluate(spec.exit.exit_signal, self.panel, self.ev)
+        if cond.dtype != bool:
+            raise SpecError(["청산 조건은 비교식(>=, < 등)이어야 합니다. 예: 종가 < 이평(종가, 20)"])
+        return cond
 
     def _fx(self, spec: Spec):
         if not spec.fx_krw:
@@ -88,8 +96,10 @@ class Runner:
             return self._base_cache[key]
         uni = np.flatnonzero(self._universe(spec))
         rng = np.random.default_rng(42)
-        sample = np.sort(rng.choice(uni, size=min(BASELINE_SAMPLE, len(uni)), replace=False)) if len(uni) else uni
-        t = event.simulate(self.panel, sample, spec, self._limit(spec), self._fx(spec))
+        # 보유기간이 길면 계산량이 커지므로 표본 수를 줄인다 (최소 2만)
+        size = min(BASELINE_SAMPLE, max(20_000, 20_000_000 // (int(spec.exit.max_days) + 1)), len(uni))
+        sample = np.sort(rng.choice(uni, size=size, replace=False)) if len(uni) else uni
+        t = event.simulate(self.panel, sample, spec, self._limit(spec), self._fx(spec), self._exit(spec))
         s = stats.summarize(t, spec)
         res = {"n": s["n_complete"], "success_rate": s["success_rate"], "avg_ret": s["avg_ret"],
                "fill_rate": s["fill_rate"]}
@@ -179,7 +189,7 @@ class Runner:
         if s.universe.exclude_preferred:
             m &= ~p.is_preferred
         sig = np.flatnonzero(m)
-        t = event.simulate(p, sig, s, self._limit(s), self._fx(s))
+        t = event.simulate(p, sig, s, self._limit(s), self._fx(s), self._exit(s))
         day_idx = {d: k for k, d in enumerate(tdays)}
         c = p.cols
         rows = []
@@ -291,7 +301,7 @@ class Runner:
         variants = expand(spec)
         s = variants[0][1]
         with self.lock:
-            t = event.simulate(p, hit[:1], s, self._limit(s), self._fx(s))
+            t = event.simulate(p, hit[:1], s, self._limit(s), self._fx(s), self._exit(s))
             r = stats.trade_rows(t, p)[0]
         return {k: r[k] for k in ("signal_date", "limit", "fill_date", "fill_price", "outcome", "exit_date",
                                   "exit_price", "ret", "mfe", "mae")}

@@ -202,3 +202,59 @@ AND 등락률 >= [10, 12]
     assert v[1][1].signal.endswith(">= 10") and v[1][1].exit.target_pct == 5
     s2 = parse_text(to_text(s))
     assert s2 == s
+
+
+def test_trailing_stop():
+    # 0: 기준 100, 1: +10% 신호(종가 매수 110), 2~4 상승(고가 130까지), 5: 저가 115 → 130*0.9=117 이탈
+    rows = [(100, 100, 100, 100, 1), (100, 110, 100, 110, 1), (111, 120, 110, 119, 1), (119, 130, 118, 128, 1),
+            (127, 129, 121, 125, 1), (124, 125, 115, 116, 1), (116, 117, 115, 116, 1)]
+    p = make_panel({"000010": rows})
+    sp = spec(entry={"type": "close"}, exit={"target_pct": None, "trail_pct": 10, "max_days": 5})
+    t = run_one(p, sp)
+    assert event.OUTCOME_LABEL[int(t.outcome_c[0])] == "추적손절"
+    assert t.exit_price_c[0] == pytest.approx(117)  # 시가 124 > 117 이므로 손절선 체결
+    assert t.exit_row_c[0] == 5
+    # 고정 손절(5% = 104.5) 보다 추적선이 높으므로 추적손절
+    sp2 = spec(entry={"type": "close"}, exit={"target_pct": None, "trail_pct": 10, "stop_pct": 5, "max_days": 5})
+    assert event.OUTCOME_LABEL[int(run_one(p, sp2).outcome_c[0])] == "추적손절"
+
+
+def test_trailing_gap_down_fills_at_open():
+    rows = [(100, 100, 100, 100, 1), (100, 110, 100, 110, 1), (111, 130, 110, 128, 1), (100, 101, 95, 96, 1),
+            (96, 97, 95, 96, 1)]
+    p = make_panel({"000010": rows})
+    sp = spec(entry={"type": "close"}, exit={"target_pct": None, "trail_pct": 10, "max_days": 3})
+    t = run_one(p, sp)
+    assert t.exit_row_c[0] == 3 and t.exit_price_c[0] == pytest.approx(100)  # 갭 하락 → 시가
+
+
+def test_exit_condition_next_open():
+    # 신호 1일(종가 매수 110). 3일 종가 < 5일 이평 → 4일 시가 매도
+    rows = [(100, 100, 100, 100, 1)] * 5 + [(100, 110, 100, 110, 1), (110, 115, 109, 114, 1),
+                                           (113, 114, 100, 101, 1), (102, 105, 101, 104, 1), (104, 106, 103, 105, 1)]
+    p = make_panel({"000010": rows})
+    sp = spec(entry={"type": "close"},
+              exit={"target_pct": None, "exit_signal": "종가 < 이평(종가, 3)", "max_days": 10})
+    t = run_one(p, sp)
+    assert event.OUTCOME_LABEL[int(t.outcome_c[0])] == "조건청산"
+    assert t.exit_row_c[0] == 8 and t.exit_price_c[0] == pytest.approx(102)
+    # 같은 날 목표(고가 105 ≥ 110*0.95?) 와 겹치면 시가 매도가 먼저
+    s2 = to_text(sp)
+    assert "청산조건 = 종가 < 이평(종가, 3)" in s2 and parse_text(s2).exit.exit_signal == "종가 < 이평(종가, 3)"
+
+
+def test_exit_condition_open_when_data_ends():
+    rows = [(100, 100, 100, 100, 1)] * 5 + [(100, 110, 100, 110, 1), (110, 111, 100, 101, 1)]
+    p = make_panel({"000010": rows})
+    sp = spec(entry={"type": "close"},
+              exit={"target_pct": None, "exit_signal": "종가 < 이평(종가, 3)", "max_days": 10})
+    t = run_one(p, sp)
+    assert event.OUTCOME_LABEL[int(t.outcome_c[0])] == "진행중"  # 내일 시가 매도 예정이지만 데이터 끝
+
+
+def test_trail_sweep_and_text():
+    sp = parse_text("[신호]\n등락률 >= 10\n[청산]\n목표 = 없음\n추적손절 = [8, 12]\n청산조건 = 종가 < 이평(종가, [20, 50])\n")
+    v = expand(sp)
+    assert len(v) == 4
+    assert {(s.exit.trail_pct, s.exit.exit_signal) for _, s in v} == {
+        (8, "종가 < 이평(종가, 20)"), (8, "종가 < 이평(종가, 50)"), (12, "종가 < 이평(종가, 20)"), (12, "종가 < 이평(종가, 50)")}

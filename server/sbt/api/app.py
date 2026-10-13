@@ -362,7 +362,8 @@ def chart(code: str, dataset: str = config.DEFAULT_DATASET, start: str | None = 
         "market": MARKET_LABEL.get(p.markets[rows[-1]], "") if len(rows) else "",
         "bars": [
             {"t": str(p.dates[i]), "o": _f(c["open"][i]), "h": _f(c["high"][i]), "l": _f(c["low"][i]),
-             "c": _f(c["close"][i]), "v": _f(c["volume"][i])}
+             "c": _f(c["close"][i]), "v": _f(c["volume"][i]),
+             "a": _f(c["value"][i]) if "value" in c else None}
             for i in rows
         ],
         "adj_dates": [str(p.dates[i]) for i, e in zip(rows, adj_events) if e],

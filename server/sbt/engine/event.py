@@ -27,8 +27,14 @@ TARGET = 1
 STOP = 2
 TIMEOUT = 3  # 보유기간 만료 → 마지막 날 종가 청산
 OPEN = 4  # 데이터가 끝나 아직 결과가 정해지지 않음
+TRAIL = 5  # 추적손절 (최고가 대비 n% 하락)
+SIGNAL_EXIT = 6  # 청산 조건식 만족 → 다음 날 시가 매도
 
-OUTCOME_LABEL = {NO_FILL: "미체결", TARGET: "목표도달", STOP: "손절", TIMEOUT: "기간만료", OPEN: "진행중"}
+OUTCOME_LABEL = {NO_FILL: "미체결", TARGET: "목표도달", STOP: "손절", TIMEOUT: "기간만료", OPEN: "진행중",
+                 TRAIL: "추적손절", SIGNAL_EXIT: "조건청산"}
+
+# 보유 구간 행렬이 너무 커지지 않도록 한 번에 계산하는 칸 수 (거래 수 × 보유일)
+MAX_CELLS = 4_000_000
 
 
 @dataclass
@@ -76,8 +82,19 @@ def _gather(arr: np.ndarray, idx: np.ndarray, valid: np.ndarray) -> np.ndarray:
 
 
 def simulate(panel: Panel, sig: np.ndarray, spec: Spec, limit_price: np.ndarray | None,
-             fx: np.ndarray | None = None) -> Trades:
-    """sig: 신호 행 인덱스 배열. limit_price: 행 전체에 대한 지정가 배열 (limit 방식일 때)."""
+             fx: np.ndarray | None = None, exit_cond: np.ndarray | None = None) -> Trades:
+    """sig: 신호 행 인덱스 배열. limit_price: 행 전체에 대한 지정가 배열 (limit 방식일 때).
+    exit_cond: 행 전체에 대한 청산 조건(bool). 그날 장 마감에 참이면 다음 날 시가에 판다."""
+    step = max(1000, MAX_CELLS // (int(spec.exit.max_days) + 1))
+    if len(sig) > step:
+        parts = [_simulate(panel, sig[i:i + step], spec, limit_price, fx, exit_cond)
+                 for i in range(0, len(sig), step)]
+        return Trades(**{f: np.concatenate([getattr(t, f) for t in parts]) for f in Trades.__dataclass_fields__})
+    return _simulate(panel, sig, spec, limit_price, fx, exit_cond)
+
+
+def _simulate(panel: Panel, sig: np.ndarray, spec: Spec, limit_price: np.ndarray | None,
+              fx: np.ndarray | None, exit_cond: np.ndarray | None) -> Trades:
     o, h, lo, c = (panel.cols[k] for k in ("open", "high", "low", "close"))
     gend = panel.gend
     n = len(sig)
@@ -131,6 +148,22 @@ def simulate(panel: Panel, sig: np.ndarray, spec: Spec, limit_price: np.ndarray 
     fp = fill_price[:, None]
     tgt = fp * (1 + x.target_pct / 100.0) if x.target_pct is not None else None
     stp = fp * (1 - x.stop_pct / 100.0) if x.stop_pct is not None else None
+    kind = fill_kind
+
+    # 손절선(날마다): 고정 손절과 추적손절 중 높은 쪽
+    fixed = np.broadcast_to(stp, (n, D + 1)) if stp is not None else np.full((n, D + 1), -np.inf)
+    if x.trail_pct is not None:
+        # 기준 고가 = 체결가와 '전날까지'의 고가 중 최고 (체결일 고가는 시가 체결일 때만 체결 이후로 본다)
+        Href = H.copy()
+        Href[kind != FILL_AT_OPEN, 0] = np.nan
+        Href = np.where(np.isfinite(Href), Href, -np.inf)
+        prev = np.concatenate([np.full((n, 1), -np.inf), np.maximum.accumulate(Href, axis=1)[:, :-1]], axis=1)
+        trail = np.maximum(fp, prev) * (1 - x.trail_pct / 100.0)
+        trail[:, 0] = -np.inf  # 체결 당일은 장중 순서를 몰라 적용하지 않음
+    else:
+        trail = np.full((n, D + 1), -np.inf)
+    S = np.maximum(fixed, trail)
+    has_stop = stp is not None or x.trail_pct is not None
 
     with np.errstate(invalid="ignore"):
         if tgt is not None:
@@ -140,13 +173,22 @@ def simulate(panel: Panel, sig: np.ndarray, spec: Spec, limit_price: np.ndarray 
                 hitT = C >= tgt
         else:
             hitT = np.zeros_like(valid)
-        hitS = (L <= stp) if stp is not None else np.zeros_like(valid)
+        hitS = (L <= S) if has_stop else np.zeros_like(valid)
+
+    # 청산 조건: d 일 장 마감에 참 → d+1 일 시가 매도 (d+1 일 데이터가 있어야 함)
+    if exit_cond is not None:
+        X = np.where(valid, exit_cond[np.clip(idx, 0, len(exit_cond) - 1)], False)
+        X[:, D] = False  # 마지막 날 조건은 보유기간 만료(종가 청산)가 먼저
+        anyX = X.any(axis=1)
+        eX = np.where(anyX, np.argmax(X, axis=1) + 1, D + 1)
+        eX = np.where(valid[np.arange(n), np.clip(eX, 0, D)] & anyX, eX, D + 1)
+    else:
+        eX = np.full(n, D + 1)
 
     hitT = hitT & valid
     hitS = hitS & valid
 
     # 체결일(0번째 날) 보정
-    kind = fill_kind
     close_fill = kind == FILL_AT_CLOSE
     intraday = kind == FILL_INTRADAY
     hitT_c, hitT_o = hitT.copy(), hitT.copy()
@@ -175,6 +217,10 @@ def simulate(panel: Panel, sig: np.ndarray, spec: Spec, limit_price: np.ndarray 
         else:
             is_tgt = anyT & (dT <= dS)
             is_stop = anyS & (dS < dT)
+        # 청산 조건은 그날 시가에 팔므로 같은 날 장중의 목표·손절보다 먼저
+        is_sig = filled & (eX <= D) & (eX <= dT) & (eX <= dS)
+        is_tgt &= ~is_sig
+        is_stop &= ~is_sig
         # 마지막 유효일 (데이터 끝 고려)
         last_valid = valid.sum(axis=1) - 1
         complete = last_valid >= D
@@ -182,7 +228,8 @@ def simulate(panel: Panel, sig: np.ndarray, spec: Spec, limit_price: np.ndarray 
         outcome[filled] = np.where(complete[filled], TIMEOUT, OPEN)
         outcome[is_stop] = STOP
         outcome[is_tgt] = TARGET
-        exit_day = np.where(is_tgt, dT, np.where(is_stop, dS, np.where(complete, D, -1)))
+        outcome[is_sig] = SIGNAL_EXIT
+        exit_day = np.where(is_tgt, dT, np.where(is_stop, dS, np.where(is_sig, eX, np.where(complete, D, -1))))
         exit_day = np.where(filled, exit_day, -1)
 
         ed = np.clip(exit_day, 0, D)
@@ -198,19 +245,27 @@ def simulate(panel: Panel, sig: np.ndarray, spec: Spec, limit_price: np.ndarray 
             else:
                 p = c_at
             price = np.where(is_tgt, p, price)
-        if stp is not None:
-            s1 = stp[:, 0]
-            p = np.where((ed > 0) & (o_at <= s1), o_at, s1)
+        if has_stop:
+            s_at = S[rows, ed]
+            p = np.where((ed > 0) & (o_at <= s_at), o_at, s_at)
             price = np.where(is_stop, p, price)
+            # 추적손절선이 고정 손절선보다 높았던 날 걸렸으면 '추적손절'
+            is_trail = is_stop & (trail[rows, ed] > fixed[rows, ed])
+            outcome[is_trail] = TRAIL
+        price = np.where(is_sig, o_at, price)
         timeout = outcome == TIMEOUT
         price = np.where(timeout, c_at, price)
         exit_row = np.where(exit_day >= 0, fr + ed, -1)
         res[mode] = (outcome, exit_row, price, np.where(exit_day >= 0, exit_day, -1))
 
-    # 보유기간 중 최고/최저 (체결일은 시가 체결일 때만 포함)
+    # 보유 중 최고/최저 — 체결부터 (보수적) 청산일까지. 체결일은 시가 체결일 때만 포함
     Hm, Lm = H.copy(), L.copy()
     Hm[kind != FILL_AT_OPEN, 0] = np.nan
     Lm[kind != FILL_AT_OPEN, 0] = np.nan
+    ed_c = res["c"][3]
+    after_exit = (ed_c[:, None] >= 0) & (np.arange(D + 1)[None, :] > ed_c[:, None])
+    Hm[after_exit] = np.nan
+    Lm[after_exit] = np.nan
     with np.errstate(invalid="ignore", divide="ignore"):
         all_nan = ~np.isfinite(Hm).any(axis=1)
         mfe = (np.nanmax(np.where(all_nan[:, None], 0, Hm), axis=1) / fill_price - 1) * 100

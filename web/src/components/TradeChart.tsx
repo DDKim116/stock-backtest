@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CandlestickSeries,
   createChart,
@@ -13,7 +13,7 @@ import {
   type Time,
 } from "lightweight-charts";
 import { api } from "@/lib/api";
-import { pct, price } from "@/lib/format";
+import { bigMoney, pct, price, retClass } from "@/lib/format";
 import { bollinger, rsi, sma } from "@/lib/indicators";
 import type { Bar, Spec, Trade } from "@/lib/types";
 
@@ -80,6 +80,7 @@ export default function TradeChart({
   const [bars, setBars] = useState<Bar[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [hover, setHover] = useState<Bar | null>(null);
+  const [pinned, setPinned] = useState<Bar | null>(null); // 누른 봉 (손을 떼도 유지)
   const [span, setSpan] = useState(RANGES[1].bars);
   const [ind, setInd] = useState<Ind>(loadInd);
   const toggle = (k: keyof Ind) =>
@@ -196,7 +197,12 @@ export default function TradeChart({
     if (strategy && trade.fill_date)
       markers.push({ time: trade.fill_date as Time, position: "belowBar", shape: "arrowUp", color: up, text: tag + "매수" });
     if (strategy && trade.exit_date) {
-      const label = trade.outcome === "목표도달" ? "목표" : trade.outcome === "손절" ? "손절" : "청산";
+      const label =
+        trade.outcome === "목표도달"
+          ? "목표"
+          : trade.outcome === "손절" || trade.outcome === "추적손절" || trade.outcome === "조건청산"
+            ? trade.outcome
+            : "청산";
       markers.push({ time: trade.exit_date as Time, position: "aboveBar", shape: "arrowDown", color: down, text: tag + label });
     }
     const acc = cssVar("--accent");
@@ -241,6 +247,9 @@ export default function TradeChart({
     chart.subscribeCrosshairMove((p) => {
       setHover(p.time ? (byTime.get(String(p.time)) ?? null) : null);
     });
+    chart.subscribeClick((p) => {
+      if (p.time) setPinned(byTime.get(String(p.time)) ?? null);
+    });
     return () => {
       chartRef.current = null;
       chart.remove();
@@ -258,7 +267,28 @@ export default function TradeChart({
     chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, right - span), to: right + 1 });
   }, [bars, trade, span, ind]);
 
-  const shown = hover ?? bars?.find((b) => b.t === trade.signal_date) ?? null;
+  const shown = hover ?? pinned ?? bars?.find((b) => b.t === trade.signal_date) ?? null;
+
+  // 고른 봉의 등락률·이평·RSI·매수가 대비
+  const info = useMemo(() => {
+    if (!bars || !shown) return null;
+    const i = bars.findIndex((b) => b.t === shown.t);
+    if (i < 0) return null;
+    const closes = bars.map((b) => b.c);
+    const prev = i > 0 ? bars[i - 1].c : null;
+    const mas = ind.ma ? periods.map((n) => ({ n, v: sma(closes, n)[i] })) : [];
+    const r = ind.rsi ? rsi(closes, 14)[i] : null;
+    const bb = ind.bb ? bollinger(closes, 20, 2) : null;
+    const base = trade.fill_price ?? null;
+    return {
+      chg: prev ? (shown.c / prev - 1) * 100 : null,
+      mas,
+      rsi: r,
+      bb: bb ? { up: bb.up[i], lo: bb.lo[i] } : null,
+      vsBuy: base && shown.t >= (trade.fill_date ?? "") ? (shown.c / base - 1) * 100 : null,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- periods 는 spec 에서 나옴
+  }, [bars, shown, ind, trade, spec]);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background" role="dialog" aria-modal="true">
@@ -276,15 +306,42 @@ export default function TradeChart({
           닫기
         </button>
       </header>
-      <div className="tabular flex flex-wrap gap-x-3 px-4 py-2 text-xs text-muted">
+      <div className="tabular space-y-0.5 px-4 py-2 text-xs text-muted">
         {shown ? (
           <>
-            <span>{shown.t}</span>
-            <span>시 {price(shown.o, currency)}</span>
-            <span>고 {price(shown.h, currency)}</span>
-            <span>저 {price(shown.l, currency)}</span>
-            <span>종 {price(shown.c, currency)}</span>
-            <span>량 {Math.round(shown.v).toLocaleString("ko-KR")}</span>
+            <div className="flex flex-wrap gap-x-3">
+              <span className="font-semibold text-foreground">
+                {shown.t}
+                {pinned && pinned.t === shown.t && !hover && " 📌"}
+              </span>
+              {info?.chg != null && <span className={retClass(info.chg)}>{pct(info.chg, 2, true)}</span>}
+              <span>시 {price(shown.o, currency)}</span>
+              <span>고 {price(shown.h, currency)}</span>
+              <span>저 {price(shown.l, currency)}</span>
+              <span>종 {price(shown.c, currency)}</span>
+            </div>
+            <div className="flex flex-wrap gap-x-3">
+              <span>량 {Math.round(shown.v).toLocaleString("ko-KR")}</span>
+              {shown.a != null && <span>대금 {bigMoney(shown.a, currency)}</span>}
+              {info?.vsBuy != null && (
+                <span>
+                  매수가 대비 <span className={retClass(info.vsBuy)}>{pct(info.vsBuy, 2, true)}</span>
+                </span>
+              )}
+              {info?.mas.map((m) =>
+                m.v != null ? (
+                  <span key={m.n}>
+                    {m.n}일 {price(m.v, currency)}
+                  </span>
+                ) : null,
+              )}
+              {info?.bb && info.bb.up != null && (
+                <span>
+                  밴드 {price(info.bb.lo, currency)}~{price(info.bb.up, currency)}
+                </span>
+              )}
+              {info?.rsi != null && <span>RSI {info.rsi.toFixed(1)}</span>}
+            </div>
           </>
         ) : (
           <span>차트를 눌러 가격 확인</span>
