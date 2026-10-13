@@ -30,7 +30,7 @@ const RANGES = [
 
 // 이평선 색: 5·20·60·120 은 증권사 차트에서 흔히 쓰는 구분
 // 이평선 색 (파스텔 톤). 240일선은 짙은 회색으로 조금 굵게
-const MA_COLORS: Record<number, string> = { 5: "#e8898c", 20: "#7ea7dd", 60: "#7fc29b", 120: "#bba6e4", 240: "#6b7079" };
+const MA_COLORS: Record<number, string> = { 5: "#e8898c", 20: "#7ea7dd", 60: "#7fc29b", 120: "#a68fdc", 240: "#6b7079" };
 // 어두운 화면에서는 짙은 회색이 묻혀서 한 단계 밝게
 function isDark(): boolean {
   const t = document.documentElement.dataset.theme;
@@ -38,7 +38,6 @@ function isDark(): boolean {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 const MA_WIDTH: Record<number, 1 | 2> = { 240: 2 };
-const EXTRA_COLORS = ["#e9b07a", "#7cc3cf", "#d99cc3"];
 const DEFAULT_MA = [5, 20, 60, 120, 240];
 
 interface Ind {
@@ -56,11 +55,6 @@ function loadInd(): Ind {
 }
 
 // 조건식에 쓴 이평 기간도 차트에 함께 그린다 (예: 이평(종가, 33))
-function maPeriods(signal: string): number[] {
-  const extra = [...signal.matchAll(/(?:이평|ma)\(\s*종가\s*,\s*(\d+)\s*\)/g)].map((m) => +m[1]);
-  return [...new Set([...DEFAULT_MA, ...extra])].filter((n) => n >= 2 && n <= 300).sort((a, b) => a - b);
-}
-
 function shiftDate(d: string, days: number): string {
   const t = new Date(d + "T00:00:00Z");
   t.setUTCDate(t.getUTCDate() + days);
@@ -100,9 +94,8 @@ export default function TradeChart({
       } catch {}
       return n;
     });
-  const periods = maPeriods(spec.signal);
-  const maColor = (n: number) =>
-    (n === 240 && isDark() ? "#9a9ea6" : MA_COLORS[n]) ?? EXTRA_COLORS[periods.filter((p) => !MA_COLORS[p]).indexOf(n) % EXTRA_COLORS.length];
+  const periods = DEFAULT_MA; // 조건식에 쓴 기간과 상관없이 정해진 이평선만 그린다
+  const maColor = (n: number) => (n === 240 && isDark() ? "#9a9ea6" : MA_COLORS[n]);
   const chartRef = useRef<IChartApi | null>(null);
 
   useEffect(() => {
