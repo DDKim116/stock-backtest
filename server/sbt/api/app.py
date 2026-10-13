@@ -787,4 +787,15 @@ _WEB_DIR = Path(os.environ.get("SBT_WEB_DIR", Path(__file__).resolve().parents[3
 if _WEB_DIR.exists():
     from fastapi.staticfiles import StaticFiles
 
+    @app.middleware("http")
+    async def _web_cache(request, call_next):
+        # 화면(HTML)은 매번 새로 확인하게 해서 업데이트가 바로 보이게 하고, 이름에 해시가 붙은 파일은 오래 캐시한다
+        resp = await call_next(request)
+        path = request.url.path
+        if path.startswith("/_next/static/"):
+            resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif not path.startswith("/api/"):
+            resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
     app.mount("/", StaticFiles(directory=_WEB_DIR, html=True), name="web")

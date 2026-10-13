@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   CandlestickSeries,
   createChart,
@@ -81,6 +81,7 @@ export default function TradeChart({
   const [err, setErr] = useState<string | null>(null);
   const [hover, setHover] = useState<Bar | null>(null);
   const [pinned, setPinned] = useState<Bar | null>(null); // 누른 봉 (손을 떼도 유지)
+  const [pinLeft, setPinLeft] = useState(false); // 누른 곳 반대편에 정보 카드를 띄운다
   const [span, setSpan] = useState(RANGES[1].bars);
   const [ind, setInd] = useState<Ind>(loadInd);
   const toggle = (k: keyof Ind) =>
@@ -248,7 +249,9 @@ export default function TradeChart({
       setHover(p.time ? (byTime.get(String(p.time)) ?? null) : null);
     });
     chart.subscribeClick((p) => {
-      if (p.time) setPinned(byTime.get(String(p.time)) ?? null);
+      if (!p.time) return;
+      setPinned(byTime.get(String(p.time)) ?? null);
+      if (p.point && box.current) setPinLeft(p.point.x > box.current.clientWidth / 2);
     });
     return () => {
       chartRef.current = null;
@@ -289,6 +292,45 @@ export default function TradeChart({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- periods 는 spec 에서 나옴
   }, [bars, shown, ind, trade, spec]);
+
+  // 누른 봉 정보 카드 (항목, 값, 색)
+  const pinCard = useMemo(() => {
+    if (!bars || !pinned) return null;
+    const i = bars.findIndex((b) => b.t === pinned.t);
+    if (i < 0) return null;
+    const closes = bars.map((b) => b.c);
+    const prev = i > 0 ? bars[i - 1].c : null;
+    const chg = prev ? (pinned.c / prev - 1) * 100 : null;
+    const rows: [string, string, string?][] = [
+      ["등락률", pct(chg, 2, true), retClass(chg)],
+      ["시가", price(pinned.o, currency)],
+      ["고가", price(pinned.h, currency)],
+      ["저가", price(pinned.l, currency)],
+      ["종가", price(pinned.c, currency)],
+      ["거래량", Math.round(pinned.v).toLocaleString("ko-KR")],
+    ];
+    if (pinned.a != null) rows.push(["거래대금", bigMoney(pinned.a, currency)]);
+    if (prev && i > 0 && bars[i - 1].v > 0) rows.push(["전일 대비 량", `${(pinned.v / bars[i - 1].v).toFixed(1)}배`]);
+    if (ind.ma) for (const n of periods) {
+      const v = sma(closes, n)[i];
+      if (v != null) rows.push([`${n}일선`, price(v, currency)]);
+    }
+    if (ind.bb) {
+      const bb = bollinger(closes, 20, 2);
+      if (bb.up[i] != null) rows.push(["볼린저", `${price(bb.lo[i], currency)}~${price(bb.up[i], currency)}`]);
+    }
+    if (ind.rsi) {
+      const r = rsi(closes, 14)[i];
+      if (r != null) rows.push(["RSI", r.toFixed(1)]);
+    }
+    const base = trade.fill_price ?? null;
+    if (base && pinned.t >= (trade.fill_date ?? "")) {
+      const d = (pinned.c / base - 1) * 100;
+      rows.push(["매수가 대비", pct(d, 2, true), retClass(d)]);
+    }
+    return rows;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- periods 는 spec 에서 나옴
+  }, [bars, pinned, ind, trade, spec, currency]);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background" role="dialog" aria-modal="true">
@@ -344,7 +386,7 @@ export default function TradeChart({
             </div>
           </>
         ) : (
-          <span>차트를 눌러 가격 확인</span>
+          <span>차트의 봉을 누르면 그날 정보가 나옵니다</span>
         )}
       </div>
       <div className="flex flex-wrap items-center gap-1 px-4 pb-1">
@@ -393,6 +435,26 @@ export default function TradeChart({
         {err && <p className="p-4 text-sm text-critical">⚠ {err}</p>}
         {!bars && !err && <p className="p-4 text-sm text-muted">불러오는 중…</p>}
         <div ref={box} className="absolute inset-0" />
+        {pinned && pinCard && (
+          <div
+            className={`tabular absolute top-2 z-10 w-44 rounded-lg border border-border bg-card/95 p-2 text-xs shadow-lg ${pinLeft ? "left-2" : "right-16"}`}
+          >
+            <div className="mb-1 flex items-center justify-between">
+              <span className="font-semibold">{pinned.t}</span>
+              <button type="button" onClick={() => setPinned(null)} className="px-1 text-muted" aria-label="봉 정보 닫기">
+                ✕
+              </button>
+            </div>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+              {pinCard.map(([k, v, cls]) => (
+                <Fragment key={k}>
+                  <dt className="text-muted">{k}</dt>
+                  <dd className={`text-right ${cls ?? ""}`}>{v}</dd>
+                </Fragment>
+              ))}
+            </dl>
+          </div>
+        )}
       </div>
       {strategy && !mine && (
       <dl className="tabular grid grid-cols-3 gap-px border-t border-border bg-border text-center text-sm">
