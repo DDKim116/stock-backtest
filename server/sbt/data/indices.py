@@ -13,7 +13,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-from .. import config
+from .. import config, krx_status
 from . import krx
 
 INDICES: dict[str, dict] = {
@@ -108,6 +108,15 @@ def _kr_trading_days(start: dt.date, end: dt.date) -> list[dt.date]:
 
 
 def update_kr(api_key: str, refetch_days: int = 7, max_calls: int = 9000, log=print) -> None:
+    try:
+        _update_kr(api_key, refetch_days, max_calls, log)
+    except krx.KrxError as e:
+        krx_status.record_error("index", str(e), krx.is_auth_error(e))
+        raise
+    krx_status.record_ok("index")
+
+
+def _update_kr(api_key: str, refetch_days: int, max_calls: int, log) -> None:
     if not api_key:
         raise krx.KrxError("KRX_API_KEY 가 비어 있습니다")
     sess = requests.Session()

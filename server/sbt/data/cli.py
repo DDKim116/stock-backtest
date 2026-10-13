@@ -19,7 +19,7 @@ import sys
 
 import pandas as pd
 
-from .. import config
+from .. import config, krx_status
 from . import build, indices, krx, synthetic, us
 
 
@@ -61,7 +61,12 @@ def main(argv: list[str] | None = None) -> None:
         today = dt.date.today()
         m = krx.load_manifest(root)
         start = min(dt.date.fromisoformat(max(m)) if m else today, today - dt.timedelta(days=a.days))
-        n = krx.collect(root, start, today, config.KRX_API_KEY, refetch_recent_days=a.days)
+        try:
+            n = krx.collect(root, start, today, config.KRX_API_KEY, refetch_recent_days=a.days)
+        except krx.KrxError as e:
+            krx_status.record_error("stock", str(e), krx.is_auth_error(e))
+            raise
+        krx_status.record_ok("stock")
         print(f"새로 저장 {n}일")
         build.build(root)
         try:

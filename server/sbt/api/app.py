@@ -379,6 +379,20 @@ class StrategyIn(BaseModel):
     last_summary: dict | None = None
 
 
+@app.get("/api/krx-status", dependencies=[Depends(auth)])
+def get_krx_status():
+    from .. import krx_status
+
+    return krx_status.view()
+
+
+@app.post("/api/krx-status/renewed", dependencies=[Depends(auth)])
+def krx_renewed():
+    from .. import krx_status
+
+    return {"remind_from": krx_status.set_renewed()}
+
+
 @app.get("/api/indices", dependencies=[Depends(auth)])
 def get_indices(group: str = "kr"):
     from ..data import indices

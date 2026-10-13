@@ -40,6 +40,12 @@ class KrxError(RuntimeError):
     pass
 
 
+def is_auth_error(e: Exception) -> bool:
+    """인증키 만료·이용 기간 종료·미승인처럼 사람이 KRX 사이트에서 해결해야 하는 오류."""
+    m = str(e)
+    return any(w in m for w in ("인증키", "승인", "401", "403"))
+
+
 def _to_num(s: pd.Series) -> pd.Series:
     return pd.to_numeric(s.astype(str).str.replace(",", "", regex=False).replace({"-": None, "": None}),
                          errors="coerce")

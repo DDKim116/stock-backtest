@@ -11,6 +11,7 @@ import Results from "./Results";
 import ScanResults from "./ScanResults";
 import Explore from "./Explore";
 import Journal from "./Journal";
+import KrxBanner from "./KrxBanner";
 import Market from "./Market";
 
 type Tab = "run" | "explore" | "journal" | "market" | "saved" | "more";
@@ -236,6 +237,7 @@ export default function App() {
       </header>
 
       {needLogin && <Login onDone={loadDatasets} />}
+      {!needLogin && <KrxBanner />}
 
       {!needLogin && tab === "run" && (
         <>
