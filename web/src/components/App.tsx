@@ -59,6 +59,12 @@ function fitToDataset(s: Spec, d: DatasetInfo): Spec {
   };
 }
 
+// 저장한 전략을 불러와 돌린 결과면 제목 옆에 전략 이름
+function StrategyTag({ name }: { name?: string }) {
+  if (!name) return null;
+  return <span className="rounded-md bg-accent-soft px-2 py-0.5 text-sm font-semibold text-accent">{name}</span>;
+}
+
 export default function App() {
   const [tab, setTab] = useState<Tab>("run");
   const [spec, setSpec] = useState<Spec>(DEFAULT_SPEC);
@@ -279,7 +285,10 @@ export default function App() {
           )}
           {scan && (
             <section id="scan" className="mt-6 scroll-mt-4">
-              <h2 className="mb-3 text-lg font-bold">오늘 신호</h2>
+              <h2 className="mb-3 flex flex-wrap items-baseline gap-x-2 text-lg font-bold">
+                오늘 신호
+                <StrategyTag name={scan.spec.name} />
+              </h2>
               <ScanResults
                 r={scan}
                 onBacktest={() => run(scan.spec)}
@@ -306,7 +315,10 @@ export default function App() {
           )}
           {result && (
             <section id="results" className="mt-6 scroll-mt-4">
-              <h2 className="mb-3 text-lg font-bold">{result.kind === "sweep" ? "비교 결과" : "검증 결과"}</h2>
+              <h2 className="mb-3 flex flex-wrap items-baseline gap-x-2 text-lg font-bold">
+                {result.kind === "sweep" ? "비교 결과" : "검증 결과"}
+                <StrategyTag name={result.kind === "sweep" ? result.variants[0]?.spec.name : result.spec.name} />
+              </h2>
               <Results
                 result={result}
                 detail={detail}
@@ -334,7 +346,8 @@ export default function App() {
           onScan={async (st) => {
             try {
               const r = await api<{ spec: Spec }>("/api/parse", { body: { text: st.text } });
-              const fitted = current ? fitToDataset(r.spec, current) : r.spec;
+              const named = { ...r.spec, name: st.name };
+              const fitted = current ? fitToDataset(named, current) : named;
               setSpec(fitted);
               setTab("run");
               await doScan(fitted);
@@ -346,7 +359,9 @@ export default function App() {
           onLoad={async (st) => {
             try {
               const r = await api<{ spec: Spec }>("/api/parse", { body: { text: st.text } });
-              setSpec(r.spec);
+              // 저장된 전략 이름을 결과 제목에 표시, 시장은 지금 고른 데이터에 맞춘다
+              const named = { ...r.spec, name: st.name };
+              setSpec(current ? fitToDataset(named, current) : named);
               setResult(null);
               setDetail(null);
               setTab("run");
