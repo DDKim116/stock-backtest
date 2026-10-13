@@ -29,9 +29,17 @@ const RANGES = [
 ];
 
 // 이평선 색: 5·20·60·120 은 증권사 차트에서 흔히 쓰는 구분
-const MA_COLORS: Record<number, string> = { 5: "#e5a50a", 20: "#2e9e6b", 60: "#8a5cd0", 120: "#8a8f98" };
-const EXTRA_COLORS = ["#d9620f", "#1f8fb5", "#c2418a"];
-const DEFAULT_MA = [5, 20, 60, 120];
+// 이평선 색 (파스텔 톤). 240일선은 짙은 회색으로 조금 굵게
+const MA_COLORS: Record<number, string> = { 5: "#e8898c", 20: "#7ea7dd", 60: "#7fc29b", 120: "#bba6e4", 240: "#6b7079" };
+// 어두운 화면에서는 짙은 회색이 묻혀서 한 단계 밝게
+function isDark(): boolean {
+  const t = document.documentElement.dataset.theme;
+  if (t) return t === "dark";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+const MA_WIDTH: Record<number, 1 | 2> = { 240: 2 };
+const EXTRA_COLORS = ["#e9b07a", "#7cc3cf", "#d99cc3"];
+const DEFAULT_MA = [5, 20, 60, 120, 240];
 
 interface Ind {
   ma: boolean;
@@ -93,7 +101,8 @@ export default function TradeChart({
       return n;
     });
   const periods = maPeriods(spec.signal);
-  const maColor = (n: number) => MA_COLORS[n] ?? EXTRA_COLORS[periods.filter((p) => !MA_COLORS[p]).indexOf(n) % EXTRA_COLORS.length];
+  const maColor = (n: number) =>
+    (n === 240 && isDark() ? "#9a9ea6" : MA_COLORS[n]) ?? EXTRA_COLORS[periods.filter((p) => !MA_COLORS[p]).indexOf(n) % EXTRA_COLORS.length];
   const chartRef = useRef<IChartApi | null>(null);
 
   useEffect(() => {
@@ -151,12 +160,12 @@ export default function TradeChart({
     );
     // 보조지표
     const closes = bars.map((b) => b.c);
-    const line = (vals: (number | null)[], color: string, pane = 0, style = LineStyle.Solid) => {
+    const line = (vals: (number | null)[], color: string, pane = 0, style = LineStyle.Solid, width: 1 | 2 = 1) => {
       const ls = chart.addSeries(
         LineSeries,
         {
           color,
-          lineWidth: 1,
+          lineWidth: width,
           lineStyle: style,
           priceLineVisible: false,
           lastValueVisible: false,
@@ -168,7 +177,7 @@ export default function TradeChart({
       ls.setData(bars.map((b, i) => (vals[i] == null ? { time: b.t as Time } : { time: b.t as Time, value: vals[i] as number })));
       return ls;
     };
-    if (ind.ma) for (const n of periods) line(sma(closes, n), maColor(n));
+    if (ind.ma) for (const n of periods) line(sma(closes, n), maColor(n), 0, LineStyle.Solid, MA_WIDTH[n] ?? 1);
     if (ind.bb) {
       const bb = bollinger(closes, 20, 2);
       const c = cssVar("--muted");
@@ -423,7 +432,7 @@ export default function TradeChart({
         <div className="flex flex-wrap gap-x-3 px-4 pb-1 text-[11px] text-muted">
           {periods.map((n) => (
             <span key={n} className="inline-flex items-center gap-1">
-              <span className="inline-block h-0.5 w-3 rounded" style={{ background: maColor(n) }} />
+              <span className={`inline-block w-3 rounded ${MA_WIDTH[n] === 2 ? "h-1" : "h-0.5"}`} style={{ background: maColor(n) }} />
               {n}일
             </span>
           ))}
