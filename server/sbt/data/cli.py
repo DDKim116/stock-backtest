@@ -6,6 +6,7 @@
   python -m sbt.data.cli kr-build                  # 원본 → prices.parquet
   python -m sbt.data.cli us-collect                # 미국 전 종목 첫 수집 (야후)
   python -m sbt.data.cli us-update                 # 미국 최근 한 달 갱신 + 빌드 (매일 자동 실행용)
+  python -m sbt.data.cli index-update             # 지수(코스피·코스닥·S&P 500·나스닥) 갱신
   python -m sbt.data.cli check --code 005930       # 특정 종목 최근 가격 출력 (증권사 차트와 대조용)
   python -m sbt.data.cli check --dataset us --code AAPL
 """
@@ -19,7 +20,7 @@ import sys
 import pandas as pd
 
 from .. import config
-from . import build, krx, synthetic, us
+from . import build, indices, krx, synthetic, us
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -40,6 +41,7 @@ def main(argv: list[str] | None = None) -> None:
     uc.add_argument("--refetch", action="store_true", help="이미 받은 종목도 다시 받기")
     sub.add_parser("us-update")
     sub.add_parser("us-build")
+    sub.add_parser("index-update")
     k = sub.add_parser("check")
     k.add_argument("--dataset", default="kr")
     k.add_argument("--code", required=True)
@@ -62,6 +64,10 @@ def main(argv: list[str] | None = None) -> None:
         n = krx.collect(root, start, today, config.KRX_API_KEY, refetch_recent_days=a.days)
         print(f"새로 저장 {n}일")
         build.build(root)
+        try:
+            indices.update_kr(config.KRX_API_KEY)
+        except Exception as e:  # noqa: BLE001 — 지수는 실패해도 종목 갱신에는 영향 없음
+            print(f"한국 지수: {e}")
     elif a.cmd == "kr-build":
         build.build(config.dataset_dir("kr"))
     elif a.cmd == "us-collect":
@@ -72,8 +78,14 @@ def main(argv: list[str] | None = None) -> None:
         root = config.dataset_dir("us")
         us.update(root)
         us.build(root)
+        try:
+            indices.update_us()
+        except Exception as e:  # noqa: BLE001
+            print(f"미국 지수 갱신 실패: {e}")
     elif a.cmd == "us-build":
         us.build(config.dataset_dir("us"))
+    elif a.cmd == "index-update":
+        indices.update()
     elif a.cmd == "check":
         p = config.dataset_dir(a.dataset) / "prices.parquet"
         df = pd.read_parquet(p, filters=[("code", "==", a.code)]).sort_values("date").tail(a.n)

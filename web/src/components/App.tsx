@@ -11,8 +11,9 @@ import Results from "./Results";
 import ScanResults from "./ScanResults";
 import Explore from "./Explore";
 import Journal from "./Journal";
+import Market from "./Market";
 
-type Tab = "run" | "explore" | "journal" | "saved" | "more";
+type Tab = "run" | "explore" | "journal" | "market" | "saved" | "more";
 
 // 다시 열었을 때 이어 볼 화면
 interface Session {
@@ -370,6 +371,7 @@ export default function App() {
       {!needLogin && tab === "journal" && (
         <Journal dataset={current} prefill={journalPrefill} onPrefillUsed={clearPrefill} />
       )}
+      {!needLogin && tab === "market" && <Market />}
       {tab === "more" && (
         <div className="space-y-8">
           <Settings onSaved={loadDatasets} />
@@ -395,6 +397,7 @@ export default function App() {
               ["run", "검증"],
               ["explore", "탐색"],
               ["journal", "일지"],
+              ["market", "지수"],
               ["saved", "저장"],
               ["more", "더보기"],
             ] as const

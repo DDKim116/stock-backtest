@@ -379,6 +379,15 @@ class StrategyIn(BaseModel):
     last_summary: dict | None = None
 
 
+@app.get("/api/indices", dependencies=[Depends(auth)])
+def get_indices(group: str = "kr"):
+    from ..data import indices
+
+    if group not in {g["key"] for g in indices.GROUPS}:
+        raise HTTPException(422, "group 은 kr 또는 us")
+    return indices.summary(group)
+
+
 @app.get("/api/strategies", dependencies=[Depends(auth)])
 def list_strategies():
     return store.list()

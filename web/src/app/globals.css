@@ -18,6 +18,9 @@
   --warning: #c98500;
   --critical: #d03b3b;
   --bar-track: #ecebe7;
+  /* 지수 비교 색 (보라·주황 — 상승/하락 색과 겹치지 않게) */
+  --series-1: #7b6be0;
+  --series-2: #ef8457;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -37,6 +40,8 @@
     --warning: #fab219;
     --critical: #e66767;
     --bar-track: #2a2a27;
+    --series-1: #9085e9;
+    --series-2: #d95926;
   }
 }
 
@@ -56,6 +61,8 @@
   --warning: #fab219;
   --critical: #e66767;
   --bar-track: #2a2a27;
+  --series-1: #9085e9;
+  --series-2: #d95926;
 }
 
 @theme inline {
