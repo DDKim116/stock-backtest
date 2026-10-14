@@ -20,7 +20,7 @@ import sys
 import pandas as pd
 
 from .. import config, krx_status
-from . import build, indices, krx, krx_web, synthetic, us
+from . import build, indices, krx, krx_web, synthetic, us, yahoo_kr
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -42,6 +42,9 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("us-update")
     sub.add_parser("us-build")
     sub.add_parser("index-update")
+    yt = sub.add_parser("kr-yahoo-test")
+    yt.add_argument("--date", default=None, help="YYYY-MM-DD (기본: 오늘)")
+    yt.add_argument("--n", type=int, default=300, help="비교할 종목 수")
     wt = sub.add_parser("kr-web-test")
     wt.add_argument("--date", default=None, help="YYYY-MM-DD (기본: 오늘)")
     k = sub.add_parser("check")
@@ -91,6 +94,8 @@ def main(argv: list[str] | None = None) -> None:
             print(f"미국 지수 갱신 실패: {e}")
     elif a.cmd == "us-build":
         us.build(config.dataset_dir("us"))
+    elif a.cmd == "kr-yahoo-test":
+        yahoo_kr.test(dt.date.fromisoformat(a.date) if a.date else dt.date.today(), a.n)
     elif a.cmd == "kr-web-test":
         krx_web.test(dt.date.fromisoformat(a.date) if a.date else dt.date.today())
     elif a.cmd == "index-update":
