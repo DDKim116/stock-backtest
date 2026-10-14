@@ -11,5 +11,19 @@ echo "새 버전 적용: $(git rev-parse --short origin/main)"
 git merge -q --ff-only origin/main
 .venv/bin/pip install -q -e "server[dev]"
 (cd web && npm ci --silent && npx next build >/dev/null)
+# systemd 설정(갱신 시각 등)이 바뀌었으면 다시 설치
+changed=0
+for f in deploy/systemd/*.service deploy/systemd/*.timer; do
+  dst="/etc/systemd/system/$(basename "$f")"
+  new="$(sed -e "s|__REPO__|$PWD|g" -e "s|__USER__|$(id -un)|g" "$f")"
+  if [ "$new" != "$(cat "$dst" 2>/dev/null)" ]; then
+    printf '%s\n' "$new" | sudo tee "$dst" >/dev/null
+    changed=1
+  fi
+done
+if [ "$changed" = 1 ]; then
+  sudo systemctl daemon-reload
+  for t in deploy/systemd/*.timer; do sudo systemctl restart "$(basename "$t")"; done
+fi
 sudo systemctl restart sbt-api.service
 echo "완료"
