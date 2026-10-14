@@ -1,0 +1,10 @@
+[Unit]
+Description=stock-backtest 국내 당일 시세 저녁 임시 갱신 (야후, 다음 날 아침 KRX 공식 값으로 교체)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=__USER__
+WorkingDirectory=__REPO__/server
+EnvironmentFile=__REPO__/.env
+ExecStart=__REPO__/.venv/bin/python -m sbt.data.cli kr-evening

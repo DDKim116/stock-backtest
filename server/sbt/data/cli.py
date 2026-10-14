@@ -3,6 +3,7 @@
   python -m sbt.data.cli demo                      # 가상 데이터 생성 + 빌드
   python -m sbt.data.cli kr-collect --start 2010-01-01   # KRX 원본 수집 (이어받기 지원)
   python -m sbt.data.cli kr-update                 # 최근 며칠 갱신 + 빌드 (매일 자동 실행용)
+  python -m sbt.data.cli kr-evening                # 오늘 국내 시세를 야후로 임시 갱신 (다음 날 아침 공식 값으로 교체)
   python -m sbt.data.cli kr-build                  # 원본 → prices.parquet
   python -m sbt.data.cli us-collect                # 미국 전 종목 첫 수집 (야후)
   python -m sbt.data.cli us-update                 # 미국 최근 한 달 갱신 + 빌드 (매일 자동 실행용)
@@ -42,6 +43,7 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("us-update")
     sub.add_parser("us-build")
     sub.add_parser("index-update")
+    sub.add_parser("kr-evening")
     yt = sub.add_parser("kr-yahoo-test")
     yt.add_argument("--date", default=None, help="YYYY-MM-DD (기본: 오늘)")
     yt.add_argument("--n", type=int, default=300, help="비교할 종목 수")
@@ -73,6 +75,7 @@ def main(argv: list[str] | None = None) -> None:
             raise
         krx_status.record_ok("stock")
         print(f"새로 저장 {n}일")
+        yahoo_kr.clear_if_official(root)
         build.build(root)
         try:
             indices.update_kr(config.KRX_API_KEY)
@@ -94,6 +97,10 @@ def main(argv: list[str] | None = None) -> None:
             print(f"미국 지수 갱신 실패: {e}")
     elif a.cmd == "us-build":
         us.build(config.dataset_dir("us"))
+    elif a.cmd == "kr-evening":
+        root = config.dataset_dir("kr")
+        if yahoo_kr.update_today(root):
+            build.build(root)
     elif a.cmd == "kr-yahoo-test":
         yahoo_kr.test(dt.date.fromisoformat(a.date) if a.date else dt.date.today(), a.n)
     elif a.cmd == "kr-web-test":

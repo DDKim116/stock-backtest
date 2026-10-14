@@ -84,3 +84,84 @@ def test(day: dt.date, n: int = 300) -> None:
             print(f"  {c} {o.at[c, 'name']}: 공식 {o.at[c, 'close']:,.0f} / 야후 {y.at[c, 'close']:,.0f}")
     show = y.loc[[c for c in BIG if c in y.index]].join(o[["name", "close", "volume"]], rsuffix="_krx")
     print(show[["name", "close", "close_krx", "volume", "volume_krx"]].to_string())
+
+
+# ---------------------------------------------------------------- 저녁 임시 갱신
+def provisional_path(root: Path) -> Path:
+    return root / "provisional.json"
+
+
+def update_today(root: Path, day: dt.date | None = None, min_cover: float = 0.8, log=print) -> bool:
+    """오늘 국내 시세를 야후로 받아 raw/YYYY/YYYYMMDD.parquet 에 임시로 쓴다 (src='yahoo').
+
+    KRX 공식 수집 기록(manifest)에는 넣지 않으므로 다음 날 아침 kr-update 가 같은 파일을 공식 값으로 덮어쓴다.
+    반환: 저장했으면 True.
+    """
+    import json
+
+    day = day or dt.date.today()
+    if day.weekday() >= 5:
+        log("주말이라 건너뜁니다")
+        return False
+    raw = root / "raw"
+    files = sorted(raw.glob("*/*.parquet"))
+    official = [f for f in files if f.stem < day.strftime("%Y%m%d")]
+    if not official:
+        log("이전 거래일 원본이 없습니다")
+        return False
+    if any(f.stem == day.strftime("%Y%m%d") for f in files):
+        cur = pd.read_parquet(raw / str(day.year) / f"{day.strftime('%Y%m%d')}.parquet", columns=None)
+        if "src" not in cur.columns:
+            log(f"{day} 공식 자료가 이미 있습니다")
+            return False
+    prev = pd.read_parquet(official[-1])
+    prev = prev[prev["market"].isin(SUFFIX) & (prev["volume"].fillna(0) > 0)].drop_duplicates("code")
+    tickers = {c + SUFFIX[m]: c for c, m in zip(prev["code"], prev["market"])}
+    t0 = time.time()
+    got: dict[str, pd.DataFrame] = {}
+    tl = list(tickers)
+    for i in range(0, len(tl), us.BATCH):
+        got.update(us._download(tl[i:i + us.BATCH], start=(day - dt.timedelta(days=7)).isoformat()))
+    rows = []
+    for t, df in got.items():
+        r = df[df["date"] == pd.Timestamp(day)]
+        if len(r) and r.iloc[-1]["volume"] > 0:
+            x = r.iloc[-1]
+            rows.append({"code": tickers[t], "open": x["open"], "high": x["high"], "low": x["low"],
+                         "close": x["close"], "volume": x["volume"]})
+    cover = len(rows) / max(1, len(tickers))
+    log(f"야후 {day}: {len(rows):,}/{len(tickers):,}종목 ({cover:.0%}, {time.time() - t0:.0f}초)")
+    if cover < min_cover:
+        log(f"받은 종목이 {min_cover:.0%} 미만이라 저장하지 않습니다 (야후에 아직 안 올라왔거나 휴장일)")
+        return False
+    y = pd.DataFrame(rows)
+    p = prev.set_index("code")
+    y["name"] = y["code"].map(p["name"])
+    y["market"] = y["code"].map(p["market"])
+    pc = y["code"].map(p["close"])
+    y["diff"] = y["close"] - pc  # 권리락 등은 다음 날 아침 공식 값에서 바로잡힌다
+    y["chg_rt"] = (y["diff"] / pc * 100).round(2)
+    y["value"] = ((y["high"] + y["low"] + y["close"]) / 3 * y["volume"]).round()  # 거래대금 추정
+    y["shares"] = y["code"].map(p["shares"]) if "shares" in p else None
+    y["mktcap"] = y["shares"] * y["close"] if "shares" in p else None
+    y["date"] = pd.Timestamp(day)
+    y["src"] = "yahoo"
+    out = raw / str(day.year) / f"{day.strftime('%Y%m%d')}.parquet"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    y.to_parquet(out, index=False)
+    provisional_path(root).write_text(json.dumps(
+        {"date": day.isoformat(), "at": dt.datetime.now().isoformat(timespec="seconds"), "codes": len(y)}))
+    return True
+
+
+def clear_if_official(root: Path) -> None:
+    """임시로 채운 날이 공식 값으로 바뀌었으면 표시를 지운다."""
+    import json
+
+    pp = provisional_path(root)
+    if not pp.exists():
+        return
+    d = dt.date.fromisoformat(json.loads(pp.read_text())["date"])
+    f = root / "raw" / str(d.year) / f"{d.strftime('%Y%m%d')}.parquet"
+    if f.exists() and "src" not in pd.read_parquet(f).columns:
+        pp.unlink()

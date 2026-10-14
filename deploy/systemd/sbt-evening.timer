@@ -1,0 +1,11 @@
+[Unit]
+Description=국내 당일 시세 저녁 임시 갱신 (16:40, 18:10 재시도, 20:10 최종)
+
+[Timer]
+OnCalendar=Mon..Fri 16:40
+OnCalendar=Mon..Fri 18:10
+OnCalendar=Mon..Fri 20:10
+Persistent=true
+
+[Install]
+WantedBy=timers.target

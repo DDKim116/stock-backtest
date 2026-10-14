@@ -83,6 +83,9 @@ def build(root: Path, log=print) -> Path:
         "built_at": dt.datetime.now().isoformat(timespec="seconds"),
         "adj_events": n_events,
     }
+    pv = root / "provisional.json"
+    if pv.exists():  # 마지막 날을 저녁에 야후 값으로 임시로 채운 경우
+        meta["provisional"] = json.loads(pv.read_text())
     (root / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2))
     log(f"저장: {out} ({meta['codes']:,}종목, {meta['start']} ~ {meta['end']})")
     return out

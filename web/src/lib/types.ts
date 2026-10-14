@@ -91,7 +91,14 @@ export interface DatasetInfo {
   markets: string[];
   costs: Spec["costs"];
   ready: boolean;
-  meta: { rows: number; codes: number; start: string; end: string; built_at: string } | null;
+  meta: {
+    rows: number;
+    codes: number;
+    start: string;
+    end: string;
+    built_at: string;
+    provisional?: { date: string; at: string; codes: number }; // 마지막 날을 저녁에 야후 값으로 임시로 채움
+  } | null;
 }
 
 export interface SingleResult {

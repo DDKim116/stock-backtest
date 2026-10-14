@@ -251,6 +251,11 @@ export default function App() {
             <p className="mb-3 text-xs text-faint">
               데이터 {current.meta.start} ~ {current.meta.end} · {current.meta.codes.toLocaleString("ko-KR")}종목
               {current.synthetic && " · ⚠ 가상 데이터"}
+              {current.meta.provisional && (
+                <span className="block text-warning">
+                  {current.meta.provisional.date.slice(5)}은 저녁 임시값(야후)입니다. 다음 날 아침 KRX 공식 값으로 바뀝니다.
+                </span>
+              )}
             </p>
           )}
           <Editor

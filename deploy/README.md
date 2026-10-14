@@ -142,3 +142,9 @@ AI를 쓰지 않아도 조건식 검증은 모두 무료로 됩니다. 말로 �
   tail -f ~/index.log
   ```
 - 이후에는 매일 kr-update·us-update 때 함께 갱신됩니다. 중간에 끊기거나 호출 한도에 걸려도 다음 날 이어서 받습니다.
+
+## 국내 당일 저녁 임시 갱신 (야후)
+
+- KRX OpenAPI 는 전날 자료를 다음 날 아침에 주므로, 평일 저녁 16:40·18:10·20:10 에 야후 값으로 그날 시세를 먼저 채웁니다 (`sbt-evening.timer`).
+- 다음 날 아침 8:20 KRX 갱신이 같은 날짜를 공식 값으로 덮어씁니다. 거래대금·시가총액은 임시로 추정값입니다.
+- 수동 실행: `cd ~/stock-backtest/server && ../.venv/bin/python -m sbt.data.cli kr-evening`

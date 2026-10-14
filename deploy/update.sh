@@ -23,7 +23,10 @@ for f in deploy/systemd/*.service deploy/systemd/*.timer; do
 done
 if [ "$changed" = 1 ]; then
   sudo systemctl daemon-reload
-  for t in deploy/systemd/*.timer; do sudo systemctl restart "$(basename "$t")"; done
+  for t in deploy/systemd/*.timer; do
+    sudo systemctl enable "$(basename "$t")" >/dev/null 2>&1 || true
+    sudo systemctl restart "$(basename "$t")"
+  done
 fi
 sudo systemctl restart sbt-api.service
 echo "완료"
