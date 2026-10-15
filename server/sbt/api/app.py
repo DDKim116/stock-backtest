@@ -900,6 +900,48 @@ def paper_books(dataset: str | None = None, spec_text: str | None = None):
     return out
 
 
+@app.get("/api/paper/news", dependencies=[Depends(auth)])
+def paper_news(limit: int = 60):
+    """모투 소식: 내 선택 종목의 체결·미체결·청산. seen(마지막으로 본 데이터 날짜) 뒤의 것이 새 소식."""
+    seen = store.get_setting("paper_news_seen", {})
+    items, as_of = [], {}
+    for b in store.paper_books(include_archived=False):
+        runner = _paper_runner(b)
+        if runner is None:
+            continue
+        cur = DATASETS.get(b["dataset"], {}).get("currency", "KRW")
+        try:
+            _paper_auto(b, runner)
+            trades = store.paper_trades(b["id"])
+            sims = paper.simulate_trades(runner, paper.book_spec(b), trades)
+        except Exception:  # noqa: BLE001
+            continue
+        for t, s in zip(trades, sims):
+            t.update(s)
+        last = str(runner.panel.dates.max())
+        as_of[b["dataset"]] = last
+        fmt = (lambda x, c=cur: "–" if x is None else (f"${x:,.2f}" if c == "USD" else f"{x:,.0f}원"))
+        for it in paper.news(b, trades, last, fmt):
+            it["dataset"] = b["dataset"]
+            it["new"] = it["date"] > seen.get(b["dataset"], "")
+            items.append(it)
+    order = {"wait": 0, "expire": 1, "fill": 2, "exit": 3}
+    items.sort(key=lambda x: (x["date"], -order[x["kind"]]), reverse=True)
+    return {"as_of": as_of, "seen": seen, "unseen": sum(1 for x in items if x["new"]), "items": items[:limit]}
+
+
+@app.post("/api/paper/news/seen", dependencies=[Depends(auth)])
+def paper_news_seen():
+    seen = store.get_setting("paper_news_seen", {})
+    for name in DATASETS:
+        try:
+            seen[name] = str(loaded.get(name).panel.dates.max())
+        except HTTPException:
+            continue
+    store.set_setting("paper_news_seen", seen)
+    return {"seen": seen}
+
+
 @app.post("/api/paper/books", dependencies=[Depends(auth)])
 def paper_book_create(body: PaperBookIn):
     if body.dataset not in DATASETS:

@@ -21,6 +21,8 @@
   /* 지수 비교 색 (보라·주황 — 상승/하락 색과 겹치지 않게) */
   --series-1: #7b6be0;
   --series-2: #ef8457;
+  /* 선택된 탭 뒤 후광 (파란 글자와 대비되는 따뜻한 호박색) */
+  --glow: rgba(246, 166, 35, 0.42);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -42,6 +44,7 @@
     --bar-track: #2a2a27;
     --series-1: #9085e9;
     --series-2: #d95926;
+    --glow: rgba(250, 178, 25, 0.32);
   }
 }
 
@@ -63,6 +66,7 @@
   --bar-track: #2a2a27;
   --series-1: #9085e9;
   --series-2: #d95926;
+  --glow: rgba(250, 178, 25, 0.32);
 }
 
 @theme inline {

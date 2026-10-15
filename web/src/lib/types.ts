@@ -526,3 +526,25 @@ export interface PaperView {
   };
   trades?: PaperTrade[];
 }
+
+export interface PaperNewsItem {
+  book_id: number;
+  book: string;
+  trade_id: number;
+  code: string;
+  name: string;
+  dataset: string;
+  date: string;
+  kind: "fill" | "exit" | "wait" | "expire";
+  text: string;
+  ret?: number | null;
+  retro: boolean;
+  new: boolean;
+}
+
+export interface PaperNews {
+  as_of: Record<string, string>;
+  seen: Record<string, string>;
+  unseen: number;
+  items: PaperNewsItem[];
+}

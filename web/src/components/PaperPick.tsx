@@ -151,6 +151,17 @@ export default function PaperPick({
             <p className="text-xs text-muted">
               지금 검색한 조건(신호·매수·청산)을 그대로 고정해 새 카테고리를 만듭니다. 조건을 바꿔 시험하려면 카테고리를 새로 만드세요.
             </p>
+            <p className="rounded-lg bg-background p-2 text-xs">
+              <b>매수 방식:</b>{" "}
+              {spec.entry.type === "limit"
+                ? `지정가 ${spec.entry.price} · 신호 다음 날부터 ${spec.entry.valid_days}거래일 동안 주문 유지 (그 안에 가격이 오면 체결)`
+                : spec.entry.type === "next_open"
+                  ? "다음 거래일 시가 (바로 체결)"
+                  : "신호일 종가"}
+              {spec.entry.type === "limit" && (
+                <span className="block text-faint">주문 기간을 바꾸려면 검증 화면 매수의 &apos;주문 유효기간&apos;을 고친 뒤 새 카테고리로 만드세요.</span>
+              )}
+            </p>
             <label className="block">
               <span className="text-muted">이름</span>
               <input value={name} onChange={(e) => setName(e.target.value)} className="mt-1" />

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { money, pct, price, retClass, today } from "@/lib/format";
-import type { PaperGroup, PaperTrade, PaperView, Spec, Trade } from "@/lib/types";
+import type { PaperGroup, PaperNews, PaperTrade, PaperView, Spec, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
 import TradeChart from "./TradeChart";
 import NumInput from "./NumInput";
@@ -60,7 +60,80 @@ function Tile({ label, value, sub, cls }: { label: string; value: string; sub?: 
 }
 
 // ---------------------------------------------------------------- 목록
-export default function Paper({ onLoadSpec, onFlash }: { onLoadSpec: (s: Spec) => void; onFlash: (m: string) => void }) {
+const NEWS_STYLE: Record<string, string> = {
+  fill: "text-accent",
+  exit: "",
+  wait: "text-warning",
+  expire: "text-faint",
+};
+const NEWS_ICON: Record<string, string> = { fill: "🟢", exit: "🏁", wait: "⏳", expire: "⚪" };
+
+// 모투 소식: 내 선택 종목의 매수 체결·미체결·주문 끝남·매도
+function NewsCard({ news, onOpen }: { news: PaperNews; onOpen: (bookId: number) => void }) {
+  const [more, setMore] = useState(false);
+  const fresh = news.items.filter((x) => x.new);
+  const shown = more ? news.items.slice(0, 40) : fresh.length ? fresh.slice(0, 20) : news.items.slice(0, 5);
+  if (news.items.length === 0) return null;
+  return (
+    <section className="rounded-xl border border-border bg-card p-3">
+      <div className="mb-1.5 flex items-center justify-between">
+        <h3 className="font-semibold">
+          모투 소식 {fresh.length > 0 && <span className="ml-1 rounded-full bg-critical px-1.5 text-xs text-white">새 {fresh.length}</span>}
+        </h3>
+        <span className="text-[11px] text-faint">
+          {Object.entries(news.as_of)
+            .map(([k, d]) => `${k === "us" ? "미국" : k === "kr" ? "국내" : k} ${d.slice(5)}`)
+            .join(" · ")}{" "}
+          기준
+        </span>
+      </div>
+      {fresh.length === 0 && !more && <p className="mb-1 text-xs text-muted">새 소식이 없습니다. 최근 소식:</p>}
+      <ul className="divide-y divide-border">
+        {shown.map((x, i) => (
+          <li key={`${x.trade_id}-${x.kind}-${i}`}>
+            <button type="button" onClick={() => onOpen(x.book_id)} className="flex w-full items-start gap-2 py-1.5 text-left text-sm">
+              <span aria-hidden>{NEWS_ICON[x.kind]}</span>
+              <span className="min-w-0 flex-1">
+                <span className="font-medium">{x.name}</span>{" "}
+                <span className={`${NEWS_STYLE[x.kind]} ${x.kind === "exit" ? retClass(x.ret) : ""}`}>{x.text}</span>
+                <span className="block text-[11px] text-faint">
+                  {x.date} · {x.book}
+                  {x.retro ? " · 소급" : ""}
+                </span>
+              </span>
+              {x.new && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-critical" aria-label="새 소식" />}
+            </button>
+          </li>
+        ))}
+      </ul>
+      {news.items.length > shown.length && !more && (
+        <button type="button" onClick={() => setMore(true)} className="mt-1 text-xs text-muted underline">
+          지난 소식 더 보기
+        </button>
+      )}
+    </section>
+  );
+}
+
+export default function Paper({
+  onLoadSpec,
+  onFlash,
+  onNewsSeen,
+}: {
+  onLoadSpec: (s: Spec) => void;
+  onFlash: (m: string) => void;
+  onNewsSeen: () => void;
+}) {
+  const [news, setNews] = useState<PaperNews | null>(null);
+  // 소식은 한 번 보여 준 뒤 '읽음'으로 (빨간 점은 이번 화면에서는 그대로 보임)
+  useEffect(() => {
+    api<PaperNews>("/api/paper/news")
+      .then((n) => {
+        setNews(n);
+        if (n.unseen > 0) api("/api/paper/news/seen", { method: "POST" }).then(onNewsSeen, () => {});
+      })
+      .catch(() => {});
+  }, [onNewsSeen]);
   const [list, setList] = useState<PaperView[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [ds, setDs] = useState<string>("all");
@@ -114,6 +187,15 @@ export default function Paper({ onLoadSpec, onFlash }: { onLoadSpec: (s: Spec) =
           </div>
         )}
       </div>
+      {news && (
+        <NewsCard
+          news={news}
+          onOpen={(id) => {
+            back.push();
+            setOpenId(id);
+          }}
+        />
+      )}
       {err && <p className="text-sm text-critical">⚠ {err}</p>}
       {!list && !err && <p className="text-sm text-muted">불러오는 중…</p>}
       {list && list.length === 0 && (

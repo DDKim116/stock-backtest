@@ -135,14 +135,17 @@ def simulate_trades(runner: Runner, spec: Spec, trades: list[dict]) -> list[dict
                            exit_date=str(p.dates[er]) if er >= 0 else None, exit_price=_r(tr.exit_price_c[j]),
                            ret=_r(tr.ret_c[j]), days=int(tr.days_c[j]) if tr.days_c[j] >= 0 else None)
         else:
-            after = g_last - i  # 신호일 뒤로 지난 거래일 수
-            if s.entry.type == "limit" and after < int(s.entry.valid_days):
-                res.update(status="pending", label=f"주문 대기 · 남은 {int(s.entry.valid_days) - after}일",
-                           outcome="대기")
+            after = g_last - i  # 신호일 뒤로 지난 거래일 수 (= 주문을 걸어 둔 날 수)
+            vd = int(s.entry.valid_days)
+            res["waited"] = after
+            if s.entry.type == "limit" and after < vd:
+                res.update(status="pending", label=f"주문 대기 · 남은 {vd - after}일", outcome="대기", left=vd - after)
             elif s.entry.type == "next_open" and after == 0:
-                res.update(status="pending", label="다음 거래일 시가 매수", outcome="대기")
+                res.update(status="pending", label="다음 거래일 시가 매수", outcome="대기", left=1)
             else:
-                res.update(status="nofill", label="미체결", outcome="미체결")
+                last_try = i + (vd if s.entry.type == "limit" else 1)
+                res.update(status="nofill", label="미체결 · 주문 끝남", outcome="미체결",
+                           expire_date=str(p.dates[min(last_try, g_last)]))
         out[k] = res
     return out
 
@@ -301,3 +304,28 @@ def view(runner: Runner, book: dict, trades: list[dict], cash_events: list[dict]
         }
     groups["retro"] = sum(1 for t in trades if t.get("retro"))
     return {"account": acc, "groups": groups, "trades": trades, "as_of": str(p.dates.max()) if len(p.dates) else None}
+
+
+# ---------------------------------------------------------------- 소식 (체결·미체결·청산)
+def news(book: dict, trades: list[dict], as_of: str | None, fmt_price) -> list[dict]:
+    """내 선택 거래에서 날짜가 있는 사건을 뽑는다. trades 는 simulate 결과가 붙은 것."""
+    out = []
+    for t in trades:
+        if not t.get("picked"):
+            continue
+        base = {"book_id": book["id"], "book": book["name"], "trade_id": t["id"], "code": t["code"], "name": t["name"],
+                "retro": bool(t.get("retro"))}
+        if t.get("fill_date"):
+            out.append({**base, "date": t["fill_date"], "kind": "fill",
+                        "text": f"매수 체결 {fmt_price(t.get('fill_price'))}"})
+        if t.get("status") == "closed" and t.get("exit_date"):
+            r = t.get("ret")
+            out.append({**base, "date": t["exit_date"], "kind": "exit", "ret": r,
+                        "text": f"매도 · {t.get('label')} {'' if r is None else f'{r:+.2f}%'}"})
+        if t.get("status") == "pending" and as_of and t.get("waited", 0) >= 1:
+            out.append({**base, "date": as_of, "kind": "wait",
+                        "text": f"미체결 · 지정가 {fmt_price(t.get('limit'))}에 안 닿음 · 남은 {t.get('left')}일"})
+        if t.get("status") == "nofill" and t.get("expire_date"):
+            out.append({**base, "date": t["expire_date"], "kind": "expire",
+                        "text": "미체결로 주문 끝남 (기간 안에 매수가에 닿지 않음)"})
+    return out

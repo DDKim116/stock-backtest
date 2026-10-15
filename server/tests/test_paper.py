@@ -119,3 +119,25 @@ def test_retro_rule():
     # 미국: 다음 날 뉴욕 9:30
     assert not paper.is_retro("us", "2026-10-15", "next_open", dt.datetime(2026, 10, 16, 22, 0, tzinfo=KST))
     assert paper.is_retro("us", "2026-10-15", "next_open", dt.datetime(2026, 10, 16, 23, 0, tzinfo=KST))
+
+
+def test_paper_news(ctx, monkeypatch):
+    client, app_mod = ctx
+    monkeypatch.setattr(app_mod.paper, "is_retro", lambda *a, **k: False)
+    text = "[신호]\n등락률 >= 5\n[매수]\n지정가 = 종가 * 0.95\n유효기간 = 3\n[청산]\n목표 = 3\n보유기간 = 5\n"
+    spec = client.post("/api/parse", json={"text": text}).json()["spec"]
+    bid = client.post("/api/paper/books", json={"name": "알림", "dataset": "demo", "spec": spec,
+                                                 "capital": 10_000_000, "per_trade": 1_000_000, "auto": True}).json()["book"]["id"]
+    app_mod.store.paper_book_update(bid, {"auto_since": "2020-06-01"})
+    app_mod._paper_sync.clear()
+    v = client.get(f"/api/paper/books/{bid}").json()
+    for t in v["trades"][:15]:
+        client.post(f"/api/paper/books/{bid}/trades", json={"code": t["code"], "signal_date": t["signal_date"]})
+    n = client.get("/api/paper/news").json()
+    kinds = {x["kind"] for x in n["items"]}
+    assert n["unseen"] == len(n["items"]) > 0
+    assert kinds & {"fill", "exit", "expire"}
+    for x in n["items"]:
+        assert x["book"] == "알림" and x["text"]
+    client.post("/api/paper/news/seen")
+    assert client.get("/api/paper/news").json()["unseen"] == 0

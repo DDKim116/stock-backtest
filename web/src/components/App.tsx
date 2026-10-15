@@ -69,6 +69,8 @@ function StrategyTag({ name }: { name?: string }) {
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("run");
+  const [newsCount, setNewsCount] = useState(0); // 모투 새 소식 (체결·미체결·청산)
+  const clearNews = useCallback(() => setNewsCount(0), []);
   const [spec, setSpec] = useState<Spec>(DEFAULT_SPEC);
   const [result, setResult] = useState<RunResult | null>(null);
   const [scan, setScan] = useState<ScanResult | null>(null);
@@ -216,6 +218,18 @@ export default function App() {
       setError((e as Error).message);
     }
   };
+
+  // 모투 새 소식 개수: 처음 열 때와 10분마다
+  useEffect(() => {
+    if (needLogin) return;
+    const check = () =>
+      api<{ unseen: number }>("/api/paper/news?limit=1")
+        .then((r) => setNewsCount(r.unseen))
+        .catch(() => {});
+    check();
+    const t = setInterval(check, 10 * 60 * 1000);
+    return () => clearInterval(t);
+  }, [needLogin]);
 
   const current = datasets.find((d) => d.name === dataset);
 
@@ -399,6 +413,7 @@ export default function App() {
       {!needLogin && tab === "paper" && (
         <Paper
           onFlash={flash}
+          onNewsSeen={clearNews}
           onLoadSpec={(sp) => {
             setSpec(current ? fitToDataset(sp, current) : sp);
             setResult(null);
@@ -450,9 +465,16 @@ export default function App() {
               {/* 선택된 탭 뒤 은은한 후광 */}
               <span
                 aria-hidden
-                className={`pointer-events-none absolute inset-x-1 inset-y-2 rounded-full bg-[radial-gradient(closest-side,var(--accent-soft),transparent)] transition-opacity duration-300 ${tab === k ? "opacity-100" : "opacity-0"}`}
+                className={`pointer-events-none absolute inset-x-0.5 inset-y-1.5 rounded-full bg-[radial-gradient(closest-side,var(--glow)_0%,var(--glow)_35%,transparent_100%)] transition-opacity duration-300 ${tab === k ? "opacity-100" : "opacity-0"}`}
               />
-              <span className="relative">{label}</span>
+              <span className="relative">
+                {label}
+                {k === "paper" && newsCount > 0 && (
+                  <span className="absolute -right-4 -top-2.5 min-w-4 rounded-full bg-critical px-1 text-[10px] font-semibold leading-4 text-white">
+                    {newsCount > 9 ? "9+" : newsCount}
+                  </span>
+                )}
+              </span>
             </button>
           ))}
         </div>
