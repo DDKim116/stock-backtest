@@ -6,6 +6,7 @@ import { money, pct, price, retClass, today } from "@/lib/format";
 import type { PaperGroup, PaperTrade, PaperView, Spec, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
 import TradeChart from "./TradeChart";
+import NumInput from "./NumInput";
 
 const STATUS_STYLE: Record<string, string> = {
   pending: "bg-accent text-white",
@@ -482,16 +483,15 @@ function Detail({
                 ))}
               </div>
               <div className="flex gap-2">
-                <input
-                  inputMode="numeric"
+                <NumInput
+                  decimal={cur === "USD"}
                   placeholder={cur === "USD" ? "금액 (달러)" : "금액 (원)"}
                   value={cashAmt}
-                  onChange={(e) => setCashAmt(e.target.value.replace(/[^\d.]/g, ""))}
+                  onChange={setCashAmt}
                   className="min-w-0 flex-1"
                 />
                 <input type="date" value={cashDate} onChange={(e) => setCashDate(e.target.value)} className="!w-36" />
               </div>
-              {cashAmt && <div className="text-xs text-faint">{money(Number(cashAmt), cur)}</div>}
               <button
                 type="button"
                 disabled={!Number(cashAmt)}

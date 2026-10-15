@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { money, pct, retClass, today } from "@/lib/format";
+import { pct, retClass, today } from "@/lib/format";
 import type { PaperView, ScanRow, Spec } from "@/lib/types";
+import NumInput from "./NumInput";
 
 // 오늘 신호 목록의 '모의' → 모의 카테고리를 골라 담는다 (없으면 새로 만든다)
 export default function PaperPick({
@@ -157,13 +158,11 @@ export default function PaperPick({
             <div className="grid grid-cols-2 gap-2">
               <label className="block">
                 <span className="text-muted">총 자본금 ({usd ? "달러" : "원"})</span>
-                <input inputMode="numeric" value={capital} onChange={(e) => setCapital(e.target.value.replace(/[^\d.]/g, ""))} className="mt-1" />
-                <span className="text-xs text-faint">{money(Number(capital) || 0, currency)}</span>
+                <NumInput decimal={usd} value={capital} onChange={setCapital} className="mt-1" />
               </label>
               <label className="block">
-                <span className="text-muted">1회 매수금</span>
-                <input inputMode="numeric" value={perTrade} onChange={(e) => setPerTrade(e.target.value.replace(/[^\d.]/g, ""))} className="mt-1" />
-                <span className="text-xs text-faint">{money(Number(perTrade) || 0, currency)}</span>
+                <span className="text-muted">1회 매수금 ({usd ? "달러" : "원"})</span>
+                <NumInput decimal={usd} value={perTrade} onChange={setPerTrade} className="mt-1" />
               </label>
             </div>
             <label className="flex items-start gap-2">

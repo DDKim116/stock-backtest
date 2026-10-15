@@ -14,6 +14,7 @@ import Journal from "./Journal";
 import KrxBanner from "./KrxBanner";
 import Market from "./Market";
 import Paper from "./Paper";
+import NumInput from "./NumInput";
 
 type Tab = "run" | "explore" | "journal" | "paper" | "market" | "saved" | "more";
 
@@ -738,7 +739,7 @@ function AISettings() {
           <label className="block">
             <span className="text-muted">월 한도 (원)</span>
             <div className="mt-1 flex gap-2">
-              <input inputMode="numeric" value={limitKrw} onChange={(e) => setLimitKrw(e.target.value.replace(/[^0-9]/g, ""))} />
+              <NumInput value={limitKrw} onChange={setLimitKrw} />
               <button
                 type="button"
                 className="shrink-0 rounded-lg border border-border px-3"

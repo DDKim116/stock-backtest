@@ -15,6 +15,7 @@ import type {
 import { useBackClose } from "@/lib/useBackClose";
 import JournalReview from "./JournalReview";
 import TradeChart from "./TradeChart";
+import NumInput from "./NumInput";
 
 type View = "open" | "closed" | "stats";
 
@@ -348,11 +349,11 @@ function NewTrade({
         </label>
         <label className="space-y-1">
           <span className="text-xs text-muted">매수가 ({cur === "USD" ? "$" : "원"})</span>
-          <input inputMode="decimal" value={px} onChange={(e) => setPx(e.target.value)} />
+          <NumInput decimal value={px} onChange={setPx} />
         </label>
         <label className="space-y-1">
           <span className="text-xs text-muted">수량 (주)</span>
-          <input inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} />
+          <NumInput decimal value={qty} onChange={setQty} />
         </label>
         <label className="space-y-1">
           <span className="text-xs text-muted">메모 (선택)</span>
@@ -592,12 +593,12 @@ function Detail({
             </div>
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             <div className="grid grid-cols-2 gap-2">
-              <input inputMode="decimal" value={px} onChange={(e) => setPx(e.target.value)} placeholder="가격" />
-              <input
-                inputMode="decimal"
+              <NumInput decimal value={px} onChange={setPx} placeholder="가격" />
+              <NumInput
+                decimal
                 value={qty}
-                onChange={(e) => setQty(e.target.value)}
-                placeholder={side === "sell" ? `수량 (${p.qty})` : "수량"}
+                onChange={setQty}
+                placeholder={side === "sell" ? `수량 (${p.qty?.toLocaleString("ko-KR")})` : "수량"}
               />
             </div>
             {side === "sell" && p.qty > 0 && <p className="text-[11px] text-faint">수량을 비우면 남은 {p.qty}주 전부 매도로 기록합니다.</p>}
