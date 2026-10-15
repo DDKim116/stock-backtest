@@ -419,3 +419,110 @@ export interface JournalReview {
   usage: AIUsage;
   n_closed: number;
 }
+
+// ---------------------------------------------------------------- 모의투자
+export interface PaperBook {
+  id: number;
+  name: string;
+  dataset: string;
+  dataset_label: string;
+  currency: string;
+  spec_text: string;
+  spec: Spec | null;
+  auto: number;
+  auto_since: string | null;
+  backtest: {
+    n_complete: number;
+    success_rate: number | null;
+    avg_ret: number | null;
+    baseline_success: number | null;
+    at: string;
+  } | null;
+  memo: string;
+  archived: number;
+  created_at: string;
+}
+
+export interface PaperCash {
+  id: number;
+  date: string;
+  kind: "init" | "deposit" | "withdraw" | "per_trade";
+  amount: number;
+}
+
+export interface PaperTrade {
+  id: number;
+  code: string;
+  name: string;
+  market: string;
+  signal_date: string;
+  picked: number;
+  auto: number;
+  retro: number;
+  manual_exit_date: string | null;
+  note: string;
+  status: "pending" | "holding" | "closed" | "nofill" | "nodata";
+  label: string;
+  outcome?: string;
+  limit?: number | null;
+  signal_close?: number | null;
+  fill_date?: string | null;
+  fill_price?: number | null;
+  exit_date?: string | null;
+  exit_price?: number | null;
+  ret?: number | null;
+  ret_now?: number | null;
+  days?: number | null;
+  last_date?: string;
+  last_close?: number | null;
+  mfe?: number | null;
+  mae?: number | null;
+  qty?: number;
+  invested?: number;
+  value?: number;
+  pnl?: number;
+  skip?: string | null;
+}
+
+export interface PaperGroup {
+  n: number;
+  closed: number;
+  holding: number;
+  pending: number;
+  nofill: number;
+  win_rate: number | null;
+  avg_ret: number | null;
+  best: number | null;
+  worst: number | null;
+  avg_now: number | null;
+  avg_days: number | null;
+  outcomes: Record<string, number>;
+}
+
+export interface PaperView {
+  book: PaperBook;
+  cash: PaperCash[];
+  error?: string;
+  same_spec?: boolean;
+  as_of?: string;
+  account?: {
+    cash: number;
+    positions_value: number;
+    equity: number;
+    contributed: number;
+    pnl: number;
+    ret: number | null;
+    per_trade: number;
+    holding: number;
+    mdd: number | null;
+    curve?: { date: string; equity: number; cash: number; contributed: number }[];
+  };
+  groups?: {
+    picked: PaperGroup;
+    all?: PaperGroup;
+    unpicked?: PaperGroup;
+    edge?: { win_rate: number | null; avg_ret: number | null };
+    retro: number;
+  };
+  trades?: PaperTrade[];
+}

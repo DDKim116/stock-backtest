@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { bigMoney, pct, price, retClass } from "@/lib/format";
 import type { ScanResult, ScanRow, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
+import PaperPick from "./PaperPick";
 import TradeChart from "./TradeChart";
 
 const FILTERS: { key: ScanRow["kind"] | "all"; label: string }[] = [
@@ -48,11 +49,14 @@ export default function ScanResults({
   r,
   onBacktest,
   onRecord,
+  onFlash,
 }: {
   r: ScanResult;
   onBacktest: () => void;
   onRecord: (row: ScanRow) => void;
+  onFlash?: (msg: string) => void;
 }) {
+  const [paperRow, setPaperRow] = useState<ScanRow | null>(null);
   const cur = r.dataset.currency ?? "KRW";
   const [filter, setFilter] = useState<ScanRow["kind"] | "all">("all");
   const [open, setOpen] = useState<Trade | null>(null);
@@ -148,14 +152,24 @@ export default function ScanResults({
                   )}
                 </div>
               </button>
-              <button
-                type="button"
-                onClick={() => onRecord(x)}
-                className="shrink-0 border-l border-border px-3 text-xs font-medium text-accent"
-                aria-label={`${x.name} 매매 기록`}
-              >
-                기록
-              </button>
+              <div className="flex shrink-0 flex-col border-l border-border text-xs font-medium">
+                <button
+                  type="button"
+                  onClick={() => setPaperRow(x)}
+                  className="flex-1 px-3 text-accent"
+                  aria-label={`${x.name} 모의투자로 담기`}
+                >
+                  모의
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onRecord(x)}
+                  className="flex-1 border-t border-border px-3 text-muted"
+                  aria-label={`${x.name} 실제 매매 기록`}
+                >
+                  기록
+                </button>
+              </div>
             </li>
           ))}
         </ul>
@@ -170,6 +184,20 @@ export default function ScanResults({
         이 조건의 과거 성공률 검증하기
       </button>
 
+      {paperRow && (
+        <PaperPick
+          row={paperRow}
+          spec={r.spec}
+          dataset={r.dataset.name}
+          currency={cur}
+          onClose={() => setPaperRow(null)}
+          onDone={(msg) => {
+            setPaperRow(null);
+            if (onFlash) onFlash(msg);
+            else alert(msg);
+          }}
+        />
+      )}
       {open && <TradeChart trade={open} spec={r.spec} dataset={r.dataset.name} currency={cur} onClose={back.close} />}
     </div>
   );

@@ -24,10 +24,10 @@ from .. import config
 from ..ai import client as ai_client
 from ..ai import service as ai_service
 from ..data.panel import Panel
-from .. import journal
+from .. import journal, paper
 from ..engine import dsl
 from ..engine.run import Runner, SpecError
-from ..engine.spec import MARKET_LABEL, Spec, parse_text, to_text
+from ..engine.spec import MARKET_LABEL, Spec, expand, parse_text, to_text, validate
 from .store import Store
 
 KR_COSTS = {"buy_fee_pct": 0.015, "sell_fee_pct": 0.015, "sell_tax_pct": 0.20, "slippage_pct": 0.0}
@@ -788,6 +788,259 @@ def journal_delete_fill(fid: int):
         raise HTTPException(422, "이 매수를 지우면 매도 수량이 보유 수량보다 많아집니다. 매도 기록을 먼저 지우세요. (" + str(e) + ")")
     store.fill_delete(fid)
     return _journal_view(store.journal_get(t["id"]))
+
+
+# ---------------------------------------------------------------- 모의투자 (모투)
+
+class PaperBookIn(BaseModel):
+    name: str
+    dataset: str = config.DEFAULT_DATASET
+    spec: Spec
+    capital: float
+    per_trade: float
+    auto: bool = False
+    backtest: dict | None = None
+    memo: str = ""
+
+
+class PaperBookPatch(BaseModel):
+    name: str | None = None
+    memo: str | None = None
+    archived: bool | None = None
+    auto: bool | None = None
+
+
+class PaperCashIn(BaseModel):
+    kind: str  # deposit | withdraw | per_trade
+    amount: float
+    date: str | None = None
+
+
+class PaperPickIn(BaseModel):
+    code: str
+    signal_date: str
+    name: str = ""
+    market: str = ""
+
+
+class PaperTradePatch(BaseModel):
+    manual_exit_date: str | None = None
+    reopen: bool = False
+    note: str | None = None
+    include: bool | None = None  # 소급 거래를 통계·계좌에 넣기
+
+
+_paper_sync: dict[int, tuple] = {}  # book_id → 마지막으로 자동 담기를 맞춘 (데이터 runner id, 시작일)
+
+
+def _paper_runner(book: dict) -> Runner | None:
+    try:
+        return loaded.get(book["dataset"])
+    except HTTPException:
+        return None
+
+
+def _paper_auto(book: dict, runner: Runner) -> None:
+    key = (id(runner), book["auto_since"])
+    if not book["auto"] or _paper_sync.get(book["id"]) == key:
+        return
+    sig = paper.signals_since(runner, paper.book_spec(book), book["auto_since"] or book["created_at"][:10])
+    store.paper_sync_auto(book["id"], sig)
+    _paper_sync[book["id"]] = key
+
+
+def _paper_view(book: dict, with_curve: bool = True) -> dict:
+    ds = DATASETS.get(book["dataset"], {})
+    try:
+        spec_json = paper.book_spec(book).model_dump(mode="json")
+    except Exception:  # noqa: BLE001
+        spec_json = None
+    out = {"book": {**book, "spec": spec_json, "currency": ds.get("currency", "KRW"),
+                    "dataset_label": ds.get("label", book["dataset"])},
+           "cash": store.paper_cash(book["id"])}
+    runner = _paper_runner(book)
+    if runner is None:
+        return {**out, "error": "데이터가 없습니다"}
+    try:
+        _paper_auto(book, runner)
+        trades = store.paper_trades(book["id"])
+        for t in trades:
+            t["include_retro"] = False
+        v = paper.view(runner, book, trades, out["cash"], with_curve)
+    except Exception as e:  # noqa: BLE001 — 조건식 문법이 바뀌어도 목록은 보여 준다
+        return {**out, "error": _err(e)}
+    if not with_curve:
+        v.pop("trades")
+    return {**out, **v}
+
+
+def _auto_since(dataset: str, spec: Spec) -> str:
+    """자동 담기 시작일: 지금 담아도 매수 시점 전인 가장 이른 신호일."""
+    runner = loaded.get(dataset)
+    last = str(runner.panel.dates.max())
+    return last if not paper.is_retro(dataset, last, spec.entry.type) else \
+        (dt.date.fromisoformat(last) + dt.timedelta(days=1)).isoformat()
+
+
+@app.get("/api/paper/books", dependencies=[Depends(auth)])
+def paper_books(dataset: str | None = None, spec_text: str | None = None):
+    canon = None
+    if spec_text:
+        try:
+            canon = paper.canon_text(parse_text(spec_text))
+        except Exception:  # noqa: BLE001
+            canon = None
+    out = []
+    for b in store.paper_books():
+        if dataset and b["dataset"] != dataset:
+            continue
+        v = _paper_view(b, with_curve=False)
+        v["same_spec"] = canon is not None and b["canon"] == canon
+        out.append(v)
+    return out
+
+
+@app.post("/api/paper/books", dependencies=[Depends(auth)])
+def paper_book_create(body: PaperBookIn):
+    if body.dataset not in DATASETS:
+        raise HTTPException(404, "알 수 없는 데이터셋")
+    if not body.name.strip():
+        raise HTTPException(422, "카테고리 이름을 넣어 주세요")
+    if body.capital <= 0 or body.per_trade <= 0:
+        raise HTTPException(422, "총 자본금과 1회 매수금은 0보다 커야 합니다")
+    if body.per_trade > body.capital:
+        raise HTTPException(422, "1회 매수금이 총 자본금보다 큽니다")
+    spec = body.spec.model_copy(update={"universe": body.spec.universe.model_copy(update={"end": None})})
+    errs = validate(spec)
+    if errs:
+        raise HTTPException(422, "; ".join(errs))
+    if len(expand(spec)) > 1:
+        raise HTTPException(422, "숫자 자리에 값을 하나씩만 넣은 조건으로 만들어 주세요 (비교용 [a, b] 는 안 됩니다)")
+    bid = store.paper_book_create({
+        "name": body.name.strip(), "dataset": body.dataset, "spec_text": to_text(spec),
+        "canon": paper.canon_text(spec), "auto": body.auto, "auto_since": _auto_since(body.dataset, spec),
+        "backtest": body.backtest, "memo": body.memo,
+        "start": dt.datetime.now(paper.KST).date().isoformat(),
+    }, body.capital, body.per_trade)
+    if body.backtest is None:
+        threading.Thread(target=_paper_backtest, args=(bid, body.dataset, spec), daemon=True).start()
+    return _paper_view(store.paper_book(bid))
+
+
+def _paper_backtest(bid: int, dataset: str, spec: Spec) -> None:
+    """카테고리를 만들 때의 검증 결과(나중에 모의 결과와 비교용)."""
+    try:
+        r = loaded.get(dataset).run(spec, with_trades=False)
+        s, b = r["summary"], r["baseline"]
+        bt = {k: s.get(k) for k in ("n_complete", "success_rate", "avg_ret", "median_ret", "fill_rate", "avg_days_to_target")}
+        bt["baseline_success"] = b.get("success_rate")
+        bt["at"] = dt.date.today().isoformat()
+        store.paper_set_backtest(bid, bt)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _book_or_404(bid: int) -> dict:
+    b = store.paper_book(bid)
+    if not b:
+        raise HTTPException(404, "모의 카테고리가 없습니다")
+    return b
+
+
+@app.get("/api/paper/books/{bid}", dependencies=[Depends(auth)])
+def paper_book_get(bid: int):
+    return _paper_view(_book_or_404(bid))
+
+
+@app.put("/api/paper/books/{bid}", dependencies=[Depends(auth)])
+def paper_book_update(bid: int, body: PaperBookPatch):
+    b = _book_or_404(bid)
+    d = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "name" in d and not d["name"].strip():
+        raise HTTPException(422, "이름이 비었습니다")
+    if "archived" in d:
+        d["archived"] = int(d["archived"])
+    if "auto" in d:
+        d["auto"] = int(d["auto"])
+        if d["auto"] and not b["auto"]:
+            d["auto_since"] = _auto_since(b["dataset"], paper.book_spec(b))
+            _paper_sync.pop(bid, None)
+    store.paper_book_update(bid, d)
+    return _paper_view(store.paper_book(bid))
+
+
+@app.delete("/api/paper/books/{bid}", dependencies=[Depends(auth)])
+def paper_book_delete(bid: int):
+    _book_or_404(bid)
+    store.paper_book_delete(bid)
+    return {"ok": True}
+
+
+@app.post("/api/paper/books/{bid}/cash", dependencies=[Depends(auth)])
+def paper_cash_add(bid: int, body: PaperCashIn):
+    _book_or_404(bid)
+    if body.kind not in ("deposit", "withdraw", "per_trade"):
+        raise HTTPException(422, "kind 는 deposit, withdraw, per_trade")
+    if body.amount <= 0:
+        raise HTTPException(422, "금액은 0보다 커야 합니다")
+    date = body.date or dt.datetime.now(paper.KST).date().isoformat()
+    try:
+        dt.date.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(422, f"날짜 형식이 올바르지 않습니다: {date}")
+    store.paper_cash_add(bid, date, body.kind, body.amount)
+    return _paper_view(store.paper_book(bid))
+
+
+@app.delete("/api/paper/cash/{cid}", dependencies=[Depends(auth)])
+def paper_cash_delete(cid: int):
+    store.paper_cash_delete(cid)
+    return {"ok": True}
+
+
+@app.post("/api/paper/books/{bid}/trades", dependencies=[Depends(auth)])
+def paper_pick(bid: int, body: PaperPickIn):
+    b = _book_or_404(bid)
+    runner = loaded.get(b["dataset"])
+    _, _, name, market = runner.last_close(body.code)
+    if not name:
+        raise HTTPException(404, f"{body.code} 종목을 찾을 수 없습니다")
+    spec = paper.book_spec(b)
+    retro = paper.is_retro(b["dataset"], body.signal_date, spec.entry.type)
+    r = store.paper_pick(bid, {"code": body.code, "signal_date": body.signal_date, "name": name, "market": market},
+                         retro)
+    return {**r, "retro": retro, "book": b["name"]}
+
+
+@app.put("/api/paper/trades/{tid}", dependencies=[Depends(auth)])
+def paper_trade_update(tid: int, body: PaperTradePatch):
+    t = store.paper_trade(tid)
+    if not t:
+        raise HTTPException(404, "거래가 없습니다")
+    d: dict = {}
+    if body.reopen:
+        d["manual_exit_date"] = None
+    elif body.manual_exit_date:
+        try:
+            dt.date.fromisoformat(body.manual_exit_date)
+        except ValueError:
+            raise HTTPException(422, "날짜 형식이 올바르지 않습니다")
+        d["manual_exit_date"] = body.manual_exit_date
+    if body.note is not None:
+        d["note"] = body.note
+    if body.include is not None:
+        d["retro"] = 0 if body.include else 1
+    store.paper_trade_update(tid, d)
+    return _paper_view(store.paper_book(t["book_id"]))
+
+
+@app.delete("/api/paper/trades/{tid}", dependencies=[Depends(auth)])
+def paper_trade_delete(tid: int):
+    t = store.paper_trade(tid)
+    if not t:
+        raise HTTPException(404, "거래가 없습니다")
+    store.paper_trade_delete(tid)
+    return _paper_view(store.paper_book(t["book_id"]))
 
 
 @app.get("/api/stocks", dependencies=[Depends(auth)])

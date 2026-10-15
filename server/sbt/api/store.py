@@ -62,7 +62,198 @@ class Store:
                 fee REAL,
                 memo TEXT DEFAULT ''
             )""")
+        # 모의투자: 카테고리(조건 고정), 입출금·1회 매수금 기록, 담은 종목
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS paper_books (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                dataset TEXT NOT NULL,
+                spec_text TEXT NOT NULL,
+                canon TEXT NOT NULL,
+                auto INTEGER NOT NULL DEFAULT 0,
+                auto_since TEXT,
+                backtest TEXT,
+                memo TEXT DEFAULT '',
+                archived INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )""")
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS paper_cash (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id INTEGER NOT NULL,
+                date TEXT NOT NULL,
+                kind TEXT NOT NULL CHECK (kind IN ('init', 'deposit', 'withdraw', 'per_trade')),
+                amount REAL NOT NULL,
+                created_at TEXT NOT NULL
+            )""")
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS paper_trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id INTEGER NOT NULL,
+                code TEXT NOT NULL,
+                name TEXT NOT NULL,
+                market TEXT DEFAULT '',
+                signal_date TEXT NOT NULL,
+                picked INTEGER NOT NULL DEFAULT 0,
+                auto INTEGER NOT NULL DEFAULT 0,
+                retro INTEGER NOT NULL DEFAULT 0,
+                picked_at TEXT,
+                manual_exit_date TEXT,
+                note TEXT DEFAULT '',
+                created_at TEXT NOT NULL,
+                UNIQUE (book_id, code, signal_date)
+            )""")
         self.db.commit()
+
+    # ------------------------------------------------------------ 모의투자
+    def paper_books(self, include_archived: bool = True) -> list[dict]:
+        with _lock:
+            q = "SELECT * FROM paper_books" + ("" if include_archived else " WHERE archived = 0") + " ORDER BY id DESC"
+            rows = [dict(r) for r in self.db.execute(q).fetchall()]
+        for r in rows:
+            r["backtest"] = json.loads(r["backtest"]) if r.get("backtest") else None
+        return rows
+
+    def paper_book(self, bid: int) -> dict | None:
+        with _lock:
+            r = self.db.execute("SELECT * FROM paper_books WHERE id = ?", (bid,)).fetchone()
+        if not r:
+            return None
+        d = dict(r)
+        d["backtest"] = json.loads(d["backtest"]) if d.get("backtest") else None
+        return d
+
+    def paper_book_create(self, d: dict, capital: float, per_trade: float) -> int:
+        now = dt.datetime.now().isoformat(timespec="seconds")
+        today = dt.date.today().isoformat()
+        with _lock:
+            cur = self.db.execute(
+                "INSERT INTO paper_books (name, dataset, spec_text, canon, auto, auto_since, backtest, memo, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (d["name"], d["dataset"], d["spec_text"], d["canon"], int(d.get("auto", 0)), d.get("auto_since"),
+                 json.dumps(d["backtest"], ensure_ascii=False) if d.get("backtest") else None, d.get("memo", ""), now))
+            bid = cur.lastrowid
+            self.db.execute("INSERT INTO paper_cash (book_id, date, kind, amount, created_at) VALUES (?, ?, 'init', ?, ?)",
+                            (bid, d.get("start", today), capital, now))
+            self.db.execute("INSERT INTO paper_cash (book_id, date, kind, amount, created_at) VALUES (?, ?, 'per_trade', ?, ?)",
+                            (bid, d.get("start", today), per_trade, now))
+            self.db.commit()
+        return bid
+
+    def paper_book_update(self, bid: int, d: dict) -> None:
+        keys = [k for k in ("name", "memo", "archived", "auto", "auto_since") if k in d]
+        if not keys:
+            return
+        with _lock:
+            self.db.execute(f"UPDATE paper_books SET {', '.join(k + ' = ?' for k in keys)} WHERE id = ?",
+                            [d[k] for k in keys] + [bid])
+            self.db.commit()
+
+    def paper_set_backtest(self, bid: int, bt: dict) -> None:
+        with _lock:
+            self.db.execute("UPDATE paper_books SET backtest = ? WHERE id = ?", (json.dumps(bt, ensure_ascii=False), bid))
+            self.db.commit()
+
+    def paper_book_delete(self, bid: int) -> None:
+        with _lock:
+            self.db.execute("DELETE FROM paper_trades WHERE book_id = ?", (bid,))
+            self.db.execute("DELETE FROM paper_cash WHERE book_id = ?", (bid,))
+            self.db.execute("DELETE FROM paper_books WHERE id = ?", (bid,))
+            self.db.commit()
+
+    def paper_cash(self, bid: int) -> list[dict]:
+        with _lock:
+            return [dict(r) for r in self.db.execute(
+                "SELECT * FROM paper_cash WHERE book_id = ? ORDER BY date, id", (bid,)).fetchall()]
+
+    def paper_cash_add(self, bid: int, date: str, kind: str, amount: float) -> None:
+        now = dt.datetime.now().isoformat(timespec="seconds")
+        with _lock:
+            self.db.execute("INSERT INTO paper_cash (book_id, date, kind, amount, created_at) VALUES (?, ?, ?, ?, ?)",
+                            (bid, date, kind, amount, now))
+            self.db.commit()
+
+    def paper_cash_delete(self, cid: int) -> None:
+        with _lock:
+            self.db.execute("DELETE FROM paper_cash WHERE id = ? AND kind != 'init'", (cid,))
+            self.db.commit()
+
+    def paper_trades(self, bid: int) -> list[dict]:
+        with _lock:
+            return [dict(r) for r in self.db.execute(
+                "SELECT * FROM paper_trades WHERE book_id = ? ORDER BY signal_date, id", (bid,)).fetchall()]
+
+    def paper_trade(self, tid: int) -> dict | None:
+        with _lock:
+            r = self.db.execute("SELECT * FROM paper_trades WHERE id = ?", (tid,)).fetchone()
+        return dict(r) if r else None
+
+    def paper_pick(self, bid: int, t: dict, retro: bool) -> dict:
+        """내 선택으로 담기 (자동 담기로 이미 있으면 내 선택 표시만)."""
+        now = dt.datetime.now().isoformat(timespec="seconds")
+        with _lock:
+            r = self.db.execute("SELECT * FROM paper_trades WHERE book_id = ? AND code = ? AND signal_date = ?",
+                                (bid, t["code"], t["signal_date"])).fetchone()
+            if r:
+                if not r["picked"]:
+                    self.db.execute("UPDATE paper_trades SET picked = 1, retro = ?, picked_at = ? WHERE id = ?",
+                                    (int(retro), now, r["id"]))
+                tid = r["id"]
+                existed = bool(r["picked"])
+            else:
+                cur = self.db.execute(
+                    "INSERT INTO paper_trades (book_id, code, name, market, signal_date, picked, retro, picked_at, "
+                    "created_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)",
+                    (bid, t["code"], t["name"], t.get("market", ""), t["signal_date"], int(retro), now, now))
+                tid = cur.lastrowid
+                existed = False
+            self.db.commit()
+        return {"id": tid, "already": existed}
+
+    def paper_sync_auto(self, bid: int, signals: list[dict]) -> int:
+        """자동 담기: 신호 목록과 맞춘다. 신호에서 사라진 자동 전용 거래(저녁 임시값 기준이었던 것)는 지운다."""
+        now = dt.datetime.now().isoformat(timespec="seconds")
+        want = {(s["code"], s["signal_date"]): s for s in signals}
+        added = 0
+        with _lock:
+            have = {(r["code"], r["signal_date"]): dict(r) for r in self.db.execute(
+                "SELECT * FROM paper_trades WHERE book_id = ?", (bid,)).fetchall()}
+            for k, r in have.items():
+                if k in want and not r["auto"]:
+                    self.db.execute("UPDATE paper_trades SET auto = 1 WHERE id = ?", (r["id"],))
+                elif k not in want and r["auto"]:
+                    if r["picked"]:
+                        self.db.execute("UPDATE paper_trades SET auto = 0 WHERE id = ?", (r["id"],))
+                    else:
+                        self.db.execute("DELETE FROM paper_trades WHERE id = ?", (r["id"],))
+            for k, s in want.items():
+                if k not in have:
+                    self.db.execute(
+                        "INSERT INTO paper_trades (book_id, code, name, market, signal_date, auto, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, 1, ?)", (bid, s["code"], s["name"], s["market"], s["signal_date"], now))
+                    added += 1
+            self.db.commit()
+        return added
+
+    def paper_trade_update(self, tid: int, d: dict) -> None:
+        keys = [k for k in ("manual_exit_date", "note", "picked", "retro") if k in d]
+        if not keys:
+            return
+        with _lock:
+            self.db.execute(f"UPDATE paper_trades SET {', '.join(k + ' = ?' for k in keys)} WHERE id = ?",
+                            [d[k] for k in keys] + [tid])
+            self.db.commit()
+
+    def paper_trade_delete(self, tid: int) -> None:
+        """내 선택 해제. 자동 담기 거래면 남겨 두고 표시만 뺀다."""
+        with _lock:
+            r = self.db.execute("SELECT auto FROM paper_trades WHERE id = ?", (tid,)).fetchone()
+            if r and r["auto"]:
+                self.db.execute("UPDATE paper_trades SET picked = 0, retro = 0, picked_at = NULL, "
+                                "manual_exit_date = NULL WHERE id = ?", (tid,))
+            else:
+                self.db.execute("DELETE FROM paper_trades WHERE id = ?", (tid,))
+            self.db.commit()
 
     # ------------------------------------------------------------ 설정
     def get_setting(self, key: str, default=None):

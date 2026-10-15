@@ -74,7 +74,7 @@ export default function Journal({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold">매매일지</h2>
+        <h2 className="text-lg font-bold">실전투자 일지</h2>
         <div className="flex gap-2">
           <button
             type="button"

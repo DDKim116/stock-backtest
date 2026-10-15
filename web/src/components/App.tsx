@@ -13,8 +13,9 @@ import Explore from "./Explore";
 import Journal from "./Journal";
 import KrxBanner from "./KrxBanner";
 import Market from "./Market";
+import Paper from "./Paper";
 
-type Tab = "run" | "explore" | "journal" | "market" | "saved" | "more";
+type Tab = "run" | "explore" | "journal" | "paper" | "market" | "saved" | "more";
 
 // 다시 열었을 때 이어 볼 화면
 interface Session {
@@ -144,7 +145,7 @@ export default function App() {
 
   const flash = (m: string) => {
     setToast(m);
-    setTimeout(() => setToast(null), 2000);
+    setTimeout(() => setToast(null), Math.min(5000, 1800 + m.length * 40));
   };
 
   const run = async (s: Spec, keepSweep = false) => {
@@ -297,6 +298,7 @@ export default function App() {
               <ScanResults
                 r={scan}
                 onBacktest={() => run(scan.spec)}
+                onFlash={flash}
                 onRecord={async (row) => {
                   let text = "";
                   try {
@@ -393,6 +395,18 @@ export default function App() {
       {!needLogin && tab === "journal" && (
         <Journal dataset={current} prefill={journalPrefill} onPrefillUsed={clearPrefill} />
       )}
+      {!needLogin && tab === "paper" && (
+        <Paper
+          onFlash={flash}
+          onLoadSpec={(sp) => {
+            setSpec(current ? fitToDataset(sp, current) : sp);
+            setResult(null);
+            setDetail(null);
+            setTab("run");
+            window.scrollTo({ top: 0 });
+          }}
+        />
+      )}
       {!needLogin && tab === "market" && <Market />}
       {tab === "more" && (
         <div className="space-y-8">
@@ -418,19 +432,26 @@ export default function App() {
             [
               ["run", "검증"],
               ["explore", "탐색"],
-              ["journal", "일지"],
+              ["journal", "실투"],
+              ["paper", "모투"],
               ["market", "지수"],
-              ["saved", "저장"],
-              ["more", "더보기"],
+              ["saved", "전략"],
+              ["more", "설정"],
             ] as const
           ).map(([k, label]) => (
             <button
               key={k}
               type="button"
               onClick={() => setTab(k)}
-              className={`flex-1 py-4 text-sm ${tab === k ? "font-semibold text-accent" : "text-muted"}`}
+              aria-current={tab === k ? "page" : undefined}
+              className={`relative flex-1 py-4 text-sm transition-colors ${tab === k ? "font-semibold text-accent" : "text-muted"}`}
             >
-              {label}
+              {/* 선택된 탭 뒤 은은한 후광 */}
+              <span
+                aria-hidden
+                className={`pointer-events-none absolute inset-x-1 inset-y-2 rounded-full bg-[radial-gradient(closest-side,var(--accent-soft),transparent)] transition-opacity duration-300 ${tab === k ? "opacity-100" : "opacity-0"}`}
+              />
+              <span className="relative">{label}</span>
             </button>
           ))}
         </div>
