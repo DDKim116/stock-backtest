@@ -269,7 +269,7 @@ export default function App() {
               {current.synthetic && " · ⚠ 가상 데이터"}
               {current.meta.provisional && (
                 <span className="block text-warning">
-                  {current.meta.provisional.date.slice(5)}은 저녁 임시값(야후)입니다. 다음 날 아침 KRX 공식 값으로 바뀝니다.
+                  {current.meta.provisional.date.slice(5)} 자료는 저녁 임시값(야후)입니다. 다음 날 아침 KRX 공식 값으로 바뀝니다.
                 </span>
               )}
             </p>
