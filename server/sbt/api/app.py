@@ -361,6 +361,14 @@ def chart(code: str, dataset: str = config.DEFAULT_DATASET, start: str | None = 
     rows = rows[m]
     c = p.cols
     adj_events = p.df["is_adj_event"].to_numpy()[rows] if "is_adj_event" in p.df else np.zeros(len(rows), bool)
+    # 그 종목이 속한 시장의 지수 종가 (차트 아래 '지수' 칸)
+    ix = c.get("index")
+    ix_name = None
+    if ix is not None and len(rows):
+        from ..data import indices
+
+        key = indices.MARKET_INDEX.get(dataset, {}).get(str(p.markets[rows[-1]]))
+        ix_name = indices.INDICES[key]["name"] if key else None
     return {
         "code": code,
         "name": str(p.names[rows[-1]]) if len(rows) else "",
@@ -368,9 +376,11 @@ def chart(code: str, dataset: str = config.DEFAULT_DATASET, start: str | None = 
         "bars": [
             {"t": str(p.dates[i]), "o": _f(c["open"][i]), "h": _f(c["high"][i]), "l": _f(c["low"][i]),
              "c": _f(c["close"][i]), "v": _f(c["volume"][i]),
-             "a": _f(c["value"][i]) if "value" in c else None}
+             "a": _f(c["value"][i]) if "value" in c else None,
+             "x": _f(ix[i]) if ix is not None else None}
             for i in rows
         ],
+        "index_name": ix_name,
         "adj_dates": [str(p.dates[i]) for i, e in zip(rows, adj_events) if e],
     }
 

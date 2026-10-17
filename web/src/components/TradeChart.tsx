@@ -47,19 +47,32 @@ function strategyPeriods(spec: Spec): number[] {
   return [...new Set(ns)].filter((n) => n >= 2 && n <= 300 && !DEFAULT_MA.includes(n)).sort((a, b) => a - b);
 }
 
+// 조건식에 쓴 지수 기간: 이평(지수, n) → 지수 칸에 점선, 이전(지수, n) → n일 등락률
+function indexPeriods(spec: Spec): { ma: number[]; back: number[] } {
+  const text = `${spec.signal}\n${spec.exit?.exit_signal ?? ""}`;
+  const pick = (re: RegExp) =>
+    [...new Set([...text.matchAll(re)].map((m) => +m[1]))].filter((n) => n >= 1 && n <= 300).sort((a, b) => a - b);
+  return {
+    ma: pick(/(?:지수이평|이평|ema|ma)\(\s*(?:지수|시장지수|index|idx)\s*,\s*(\d+)\s*\)/gi),
+    back: pick(/이전\(\s*(?:지수|시장지수|index|idx)\s*,\s*(\d+)\s*\)/gi),
+  };
+}
+const IDX_MA_COLORS = ["#e9a96f", "#6fbcc8", "#d993bf"];
+
 interface Ind {
   ma: boolean;
   st: boolean; // 전략 이평선
   bb: boolean;
   rsi: boolean;
+  ix: boolean; // 지수
 }
 const IND_KEY = "sbt-chart-ind";
 function loadInd(): Ind {
   try {
     const v = JSON.parse(localStorage.getItem(IND_KEY) ?? "");
-    if (v && typeof v === "object") return { ma: !!v.ma, st: !!v.st, bb: !!v.bb, rsi: !!v.rsi };
+    if (v && typeof v === "object") return { ma: !!v.ma, st: !!v.st, bb: !!v.bb, rsi: !!v.rsi, ix: v.ix ?? true };
   } catch {}
-  return { ma: true, st: false, bb: false, rsi: false };
+  return { ma: true, st: false, bb: false, rsi: false, ix: true };
 }
 
 function shiftDate(d: string, days: number): string {
@@ -87,6 +100,7 @@ export default function TradeChart({
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [bars, setBars] = useState<Bar[] | null>(null);
+  const [ixName, setIxName] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [hover, setHover] = useState<Bar | null>(null);
   const [pinned, setPinned] = useState<Bar | null>(null); // 누른 봉 (손을 떼도 유지)
@@ -107,6 +121,9 @@ export default function TradeChart({
   const isStrat = (n: number) => !DEFAULT_MA.includes(n);
   const maColor = (n: number) =>
     isStrat(n) ? STRAT_COLORS[stratMA.indexOf(n) % STRAT_COLORS.length] : n === 240 && isDark() ? "#9a9ea6" : MA_COLORS[n];
+  const ixP = indexPeriods(spec);
+  const hasIx = !!bars?.some((b) => b.x != null);
+  const showIx = ind.ix && hasIx;
   const chartRef = useRef<IChartApi | null>(null);
 
   useEffect(() => {
@@ -117,14 +134,18 @@ export default function TradeChart({
       start: shiftDate(trade.signal_date, -760),
       end: shiftDate(end, 370),
     });
-    api<{ bars: Bar[] }>(`/api/chart?${q}`)
-      .then((r) => setBars(r.bars))
+    api<{ bars: Bar[]; index_name?: string | null }>(`/api/chart?${q}`)
+      .then((r) => {
+        setBars(r.bars);
+        setIxName(r.index_name ?? null);
+      })
       .catch((e) => setErr((e as Error).message));
   }, [trade, dataset]);
 
   useEffect(() => {
     if (!bars || !box.current) return;
     const up = cssVar("--up");
+    const fg0 = cssVar("--foreground");
     const down = cssVar("--down");
     const text = cssVar("--muted");
     const grid = cssVar("--border");
@@ -189,15 +210,28 @@ export default function TradeChart({
       line(bb.mid, c, 0, LineStyle.Dotted);
       line(bb.lo, c, 0, LineStyle.Dashed);
     }
+    let nextPane = 2;
+    if (showIx) {
+      // 지수: 종가 선 + 조건식에 쓴 지수 이평선(점선). 칸이 따로라 축도 따로
+      const ixVals = bars.map((b) => b.x ?? null);
+      const ixFmt = { type: "custom" as const, formatter: (p: number) => p.toLocaleString("ko-KR", { maximumFractionDigits: 2 }), minMove: 0.01 };
+      const xl = line(ixVals, fg0, nextPane);
+      xl.applyOptions({ priceFormat: ixFmt, lastValueVisible: true, title: ixName ?? "지수" });
+      ixP.ma.forEach((n, k) => {
+        const s = line(smaGap(ixVals, n), IDX_MA_COLORS[k % IDX_MA_COLORS.length], nextPane, LineStyle.Dashed);
+        s.applyOptions({ priceFormat: ixFmt });
+      });
+      nextPane++;
+    }
     if (ind.rsi) {
-      const r = line(rsi(closes, 14), cssVar("--accent"), 2);
+      const r = line(rsi(closes, 14), cssVar("--accent"), nextPane);
       r.createPriceLine({ price: 70, color: up, lineStyle: LineStyle.Dotted, lineWidth: 1, title: "70" });
       r.createPriceLine({ price: 30, color: down, lineStyle: LineStyle.Dotted, lineWidth: 1, title: "30" });
     }
     const panes = chart.panes();
     panes[0].setStretchFactor(4);
     panes[1].setStretchFactor(1);
-    if (panes[2]) panes[2].setStretchFactor(1.2);
+    for (const pn of panes.slice(2)) pn.setStretchFactor(1.3);
     candles.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.05 } });
     vol.setData(
       bars.map((b) => ({ time: b.t as Time, value: b.v, color: (b.c >= b.o ? up : down) + "66" })),
@@ -271,7 +305,7 @@ export default function TradeChart({
       chart.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- periods·maColor 는 spec 에서 나옴
-  }, [bars, trade, spec, currency, ind, mine, strategy]);
+  }, [bars, trade, spec, currency, ind, mine, strategy, ixName]);
 
   // 보이는 기간: 매수·매도 지점이 오른쪽에 오도록 앞쪽을 span 만큼 보여 준다
   useEffect(() => {
@@ -302,6 +336,7 @@ export default function TradeChart({
       rsi: r,
       bb: bb ? { up: bb.up[i], lo: bb.lo[i] } : null,
       vsBuy: base && shown.t >= (trade.fill_date ?? "") ? (shown.c / base - 1) * 100 : null,
+      ix: showIx ? ixInfo(bars, i, ixP) : null,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- periods 는 spec 에서 나옴
   }, [bars, shown, ind, trade, spec]);
@@ -336,6 +371,13 @@ export default function TradeChart({
       const r = rsi(closes, 14)[i];
       if (r != null) rows.push(["RSI", r.toFixed(1)]);
     }
+    const xi = showIx ? ixInfo(bars, i, ixP) : null;
+    if (xi) {
+      rows.push([ixName ?? "지수", xi.v.toLocaleString("ko-KR", { maximumFractionDigits: 2 })]);
+      rows.push(["지수 등락", pct(xi.chg, 2, true), retClass(xi.chg)]);
+      for (const b of xi.back) rows.push([`지수 ${b.n}일 등락`, pct(b.r, 2, true), retClass(b.r)]);
+      for (const m of xi.ma) if (m.v != null) rows.push([`지수 ${m.n}일선`, m.v.toLocaleString("ko-KR", { maximumFractionDigits: 2 })]);
+    }
     const base = trade.fill_price ?? null;
     if (base && pinned.t >= (trade.fill_date ?? "")) {
       const d = (pinned.c / base - 1) * 100;
@@ -343,7 +385,7 @@ export default function TradeChart({
     }
     return rows;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- periods 는 spec 에서 나옴
-  }, [bars, pinned, ind, trade, spec, currency]);
+  }, [bars, pinned, ind, trade, spec, currency, ixName]);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background" role="dialog" aria-modal="true">
@@ -396,6 +438,17 @@ export default function TradeChart({
                 </span>
               )}
               {info?.rsi != null && <span>RSI {info.rsi.toFixed(1)}</span>}
+              {info?.ix && (
+                <span>
+                  {ixName ?? "지수"} {info.ix.v.toLocaleString("ko-KR", { maximumFractionDigits: 2 })}{" "}
+                  <span className={retClass(info.ix.chg)}>{pct(info.ix.chg, 2, true)}</span>
+                  {info.ix.back.map((b) => (
+                    <span key={b.n}>
+                      {" "}· {b.n}일 <span className={retClass(b.r)}>{pct(b.r, 1, true)}</span>
+                    </span>
+                  ))}
+                </span>
+              )}
             </div>
           </>
         ) : (
@@ -420,9 +473,10 @@ export default function TradeChart({
             ["st", "전략 이평선"],
             ["bb", "볼린저"],
             ["rsi", "RSI"],
+            ["ix", "지수"],
           ] as const
         )
-          .filter(([k]) => k !== "st" || stratMA.length > 0)
+          .filter(([k]) => (k !== "st" || stratMA.length > 0) && (k !== "ix" || hasIx))
           .map(([k, label]) => (
           <button
             key={k}
@@ -448,6 +502,16 @@ export default function TradeChart({
             </span>
           ))}
           {ind.bb && <span>볼린저 20일 ±2σ (점선)</span>}
+        </div>
+      )}
+      {showIx && ixP.ma.length > 0 && (
+        <div className="flex flex-wrap gap-x-3 px-4 pb-1 text-[11px] text-muted">
+          {ixP.ma.map((n, k) => (
+            <span key={n} className="inline-flex items-center gap-1">
+              <span className="inline-block w-3 border-t-2 border-dashed" style={{ borderColor: IDX_MA_COLORS[k % IDX_MA_COLORS.length] }} />
+              지수 {n}일
+            </span>
+          ))}
         </div>
       )}
       {periods.length === 0 && ind.bb && <div className="px-4 pb-1 text-[11px] text-muted">볼린저 20일 ±2σ (점선)</div>}
@@ -496,4 +560,40 @@ export default function TradeChart({
       <p className="bg-card px-4 pb-3 text-[11px] text-faint">수정주가 기준 · 일봉 · 최고/최저는 보유기간 중 고가/저가 기준</p>
     </div>
   );
+}
+
+// 지수에는 빈 날(null)이 있을 수 있어서 null 을 건너뛰지 않고 그 자리만 비운다
+function smaGap(vals: (number | null)[], n: number): (number | null)[] {
+  const out: (number | null)[] = new Array(vals.length).fill(null);
+  let sum = 0;
+  let cnt = 0;
+  for (let i = 0; i < vals.length; i++) {
+    const v = vals[i];
+    if (v == null) {
+      sum = 0;
+      cnt = 0;
+      continue;
+    }
+    sum += v;
+    cnt++;
+    if (cnt > n) sum -= vals[i - n] as number;
+    if (cnt >= n) out[i] = sum / n;
+  }
+  return out;
+}
+
+function ixInfo(bars: Bar[], i: number, p: { ma: number[]; back: number[] }) {
+  const v = bars[i].x;
+  if (v == null) return null;
+  const prev = i > 0 ? bars[i - 1].x : null;
+  const vals = bars.map((b) => b.x ?? null);
+  return {
+    v,
+    chg: prev ? (v / prev - 1) * 100 : null,
+    back: (p.back.length ? p.back : [5])
+      .map((n) => ({ n, b: i - n >= 0 ? bars[i - n].x : null }))
+      .filter((o): o is { n: number; b: number } => o.b != null)
+      .map((o) => ({ n: o.n, r: (v / o.b - 1) * 100 })),
+    ma: p.ma.map((n) => ({ n, v: smaGap(vals, n)[i] })),
+  };
 }

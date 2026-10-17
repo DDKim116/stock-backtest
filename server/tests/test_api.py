@@ -43,6 +43,7 @@ def test_run_and_chart(client):
     code = j["trades"][0]["code"]
     c = client.get("/api/chart", params={"dataset": "demo", "code": code})
     assert c.status_code == 200 and len(c.json()["bars"]) > 100
+    assert "index_name" in c.json() and "x" in c.json()["bars"][0]
 
 
 def test_sweep(client):
