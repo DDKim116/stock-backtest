@@ -3,6 +3,7 @@
   python -m sbt.data.cli demo                      # 가상 데이터 생성 + 빌드
   python -m sbt.data.cli kr-collect --start 2010-01-01   # KRX 원본 수집 (이어받기 지원)
   python -m sbt.data.cli kr-update                 # 최근 며칠 갱신 + 빌드 (매일 자동 실행용)
+  python -m sbt.data.cli research --save 5          # 여러 전략 가족을 한꺼번에 돌려 순위 (약 10~30분)
   python -m sbt.data.cli kr-evening                # 오늘 국내 시세를 야후로 임시 갱신 (다음 날 아침 공식 값으로 교체)
   python -m sbt.data.cli kr-build                  # 원본 → prices.parquet
   python -m sbt.data.cli us-collect                # 미국 전 종목 첫 수집 (야후)
@@ -44,6 +45,10 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("us-build")
     sub.add_parser("index-update")
     sub.add_parser("kr-evening")
+    rs = sub.add_parser("research")
+    rs.add_argument("--dataset", default="kr")
+    rs.add_argument("--markets", default="코스피,코스닥", help="예: 코스피 또는 코스피,코스닥")
+    rs.add_argument("--save", type=int, default=0, help="상위 n개를 앱 '전략' 탭에 저장")
     yt = sub.add_parser("kr-yahoo-test")
     yt.add_argument("--date", default=None, help="YYYY-MM-DD (기본: 오늘)")
     yt.add_argument("--n", type=int, default=300, help="비교할 종목 수")
@@ -97,6 +102,9 @@ def main(argv: list[str] | None = None) -> None:
             print(f"미국 지수 갱신 실패: {e}")
     elif a.cmd == "us-build":
         us.build(config.dataset_dir("us"))
+    elif a.cmd == "research":
+        from .. import research
+        research.run(a.dataset, [m.strip() for m in a.markets.split(",") if m.strip()], a.save)
     elif a.cmd == "kr-evening":
         root = config.dataset_dir("kr")
         if yahoo_kr.update_today(root):
