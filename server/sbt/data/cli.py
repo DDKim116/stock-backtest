@@ -3,7 +3,7 @@
   python -m sbt.data.cli demo                      # 가상 데이터 생성 + 빌드
   python -m sbt.data.cli kr-collect --start 2010-01-01   # KRX 원본 수집 (이어받기 지원)
   python -m sbt.data.cli kr-update                 # 최근 며칠 갱신 + 빌드 (매일 자동 실행용)
-  python -m sbt.data.cli research --save 5          # 여러 전략 가족을 한꺼번에 돌려 순위 (약 10~30분)
+  python -m sbt.data.cli research --save 5          # 여러 전략 유형을 한꺼번에 돌려 순위 (약 10~30분)
   python -m sbt.data.cli kr-evening                # 오늘 국내 시세를 야후로 임시 갱신 (다음 날 아침 공식 값으로 교체)
   python -m sbt.data.cli kr-build                  # 원본 → prices.parquet
   python -m sbt.data.cli us-collect                # 미국 전 종목 첫 수집 (야후)

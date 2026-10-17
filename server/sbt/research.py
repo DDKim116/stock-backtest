@@ -1,11 +1,11 @@
-"""전략 연구: 잘 알려진 매매 아이디어 여러 가족을 숫자 조합까지 한꺼번에 돌려, 기간을 나눠 검증하고 순위를 매긴다.
+"""전략 연구: 잘 알려진 매매 아이디어 여러 전략 유형을 숫자 조합까지 한꺼번에 돌려, 기간을 나눠 검증하고 순위를 매긴다.
 
   python -m sbt.data.cli research                 # 국내 전체 (코스피·코스닥)
   python -m sbt.data.cli research --markets 코스피 --save 5
 
-- 가족마다 [a, b] 로 숫자 후보를 넣어 두고 탐색(explore)과 같은 방식으로 과거 구간 / 검증 구간을 따로 집계한다.
+- 유형마다 [a, b] 로 숫자 후보를 넣어 두고 탐색(explore)과 같은 방식으로 과거 구간 / 검증 구간을 따로 집계한다.
 - 표본 부족, 어느 구간이든 평균 손실, 수익 난 해가 적음, 이웃 숫자에서 무너짐(과최적화)이면 탈락.
-- 통과한 조합을 '두 구간 중 나쁜 쪽 평균 수익률'로 정렬, 가족마다 최대 2개까지만 상위에 올린다.
+- 통과한 조합을 '두 구간 중 나쁜 쪽 평균 수익률'로 정렬, 유형마다 최대 2개까지만 상위에 올린다.
 - 모든 신호에 유동성 조건(거래대금 10억 이상, 주가 1,000원 이상)을 붙여 실제로 사고팔 수 있는 종목만 본다.
 """
 from __future__ import annotations
@@ -198,14 +198,14 @@ def run(dataset: str = "kr", markets: list[str] | None = None, save: int = 0, lo
     log(f"데이터 읽는 중… ({root / 'prices.parquet'})")
     panel = Panel.load(root / "prices.parquet")
     runner = Runner(panel, {"name": dataset, "markets": ["KOSPI", "KOSDAQ"], "currency": "KRW"})
-    log(f"{len(panel.dates):,}행 읽음 ({time.time() - t0:.0f}초). 가족 {len(FAMILIES)}개를 돌립니다.")
+    log(f"{len(panel.dates):,}행 읽음 ({time.time() - t0:.0f}초). 전략 유형 {len(FAMILIES)}개를 돌립니다.")
     results = []
     for fi, (name, idea, text) in enumerate(FAMILIES, 1):
         t1 = time.time()
         spec = _family_spec(text, markets)
         try:
             r = runner.explore(spec)
-        except Exception as e:  # noqa: BLE001 — 한 가족이 실패해도 나머지는 계속
+        except Exception as e:  # noqa: BLE001 — 한 유형이 실패해도 나머지는 계속
             log(f"[{fi}/{len(FAMILIES)}] {name}: 실패 ({e})")
             continue
         log(f"[{fi}/{len(FAMILIES)}] {name}: 조합 {r['n_total']}개 중 통과 {r['n_passed']}개 ({time.time() - t1:.0f}초)")
@@ -214,7 +214,7 @@ def run(dataset: str = "kr", markets: list[str] | None = None, save: int = 0, lo
                         "n_passed": r["n_passed"], "passed": r["passed"][:5], "near_miss": r["near_miss"][:2],
                         "best": best_any})
 
-    # 전체 순위: 가족마다 최대 2개
+    # 전체 순위: 유형마다 최대 2개
     pool = []
     for fr in results:
         for k, row in enumerate(fr["passed"][:2]):
@@ -227,7 +227,7 @@ def run(dataset: str = "kr", markets: list[str] | None = None, save: int = 0, lo
     L.append("유동성 조건: 거래대금 10억 이상, 주가 1,000원 이상 · 비용(수수료·세금) 차감 · 평균은 거래 1건당 수익률")
     L.append("성공 = 목표 도달 비율 (목표 없음인 전략은 수익으로 끝난 비율)")
     L.append("")
-    L.append(f"■ 통과 순위 (두 구간 중 나쁜 쪽 평균 수익률 순, 가족당 최대 2개) — {len(pool)}개")
+    L.append(f"■ 통과 순위 (두 구간 중 나쁜 쪽 평균 수익률 순, 유형당 최대 2개) — {len(pool)}개")
     for rank, (score, fr, row, _) in enumerate(pool[:15], 1):
         s = parse_text_safe(row["spec"])
         i, o = row["is"], row["oos"]
@@ -238,7 +238,7 @@ def run(dataset: str = "kr", markets: list[str] | None = None, save: int = 0, lo
             L.append(f"    신호: {s.signal.replace(LIQ, '').strip()}")
             L.append(f"    매매: {_params(s)}")
     L.append("")
-    L.append("■ 가족별 요약 (통과 수 / 조합 수, 가장 좋은 조합의 검증 구간 평균)")
+    L.append("■ 전략 유형별 요약 (통과 수 / 조합 수, 가장 좋은 조합의 검증 구간 평균)")
     for fr in results:
         b = fr["best"]
         tag = "" if fr["n_passed"] else " (통과 없음 → 탈락 중 최선)"
