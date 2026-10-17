@@ -15,6 +15,7 @@ dependencies = [
   "anthropic>=1.11",
   "yfinance>=0.2.50",
   "openpyxl>=3.1",
+  "cryptography>=42",
 ]
 
 [project.optional-dependencies]

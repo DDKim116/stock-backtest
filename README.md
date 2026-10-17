@@ -44,3 +44,11 @@ SBT_DATASET=demo ../.venv/bin/uvicorn sbt.api.app:app --reload --port 8000
 
 cd web && npm ci && npm run dev    # NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
+
+## 휴대폰 알림 (웹 푸시)
+
+앱의 **설정 → 휴대폰 알림**에서 기기마다 켭니다 (안드로이드 크롬, https 주소 필요 — Tailscale 주소면 됨).
+
+- 새 거래일 데이터가 들어오면(평일 저녁 임시값이 먼저, 실패하면 다음 날 아침 KRX 값) 한 번만 보냅니다. 밤 11시~아침 7시에는 기다립니다.
+- 저녁 신호: 고른 저장 전략의 그날 신호 종목 · 모투 소식: 내가 고른 종목의 체결·미체결·매도
+- 서버 키는 `data/push_vapid.pem` 에 처음 한 번 만들어집니다 (지우면 모든 기기에서 알림을 다시 켜야 함).

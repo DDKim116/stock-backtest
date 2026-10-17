@@ -24,7 +24,7 @@ from .. import config
 from ..ai import client as ai_client
 from ..ai import service as ai_service
 from ..data.panel import Panel
-from .. import journal, paper
+from .. import journal, paper, push
 from ..engine import dsl
 from ..engine.run import Runner, SpecError
 from ..engine.spec import MARKET_LABEL, Spec, expand, parse_text, to_text, validate
@@ -919,8 +919,19 @@ def paper_books(dataset: str | None = None, spec_text: str | None = None):
 def paper_news(limit: int = 60):
     """모투 소식: 내 선택 종목의 체결·미체결·청산. seen(마지막으로 본 데이터 날짜) 뒤의 것이 새 소식."""
     seen = store.get_setting("paper_news_seen", {})
+    items, as_of = _paper_news_items()
+    for it in items:
+        it["new"] = it["date"] > seen.get(it["dataset"], "")
+    order = {"wait": 0, "expire": 1, "fill": 2, "exit": 3}
+    items.sort(key=lambda x: (x["date"], -order[x["kind"]]), reverse=True)
+    return {"as_of": as_of, "seen": seen, "unseen": sum(1 for x in items if x["new"]), "items": items[:limit]}
+
+
+def _paper_news_items(dataset: str | None = None) -> tuple[list[dict], dict]:
     items, as_of = [], {}
     for b in store.paper_books(include_archived=False):
+        if dataset and b["dataset"] != dataset:
+            continue
         runner = _paper_runner(b)
         if runner is None:
             continue
@@ -938,11 +949,8 @@ def paper_news(limit: int = 60):
         fmt = (lambda x, c=cur: "–" if x is None else (f"${x:,.2f}" if c == "USD" else f"{x:,.0f}원"))
         for it in paper.news(b, trades, last, fmt):
             it["dataset"] = b["dataset"]
-            it["new"] = it["date"] > seen.get(b["dataset"], "")
             items.append(it)
-    order = {"wait": 0, "expire": 1, "fill": 2, "exit": 3}
-    items.sort(key=lambda x: (x["date"], -order[x["kind"]]), reverse=True)
-    return {"as_of": as_of, "seen": seen, "unseen": sum(1 for x in items if x["new"]), "items": items[:limit]}
+    return items, as_of
 
 
 @app.post("/api/paper/news/seen", dependencies=[Depends(auth)])
@@ -1112,6 +1120,157 @@ def stock_search(q: str, dataset: str = config.DEFAULT_DATASET, limit: int = 20)
             if len(out) >= limit:
                 break
     return out
+
+
+# ---------------------------------------------------------------- 휴대폰 알림 (웹 푸시)
+
+class PushSubIn(BaseModel):
+    subscription: dict
+    device: str = ""
+
+
+class PushEndpointIn(BaseModel):
+    endpoint: str
+
+
+class PushPrefsIn(BaseModel):
+    paper: bool = True
+    signals: list[int] = []
+    signals_empty: bool = False
+
+
+@app.get("/api/push", dependencies=[Depends(auth)])
+def push_info():
+    return {"key": push.public_key(), "prefs": push.prefs(store),
+            "devices": [{"endpoint": d["endpoint"], "device": d.get("device", ""), "created": d.get("created", "")}
+                        for d in store.get_setting("push_subs", [])]}
+
+
+@app.post("/api/push/subscribe", dependencies=[Depends(auth)])
+def push_subscribe(body: PushSubIn):
+    try:
+        push.add_sub(store, body.subscription, body.device)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return push_info()
+
+
+@app.post("/api/push/unsubscribe", dependencies=[Depends(auth)])
+def push_unsubscribe(body: PushEndpointIn):
+    push.remove_sub(store, body.endpoint)
+    return push_info()
+
+
+@app.put("/api/push/prefs", dependencies=[Depends(auth)])
+def push_set_prefs(body: PushPrefsIn):
+    store.set_setting("push_prefs", body.model_dump())
+    return push_info()
+
+
+@app.post("/api/push/test", dependencies=[Depends(auth)])
+def push_test():
+    if not store.get_setting("push_subs", []):
+        raise HTTPException(409, "알림을 켠 기기가 없습니다. 먼저 '이 기기에서 알림 켜기'를 누르세요.")
+    r = push.send(store, "주식 검증기", "시험 알림입니다. 이렇게 신호와 모투 소식이 옵니다.", tab="more", tag="test")
+    if not r["sent"]:
+        raise HTTPException(502, "보내지 못했습니다: " + "; ".join(r["errors"] or ["기기 구독이 끝났습니다. 알림을 다시 켜 주세요."]))
+    return r
+
+
+def _strategy_dataset(spec: Spec) -> str | None:
+    """전략의 대상 시장이 들어 있는 데이터셋 (국내·미국). 데모는 다른 데이터가 없을 때만."""
+    names = [n for n in DATASETS if n != "demo"] + ["demo"]
+    names = [n for n in names if (config.dataset_dir(n) / "prices.parquet").exists()]
+    for n in names:
+        if set(spec.universe.markets) <= set(DATASETS[n].get("markets", [])):
+            return n
+    return None
+
+
+def _kst_now() -> dt.datetime:
+    from zoneinfo import ZoneInfo
+
+    return dt.datetime.now(ZoneInfo("Asia/Seoul"))
+
+
+def _push_tick(now: dt.datetime | None = None) -> list[str]:
+    """새 거래일 데이터가 들어오면 (저녁 임시값이든 아침 공식 값이든 먼저 온 쪽) 한 번만 알린다.
+
+    - 저녁 신호: 고른 전략의 그날 신호
+    - 모투 소식: 내 선택 종목의 체결·미체결·매도
+    밤 11시 ~ 아침 7시에는 보내지 않고 기다린다. 보낸 알림 제목 목록을 돌려준다 (시험용).
+    """
+    now = now or _kst_now()
+    st = store.get_setting("push_state", {"asof": {}, "sent": []})
+    has_subs = bool(store.get_setting("push_subs", []))
+    pf = push.prefs(store)
+    sent_titles: list[str] = []
+    changed = False
+    for ds in DATASETS:
+        try:
+            runner = loaded.get(ds)
+        except HTTPException:
+            continue
+        as_of = str(runner.panel.dates.max())
+        prev = st["asof"].get(ds)
+        if prev == as_of:
+            continue
+        if prev is None or not has_subs:
+            # 처음이거나 알림 받을 기기가 없으면 지금까지의 것은 보낸 것으로 친다
+            st["asof"][ds] = as_of
+            if pf["paper"]:
+                st["sent"] += [push.news_key(it) for it in _paper_news_items(ds)[0]]
+            changed = True
+            continue
+        if not (7 <= now.hour < 23):
+            continue
+        md = f"{as_of[5:7]}/{as_of[8:10]}"
+        results = []
+        for sid in pf["signals"]:
+            strat = store.get(sid)
+            if not strat:
+                continue
+            try:
+                spec = parse_text(strat["text"])
+                if _strategy_dataset(spec) != ds:
+                    continue
+                rows = runner.scan(spec, 1)["rows"]
+            except Exception:  # noqa: BLE001 — 전략 하나가 깨져도 나머지는 보낸다
+                continue
+            results.append((strat["name"], [r for r in rows if r["signal_date"] == as_of]))
+        body = push.signal_text(results, pf["signals_empty"])
+        if body:
+            title = f"{md} 신호 · {DATASETS[ds]['label'].split(' ')[0]}"
+            push.send(store, title, body, tab="run", tag=f"signals-{ds}")
+            sent_titles.append(title)
+        if pf["paper"]:
+            done = set(st["sent"])
+            fresh = [it for it in _paper_news_items(ds)[0] if push.news_key(it) not in done and it["date"] >= prev]
+            if fresh:
+                title = f"{md} 모투 소식 {len(fresh)}건"
+                push.send(store, title, push.news_text(fresh), tab="paper", tag=f"paper-{ds}")
+                sent_titles.append(title)
+                st["sent"] += [push.news_key(it) for it in fresh]
+        st["asof"][ds] = as_of
+        changed = True
+    if changed:
+        st["sent"] = st["sent"][-2000:]
+        store.set_setting("push_state", st)
+    return sent_titles
+
+
+def _push_loop() -> None:
+    time.sleep(60)
+    while True:
+        try:
+            _push_tick()
+        except Exception as e:  # noqa: BLE001
+            print("알림 확인 실패:", e, flush=True)
+        time.sleep(180)
+
+
+if os.environ.get("SBT_PUSH_LOOP", "1") != "0":
+    threading.Thread(target=_push_loop, daemon=True, name="push").start()
 
 
 # ---------------------------------------------------------------- 제작 노트 (설정 탭)

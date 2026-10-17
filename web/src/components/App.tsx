@@ -16,8 +16,15 @@ import Market from "./Market";
 import Paper from "./Paper";
 import NumInput from "./NumInput";
 import Notes from "./Notes";
+import PushSettings from "./PushSettings";
 
 type Tab = "run" | "explore" | "journal" | "paper" | "market" | "saved" | "more";
+const TAB_KEYS: Tab[] = ["run", "explore", "journal", "paper", "market", "saved", "more"];
+// 알림을 눌러 열면 주소 끝의 #paper 같은 탭으로
+function hashTab(): Tab | null {
+  const h = window.location.hash.slice(1) as Tab;
+  return TAB_KEYS.includes(h) ? h : null;
+}
 
 // 다시 열었을 때 이어 볼 화면
 interface Session {
@@ -124,8 +131,24 @@ export default function App() {
         setTab(ss.tab);
         if (ss.result || ss.scan) setRestoredAt(ss.savedAt);
       }
+      const h = hashTab();
+      if (h) {
+        setTab(h);
+        history.replaceState(null, "", window.location.pathname);
+      }
       setRestored(true);
     });
+  }, []);
+
+  // 앱이 열려 있을 때 알림을 누르면 서비스 워커가 탭 이름을 보내 준다
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    const on = (e: MessageEvent) => {
+      const t = e.data?.type === "open-tab" ? (e.data.tab as Tab) : null;
+      if (t && TAB_KEYS.includes(t)) setTab(t);
+    };
+    navigator.serviceWorker.addEventListener("message", on);
+    return () => navigator.serviceWorker.removeEventListener("message", on);
   }, []);
 
   // 바뀔 때마다 저장 (0.5초 모아서)
@@ -432,6 +455,7 @@ export default function App() {
       {tab === "more" && (
         <div className="space-y-8">
           <Settings onSaved={loadDatasets} />
+          {!needLogin && <PushSettings />}
           {!needLogin && (
             <section>
               <h2 className="mb-3 text-lg font-bold">제작 노트</h2>

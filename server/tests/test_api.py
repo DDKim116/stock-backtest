@@ -1,3 +1,4 @@
+import datetime as dt
 import os
 
 import pytest
@@ -161,3 +162,46 @@ def test_journal(client):
 def test_notes(client):
     r = client.get("/api/notes")
     assert r.status_code == 200 and "제작 노트" in r.json()["html"]
+
+
+def test_push_flow(client, monkeypatch):
+    from sbt import push
+    from sbt.api import app as app_mod
+
+    sent = []
+    monkeypatch.setattr(push, "send_one", lambda sub, payload, ttl=0: sent.append(payload))
+    key = client.get("/api/push").json()["key"]
+    assert len(push.unb64u(key)) == 65
+    assert client.post("/api/push/test").status_code == 409  # 기기 없음
+    sub = {"endpoint": "https://push.example/abc", "keys": {"p256dh": "x", "auth": "y"}}
+    r = client.post("/api/push/subscribe", json={"subscription": sub, "device": "Android"})
+    assert len(r.json()["devices"]) == 1
+    assert client.post("/api/push/test").json()["sent"] == 1
+    sid = client.post("/api/strategies", json={"name": "알림 시험", "text": TEXT}).json()["id"]
+    client.put("/api/push/prefs", json={"paper": True, "signals": [sid], "signals_empty": True})
+
+    # 모투: 최근 신호 하나를 담아 둔다
+    sc = client.post("/api/scan", json={"dataset": "demo", "text": TEXT, "days": 20}).json()
+    spec = sc["spec"]
+    b = client.post("/api/paper/books", json={"name": "알림", "dataset": "demo", "spec": spec,
+                                              "capital": 10_000_000, "per_trade": 1_000_000, "auto": False}).json()
+    row = sc["rows"][-1]
+    client.post(f"/api/paper/books/{b['book']['id']}/trades", json={"code": row["code"], "signal_date": row["signal_date"]})
+
+    evening = dt.datetime(2026, 10, 16, 20, 15)
+    sent.clear()
+    assert app_mod._push_tick(evening) == []  # 처음에는 지금까지의 것을 보낸 것으로만 친다
+    st = app_mod.store.get_setting("push_state")
+    as_of = st["asof"]["demo"]
+    st["asof"]["demo"] = "2020-11-01"  # 새 거래일 데이터가 들어온 것처럼
+    st["sent"] = []
+    app_mod.store.set_setting("push_state", st)
+    assert app_mod._push_tick(dt.datetime(2026, 10, 17, 2, 0)) == []  # 새벽에는 기다린다
+    titles = app_mod._push_tick(evening)
+    md = f"{as_of[5:7]}/{as_of[8:10]}"
+    assert titles[0] == f"{md} 신호 · 데모" and "알림 시험" in sent[0]["body"]
+    assert any("모투 소식" in t for t in titles) and sent[-1]["tab"] == "paper"
+    assert app_mod._push_tick(evening) == []  # 같은 날 데이터는 한 번만
+
+    client.post("/api/push/unsubscribe", json={"endpoint": sub["endpoint"]})
+    assert client.get("/api/push").json()["devices"] == []
