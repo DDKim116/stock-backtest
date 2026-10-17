@@ -170,6 +170,74 @@ def update(log=print) -> None:
         log(f"한국 지수 갱신 실패: {e}")
 
 
+# ---------------------------------------------------------------- 종목 데이터에 붙이기 (조건식의 '지수')
+MARKET_INDEX = {
+    "kr": {"KOSPI": "KOSPI", "KOSDAQ": "KOSDAQ", "KONEX": "KOSDAQ"},
+    "demo": {"KOSPI": "KOSPI", "KOSDAQ": "KOSDAQ"},
+    "us": {"NASDAQ": "NASDAQ", "NYSE": "SP500", "AMEX": "SP500"},
+}
+
+
+def mtime(dataset: str) -> float:
+    keys = set(MARKET_INDEX.get(dataset, {}).values())
+    return max((path(k).stat().st_mtime for k in keys if path(k).exists()), default=0.0)
+
+
+def attach(panel, dataset: str) -> bool:
+    """panel.cols['index'] = 그 종목이 속한 시장의 지수 종가 (그날 값, 휴장 등으로 없으면 최근 7일 안의 값)."""
+    import numpy as np
+
+    mapping = MARKET_INDEX.get(dataset, {})
+    n = len(panel.dates)
+    vals = np.full(n, np.nan)
+    found = False
+    for market, key in mapping.items():
+        s = load(key)
+        if s is None:
+            continue
+        m = panel.markets == market
+        if not m.any():
+            continue
+        sd = s.index.to_numpy(dtype="datetime64[D]")
+        sv = s.to_numpy(dtype=float)
+        rd = panel.dates[m]
+        k = np.searchsorted(sd, rd, side="right") - 1
+        ok = k >= 0
+        kk = np.where(ok, k, 0)
+        ok &= (rd - sd[kk]).astype(int) <= 7
+        v = np.where(ok, sv[kk], np.nan)
+        vals[m] = v
+        found = True
+    if found:
+        panel.cols["index"] = vals
+    return found
+
+
+def update_kr_evening(day: dt.date | None = None, log=print) -> None:
+    """국내 지수 오늘 값을 야후(^KS11, ^KQ11)로 임시로 채운다. 다음 날 아침 KRX 갱신이 덮어쓴다."""
+    import yfinance as yf
+
+    for key, ticker in (("KOSPI", "^KS11"), ("KOSDAQ", "^KQ11")):
+        s = load(key)
+        if s is None:
+            continue
+        df = yf.download(ticker, start=(s.index[-1] - pd.Timedelta(days=3)).date().isoformat(),
+                         auto_adjust=False, progress=False, threads=False)
+        if df is None or df.empty:
+            log(f"{key} 지수: 야후에서 받지 못함")
+            continue
+        close = df["Close"]
+        if isinstance(close, pd.DataFrame):
+            close = close.iloc[:, 0]
+        close.index = pd.to_datetime(close.index).tz_localize(None).normalize()
+        new = close[close.index > s.index[-1]].dropna()
+        if day:
+            new = new[new.index <= pd.Timestamp(day)]
+        if len(new):
+            _save(key, pd.concat([s, new]))
+            log(f"{key} 지수: {', '.join(d.strftime('%m-%d') for d in new.index)} 임시값 추가")
+
+
 # ---------------------------------------------------------------- 분석
 def _r(x, nd=2):
     return None if x is None or pd.isna(x) else round(float(x), nd)

@@ -5,6 +5,7 @@
   python -m sbt.data.cli kr-update                 # 최근 며칠 갱신 + 빌드 (매일 자동 실행용)
   python -m sbt.data.cli research --save 5          # 여러 전략 유형을 한꺼번에 돌려 순위 (약 10~30분)
   python -m sbt.data.cli research2                 # 2차: 급락 반등 정밀 점검 + 신고가 시장 필터
+  python -m sbt.data.cli recommend --save          # 지수 조건을 붙인 추천 전략 검증 + 전략 탭에 저장
   python -m sbt.data.cli kr-evening                # 오늘 국내 시세를 야후로 임시 갱신 (다음 날 아침 공식 값으로 교체)
   python -m sbt.data.cli kr-build                  # 원본 → prices.parquet
   python -m sbt.data.cli us-collect                # 미국 전 종목 첫 수집 (야후)
@@ -46,6 +47,9 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("us-build")
     sub.add_parser("index-update")
     sub.add_parser("kr-evening")
+    rc = sub.add_parser("recommend")
+    rc.add_argument("--dataset", default="kr")
+    rc.add_argument("--save", action="store_true", help="앱 '전략' 탭에 저장")
     r2 = sub.add_parser("research2")
     r2.add_argument("--dataset", default="kr")
     rs = sub.add_parser("research")
@@ -105,6 +109,9 @@ def main(argv: list[str] | None = None) -> None:
             print(f"미국 지수 갱신 실패: {e}")
     elif a.cmd == "us-build":
         us.build(config.dataset_dir("us"))
+    elif a.cmd == "recommend":
+        from .. import research3
+        research3.run(a.dataset, a.save)
     elif a.cmd == "research2":
         from .. import research2
         research2.run(a.dataset)
@@ -113,6 +120,10 @@ def main(argv: list[str] | None = None) -> None:
         research.run(a.dataset, [m.strip() for m in a.markets.split(",") if m.strip()], a.save)
     elif a.cmd == "kr-evening":
         root = config.dataset_dir("kr")
+        try:
+            indices.update_kr_evening()
+        except Exception as e:  # noqa: BLE001 — 지수 실패해도 종목 갱신은 진행
+            print(f"지수 저녁 갱신 실패: {e}")
         if yahoo_kr.update_today(root):
             build.build(root)
     elif a.cmd == "kr-yahoo-test":

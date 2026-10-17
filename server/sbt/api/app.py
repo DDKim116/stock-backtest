@@ -57,7 +57,7 @@ store = Store(config.DATA_DIR / "app.sqlite3")
 class _Loaded:
     def __init__(self):
         self.lock = threading.Lock()
-        self.items: dict[str, tuple[float, Runner]] = {}
+        self.items: dict[str, tuple[tuple, Runner]] = {}
 
     def get(self, name: str) -> Runner:
         if name not in DATASETS:
@@ -67,14 +67,18 @@ class _Loaded:
             hint = {"demo": "python -m sbt.data.cli demo", "us": "python -m sbt.data.cli us-collect"}.get(
                 name, "python -m sbt.data.cli kr-collect")
             raise HTTPException(409, f"{DATASETS[name]['label']} 데이터가 아직 없습니다. 서버에서 '{hint}' 를 실행하세요.")
-        mtime = path.stat().st_mtime
+        from ..data import indices as _ix
+
+        mtime = (path.stat().st_mtime, _ix.mtime(name))  # 지수 파일이 바뀌어도 다시 읽는다
         with self.lock:
             cur = self.items.get(name)
             if cur and cur[0] == mtime:
                 return cur[1]
             meta_p = path.parent / "meta.json"
             meta = json.loads(meta_p.read_text()) if meta_p.exists() else {}
-            runner = Runner(Panel.load(path), {"name": name, **DATASETS[name], "meta": meta})
+            panel = Panel.load(path)
+            _ix.attach(panel, name)
+            runner = Runner(panel, {"name": name, **DATASETS[name], "meta": meta})
             self.items[name] = (mtime, runner)
             return runner
 
@@ -150,6 +154,7 @@ def reference():
             {"name": "저가", "desc": "당일 저가"}, {"name": "종가", "desc": "당일 종가"},
             {"name": "거래량", "desc": "당일 거래량(주)"}, {"name": "거래대금", "desc": "당일 거래대금(국내 원, 미국 달러). 예: 거래대금 >= 100억"},
             {"name": "시가총액", "desc": "당일 시가총액(원). 미국 데이터에는 없음"}, {"name": "등락률", "desc": "전일 종가 대비 당일 종가 변화율(%)"},
+            {"name": "지수", "desc": "그 종목이 속한 시장 지수 (코스피·코스닥, 미국은 나스닥·S&P 500). 예: 지수 > 이평(지수, 60) (상승장), 지수 <= 이전(지수, 5) * 0.95 (5일간 5% 넘게 하락)"},
         ],
         "functions": [
             {"name": "필드(n)", "desc": "n 거래일 전 값", "example": "거래량(1)"},

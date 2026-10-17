@@ -34,6 +34,8 @@ const TEMPLATES = [
   { label: "RSI 과매도", expr: "rsi(14) < 30" },
   { label: "20일 수익률", expr: "수익률(20) >= 30" },
   { label: "가격대", expr: "종가 >= 1000" },
+  { label: "상승장 (지수 60일선 위)", expr: "지수 > 이평(지수, 60)" },
+  { label: "시장 급락 (지수 5일 -5%)", expr: "지수 <= 이전(지수, 5) * 0.95" },
 ];
 
 const MARKET_LABEL: Record<string, string> = {

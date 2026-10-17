@@ -24,6 +24,7 @@ import pandas as pd
 
 from . import config
 from .data import indices
+from .data.indices import attach as indices_attach
 from .data.panel import Panel
 from .engine import dsl, event
 from .engine.run import Runner
@@ -171,6 +172,7 @@ def run(dataset: str = "kr", log=print) -> Path:
     root = config.dataset_dir(dataset)
     log("데이터 읽는 중…")
     panel = Panel.load(root / "prices.parquet")
+    indices_attach(panel, dataset)
     runner = Runner(panel, {"name": dataset, "markets": ["KOSPI", "KOSDAQ"], "currency": "KRW"})
     L: list[str] = []
     L.append(f"2차 전략 연구 · {dt.date.today()} · 국내 (2010~) · 비용 차감 · 평균은 거래 1건당")

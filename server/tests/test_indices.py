@@ -74,3 +74,27 @@ def test_fetch_kr_day_not_approved():
 
     with pytest.raises(indices.krx.KrxError, match="승인"):
         indices.fetch_kr_day(dt.date(2024, 1, 2), "k", indices.INDICES["KOSDAQ"], _Sess(code=401))
+
+
+def test_attach_index_and_dsl(tmp_path, monkeypatch):
+    import numpy as np
+
+    from sbt.data.panel import Panel
+    from sbt.engine import dsl
+
+    monkeypatch.setattr(indices.config, "DATA_DIR", tmp_path)
+    days = pd.bdate_range("2024-01-01", periods=10)
+    indices._save("KOSPI", pd.Series(np.arange(100, 110, dtype=float), index=days))
+    indices._save("KOSDAQ", pd.Series(np.arange(10, 0, -1, dtype=float), index=days))
+    rows = []
+    for code, mk in (("000010", "KOSPI"), ("000020", "KOSDAQ")):
+        for d in days[2:]:  # 종목은 사흘째부터 거래
+            rows.append({"date": d, "code": code, "name": code, "market": mk, "open": 10.0, "high": 11.0,
+                         "low": 9.0, "close": 10.0, "volume": 100.0, "value": 1e9})
+    panel = Panel(pd.DataFrame(rows))
+    assert indices.attach(panel, "kr")
+    ix = panel.cols["index"]
+    assert ix[0] == 102 and ix[8] == 8  # 코스피 종목엔 코스피, 코스닥 종목엔 코스닥
+    m = dsl.evaluate("지수 > 이전(지수, 2)", panel)
+    assert m[2] and not m[10]  # 코스피는 오르고 코스닥은 내림
+    assert indices.mtime("kr") > 0

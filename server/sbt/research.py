@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 from . import config
+from .data.indices import attach as indices_attach
 from .data.panel import Panel
 from .engine.run import Runner
 from .engine.spec import parse_text, to_text
@@ -197,6 +198,7 @@ def run(dataset: str = "kr", markets: list[str] | None = None, save: int = 0, lo
     t0 = time.time()
     log(f"데이터 읽는 중… ({root / 'prices.parquet'})")
     panel = Panel.load(root / "prices.parquet")
+    indices_attach(panel, dataset)
     runner = Runner(panel, {"name": dataset, "markets": ["KOSPI", "KOSDAQ"], "currency": "KRW"})
     log(f"{len(panel.dates):,}행 읽음 ({time.time() - t0:.0f}초). 전략 유형 {len(FAMILIES)}개를 돌립니다.")
     results = []
