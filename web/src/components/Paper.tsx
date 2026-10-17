@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { money, pct, price, retClass, today } from "@/lib/format";
 import type { PaperGroup, PaperNews, PaperTrade, PaperView, Spec, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
+import PaperPick from "./PaperPick";
 import TradeChart from "./TradeChart";
 import NumInput from "./NumInput";
 
@@ -119,11 +120,18 @@ export default function Paper({
   onLoadSpec,
   onFlash,
   onNewsSeen,
+  spec,
+  dataset,
+  currency,
 }: {
   onLoadSpec: (s: Spec) => void;
   onFlash: (m: string) => void;
   onNewsSeen: () => void;
+  spec: Spec; // 검증 화면의 지금 조건 (새 카테고리용)
+  dataset: string;
+  currency: string;
 }) {
+  const [creating, setCreating] = useState(false);
   const [news, setNews] = useState<PaperNews | null>(null);
   // 소식은 한 번 보여 준 뒤 '읽음'으로 (빨간 점은 이번 화면에서는 그대로 보임)
   useEffect(() => {
@@ -252,6 +260,27 @@ export default function Paper({
           );
         })}
       </ul>
+      <button
+        type="button"
+        onClick={() => setCreating(true)}
+        className="w-full rounded-xl border border-dashed border-border p-3 text-sm text-accent"
+      >
+        + 새 카테고리 (검증 화면의 조건으로)
+      </button>
+      {creating && (
+        <PaperPick
+          row={null}
+          spec={spec}
+          dataset={dataset}
+          currency={currency}
+          onClose={() => setCreating(false)}
+          onDone={(m) => {
+            setCreating(false);
+            onFlash(m);
+            load();
+          }}
+        />
+      )}
       {(list ?? []).some((v) => v.book.archived) && (
         <button type="button" onClick={() => setShowArchived((x) => !x)} className="text-xs text-muted underline">
           {showArchived ? "보관한 카테고리 숨기기" : "보관한 카테고리 보기"}

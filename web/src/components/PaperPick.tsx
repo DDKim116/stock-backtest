@@ -15,7 +15,7 @@ export default function PaperPick({
   onClose,
   onDone,
 }: {
-  row: ScanRow;
+  row: ScanRow | null; // null 이면 담지 않고 카테고리만 만든다
   spec: Spec;
   dataset: string;
   currency: string;
@@ -23,16 +23,17 @@ export default function PaperPick({
   onDone: (msg: string) => void;
 }) {
   const usd = currency === "USD";
-  const [books, setBooks] = useState<PaperView[] | null>(null);
+  const [books, setBooks] = useState<PaperView[] | null>(row ? null : []);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(!row);
   const [name, setName] = useState(spec.name || `전략 ${today().slice(5).replace("-", "/")}`);
   const [capital, setCapital] = useState(usd ? "10000" : "10000000");
   const [perTrade, setPerTrade] = useState(usd ? "1000" : "1000000");
   const [auto, setAuto] = useState(true);
 
   useEffect(() => {
+    if (!row) return;
     (async () => {
       try {
         const t = await api<{ text: string }>("/api/to-text", { body: spec });
@@ -45,9 +46,13 @@ export default function PaperPick({
         setErr((e as Error).message);
       }
     })();
-  }, [spec, dataset]);
+  }, [spec, dataset, row]);
 
   const pick = async (bookId: number, bookName: string) => {
+    if (!row) {
+      onDone(`'${bookName}' 카테고리를 만들었습니다. 신호가 나오면 자동으로 담기거나, 오늘 신호에서 '모의'로 담을 수 있습니다`);
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
@@ -92,9 +97,9 @@ export default function PaperPick({
       >
         <div className="mb-3 flex items-start justify-between gap-2">
           <div>
-            <div className="font-semibold">모의로 담기</div>
+            <div className="font-semibold">{row ? "모의로 담기" : "새 모의 카테고리"}</div>
             <div className="text-xs text-muted">
-              {row.name} {row.code} · 신호 {row.signal_date}
+              {row ? `${row.name} ${row.code} · 신호 ${row.signal_date}` : "지금 검증 화면의 조건으로 만듭니다"}
             </div>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg border border-border px-3 py-1 text-sm">
@@ -149,7 +154,7 @@ export default function PaperPick({
         {creating && (
           <div className="space-y-3 text-sm">
             <p className="text-xs text-muted">
-              지금 검색한 조건(신호·매수·청산)을 그대로 고정해 새 카테고리를 만듭니다. 조건을 바꿔 시험하려면 카테고리를 새로 만드세요.
+              {row ? "지금 검색한" : "검증 화면의"} 조건(신호·매수·청산)을 그대로 고정해 새 카테고리를 만듭니다. 조건을 바꿔 시험하려면 카테고리를 새로 만드세요.
             </p>
             <p className="rounded-lg bg-background p-2 text-xs">
               <b>매수 방식:</b>{" "}
@@ -195,7 +200,7 @@ export default function PaperPick({
                 onClick={create}
                 className="flex-1 rounded-xl bg-accent py-2.5 font-semibold text-white disabled:opacity-50"
               >
-                만들고 담기
+                {row ? "만들고 담기" : "만들기"}
               </button>
             </div>
           </div>

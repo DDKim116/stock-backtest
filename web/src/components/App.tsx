@@ -412,6 +412,9 @@ export default function App() {
       )}
       {!needLogin && tab === "paper" && (
         <Paper
+          spec={spec}
+          dataset={dataset}
+          currency={current?.currency ?? "KRW"}
           onFlash={flash}
           onNewsSeen={clearNews}
           onLoadSpec={(sp) => {
