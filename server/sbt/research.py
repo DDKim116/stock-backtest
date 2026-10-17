@@ -244,6 +244,10 @@ def run(dataset: str = "kr", markets: list[str] | None = None, save: int = 0, lo
         tag = "" if fr["n_passed"] else " (통과 없음 → 탈락 중 최선)"
         bo = f"{b['oos']['avg_ret']:+.2f}% ({b['oos']['n_complete']:,}건)" if b and b["oos"]["avg_ret"] is not None else "-"
         L.append(f" - {fr['family']}: {fr['n_passed']}/{fr['n_total']} · 검증 {bo}{tag}")
+        if b and not fr["n_passed"]:
+            i = b["is"]
+            ia = "-" if i["avg_ret"] is None else f"{i['avg_ret']:+.2f}%"
+            L.append(f"     과거 {ia} ({i['n_complete']:,}건) · 탈락 이유: {', '.join(b.get('reasons', [])[:3]) or '-'}")
     L.append("")
     L.append(f"소요 {round((time.time() - t0) / 60, 1)}분")
     report = "\n".join(L)
