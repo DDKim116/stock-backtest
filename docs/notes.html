@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>주식 검증기 제작 노트</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+/* 레이아웃: 한 줄 기둥(본문 폭 ~44rem) + 섹션마다 왼쪽 라벨, 표·타임라인은 기둥 안에서 가로 스크롤 */
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --ink: #1b2230;
+  --muted: #5d6676;
+  --faint: #8b93a1;
+  --line: #e1e4ea;
+  --accent: #c27a12;      /* 앱의 탭 후광과 같은 호박색 */
+  --accent-soft: #fbf1df;
+  --up: #d2463c;          /* 국내 관례: 상승 빨강 */
+  --down: #2f6fd0;        /* 하락 파랑 */
+  --up-soft: #f9e3e1;
+  --down-soft: #e2ecfa;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161d; --surface: #1a2029; --ink: #e7eaf0; --muted: #a3abb8; --faint: #77808e;
+    --line: #2b3340; --accent: #f0a63a; --accent-soft: #33280f;
+    --up: #f0736a; --down: #6ea2f2; --up-soft: #3a1f1d; --down-soft: #1b2a42;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12161d; --surface: #1a2029; --ink: #e7eaf0; --muted: #a3abb8; --faint: #77808e;
+  --line: #2b3340; --accent: #f0a63a; --accent-soft: #33280f;
+  --up: #f0736a; --down: #6ea2f2; --up-soft: #3a1f1d; --down-soft: #1b2a42;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.7;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 72px;
+}
+.wrap { max-width: 46rem; margin: 0 auto; display: grid; gap: 56px; }
+h1, h2, h3 { text-wrap: balance; line-height: 1.3; margin: 0; }
+h1 { font-size: clamp(1.9rem, 5vw, 2.6rem); font-weight: 700; letter-spacing: -0.02em; }
+h2 { font-size: 1.35rem; font-weight: 700; }
+h3 { font-size: 1.02rem; font-weight: 600; }
+p { margin: 0; }
+.mono, code, .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+code { font-size: 0.88em; background: var(--accent-soft); padding: 0.1em 0.35em; border-radius: 4px; }
+.muted { color: var(--muted); }
+.eyebrow { font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+
+/* 머리 */
+header { display: grid; gap: 14px; }
+header .lede { color: var(--muted); max-width: 36rem; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 0.9rem; color: var(--muted); }
+.facts b { color: var(--ink); font-family: var(--font-mono); font-weight: 500; }
+
+section { display: grid; gap: 18px; }
+section > header { gap: 6px; }
+
+/* 구조 흐름 */
+.flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.flow > div { padding: 16px 16px 18px; border-right: 1px solid var(--line); display: grid; gap: 4px; align-content: start; min-width: 0; position: relative; }
+.flow > div:last-child { border-right: 0; }
+.flow > div:not(:last-child)::after { content: "→"; position: absolute; right: -9px; top: 16px; background: var(--surface); color: var(--accent); font-size: 0.9rem; line-height: 1; padding: 2px 0; }
+.flow .k { font-size: 0.75rem; color: var(--faint); letter-spacing: 0.06em; }
+.flow .t { font-weight: 600; }
+.flow .d { font-size: 0.86rem; color: var(--muted); line-height: 1.55; }
+@media (max-width: 640px) {
+  .flow { grid-template-columns: 1fr; }
+  .flow > div { border-right: 0; border-bottom: 1px solid var(--line); }
+  .flow > div:last-child { border-bottom: 0; }
+  .flow > div:not(:last-child)::after { content: "↓"; right: 16px; top: auto; bottom: -10px; padding: 0 4px; }
+}
+
+/* 하루 일과 */
+.day { position: relative; display: grid; gap: 0; padding-left: 4px; }
+.slot { display: grid; grid-template-columns: 4.2rem 14px minmax(0, 1fr); gap: 12px; align-items: start; padding-bottom: 14px; position: relative; }
+.slot .time { font-family: var(--font-mono); font-size: 0.95rem; text-align: right; padding-top: 1px; }
+.slot .dot { width: 12px; height: 12px; border-radius: 50%; margin-top: 7px; background: var(--surface); border: 2px solid var(--faint); position: relative; z-index: 1; }
+.slot::before { content: ""; position: absolute; left: calc(4.2rem + 12px + 5px); top: 14px; bottom: -2px; width: 2px; background: var(--line); }
+.slot:last-child::before { display: none; }
+.slot.kr .dot { border-color: var(--accent); background: var(--accent); }
+.slot.ev .dot { border-color: var(--accent); }
+.slot.mk .dot { border-color: var(--up); background: var(--up); }
+.slot .what { font-size: 0.95rem; }
+.slot .what small { display: block; color: var(--muted); font-size: 0.84rem; line-height: 1.5; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.8rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; border: 2px solid var(--accent); }
+.legend i.f { background: var(--accent); }
+.legend i.m { background: var(--up); border-color: var(--up); }
+
+/* 일반 목록 */
+.list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.list li { display: grid; grid-template-columns: 7.2rem minmax(0, 1fr); gap: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.list li:first-child { border-top: 0; padding-top: 0; }
+.list .lab { font-weight: 600; font-size: 0.95rem; }
+.list .body { color: var(--ink); font-size: 0.95rem; display: grid; gap: 4px; min-width: 0; }
+.list .body small { color: var(--muted); font-size: 0.86rem; line-height: 1.55; }
+@media (max-width: 520px) { .list li { grid-template-columns: 1fr; gap: 2px; } }
+
+/* 탭 */
+.tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.tab { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.tab h3 { display: flex; align-items: baseline; gap: 8px; }
+.tab h3 .en { font-family: var(--font-mono); font-size: 0.72rem; color: var(--faint); font-weight: 400; }
+.tab ul { margin: 0; padding-left: 1.1em; font-size: 0.9rem; color: var(--muted); display: grid; gap: 2px; }
+.tab.wide { grid-column: 1 / -1; }
+@media (max-width: 620px) { .tabs { grid-template-columns: 1fr; } }
+
+/* 연구 막대 */
+.bars { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px 18px 14px; display: grid; gap: 14px; }
+.bars .head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; font-size: 0.82rem; color: var(--muted); }
+.bars .key { display: flex; gap: 14px; }
+.bars .key span { display: inline-flex; align-items: center; gap: 6px; }
+.bars .key i { width: 12px; height: 8px; border-radius: 2px; display: inline-block; }
+.i-is { background: var(--faint); }
+.i-oos { background: var(--accent); }
+.row { display: grid; grid-template-columns: minmax(0, 11rem) minmax(0, 1fr); gap: 12px; align-items: center; }
+.row .name { font-size: 0.88rem; line-height: 1.4; }
+.row .name small { display: block; color: var(--muted); font-size: 0.78rem; }
+.track { display: grid; gap: 4px; }
+.bar { position: relative; height: 16px; }
+.bar .zero { position: absolute; left: 25%; top: -3px; bottom: -3px; width: 1px; background: var(--muted); opacity: 0.6; }
+.bar .fill { position: absolute; top: 2px; height: 12px; border-radius: 2px; }
+.bar .fill.is { background: var(--faint); }
+.bar .fill.oos { background: var(--accent); }
+.bar .val { position: absolute; top: 0; font-family: var(--font-mono); font-size: 0.74rem; line-height: 16px; color: var(--ink); white-space: nowrap; }
+.axis { display: grid; grid-template-columns: minmax(0, 11rem) minmax(0, 1fr); gap: 12px; font-family: var(--font-mono); font-size: 0.7rem; color: var(--faint); }
+.axis .ticks { position: relative; height: 14px; }
+.axis .ticks span { position: absolute; transform: translateX(-50%); }
+@media (max-width: 560px) { .row, .axis { grid-template-columns: 1fr; gap: 4px; } .axis > span:first-child { display: none; } }
+
+.takeaways { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; font-size: 0.95rem; }
+
+.picks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.pick { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 14px 16px; display: grid; gap: 6px; min-width: 0; }
+.pick .reg { display: inline-block; justify-self: start; font-size: 0.74rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; }
+.reg.dn { background: var(--down-soft); color: var(--down); }
+.reg.upm { background: var(--up-soft); color: var(--up); }
+.pick pre { margin: 0; font-family: var(--font-mono); font-size: 0.78rem; line-height: 1.6; color: var(--muted); white-space: pre-wrap; }
+@media (max-width: 620px) { .picks { grid-template-columns: 1fr; } }
+
+/* 만든 순서 */
+.log { display: grid; gap: 0; border-left: 2px solid var(--line); margin-left: 6px; }
+.log .d { display: grid; gap: 4px; padding: 0 0 18px 18px; position: relative; }
+.log .d::before { content: ""; position: absolute; left: -7px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--bg); border: 2px solid var(--accent); }
+.log .date { font-family: var(--font-mono); font-size: 0.85rem; color: var(--accent); font-weight: 500; }
+.log ul { margin: 0; padding-left: 1.1em; font-size: 0.92rem; display: grid; gap: 2px; }
+
+/* 명령어 */
+.cmd { display: flex; align-items: stretch; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.cmd code { flex: 1; min-width: 0; background: none; padding: 10px 12px; font-size: 0.82rem; overflow-x: auto; white-space: nowrap; border-radius: 0; }
+.cmd button { border: 0; border-left: 1px solid var(--line); background: var(--accent-soft); color: var(--ink); font: inherit; font-size: 0.82rem; padding: 0 14px; cursor: pointer; }
+.cmd button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.next { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.next li { display: flex; gap: 10px; align-items: baseline; font-size: 0.95rem; }
+.next li::before { content: ""; flex: none; width: 10px; height: 10px; border: 2px solid var(--accent); border-radius: 2px; transform: translateY(1px); }
+
+footer { font-size: 0.8rem; color: var(--faint); border-top: 1px solid var(--line); padding-top: 16px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .bar .fill { transition: width .4s ease; }
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+<header>
+  <span class="eyebrow">개인 투자 도구 · 제작 노트</span>
+  <h1>주식 검증기 제작 노트</h1>
+  <p class="lede">조건식 하나로 2010년부터의 전 종목에서 "이 방법이 실제로 통했나"를 확인하고, 오늘 신호를 받아 모의·실제 매매까지 이어 가는 개인용 웹앱입니다. 지금까지 무엇을, 어떻게 만들었는지 정리했습니다.</p>
+  <div class="facts">
+    <span>기간 <b>2026-10-01 ~ 10-17</b></span>
+    <span>업데이트 <b>44</b>번</span>
+    <span>국내 데이터 <b>2010~</b></span>
+    <span>탭 <b>7</b>개</span>
+  </div>
+</header>
+
+<section>
+  <header><span class="eyebrow">구조</span><h2>전체 그림</h2></header>
+  <div class="flow">
+    <div><span class="k">데이터</span><span class="t">KRX · 야후</span><span class="d">국내 공식 시세는 KRX OpenAPI, 미국 종목·지수와 국내 저녁 임시값은 야후</span></div>
+    <div><span class="k">서버</span><span class="t">오라클 클라우드</span><span class="d">싱가포르. Python 서버가 수집·계산·저장, 정해진 시간에 자동 갱신</span></div>
+    <div><span class="k">앱</span><span class="t">웹앱</span><span class="d">Next.js 화면을 서버가 함께 띄움. 태블릿·휴대폰 같은 화면, 같은 데이터</span></div>
+    <div><span class="k">나</span><span class="t">Tailscale 접속</span><span class="d">개인 VPN 주소 + 웹 비밀번호. 바깥에서는 보이지 않음</span></div>
+  </div>
+  <p class="muted" style="font-size:.92rem">코드는 GitHub 비공개 저장소에 있고, 고친 내용을 올리면 서버가 15분마다 받아서 반영합니다. 전략·모투·매매일지는 서버의 작은 데이터베이스(SQLite)에, 주가는 파일(parquet)로 저장합니다.</p>
+</section>
+
+<section>
+  <header><span class="eyebrow">자동 일정 · 평일 한국시간</span><h2>서버의 하루</h2></header>
+  <div class="legend">
+    <span><i class="f"></i>KRX 공식 갱신</span>
+    <span><i></i>야후 임시 갱신</span>
+    <span><i class="m"></i>장 시간</span>
+  </div>
+  <div class="day">
+    <div class="slot kr"><span class="time">08:20</span><span class="dot"></span><span class="what">전날 공식 시세·지수 받기<small>KRX는 전날 자료를 다음 날 아침에 줍니다. 전날 저녁 임시값을 공식 값으로 덮어씁니다.</small></span></div>
+    <div class="slot kr"><span class="time">08:35</span><span class="dot"></span><span class="what">재시도<small>08:20에 자료가 아직 없으면 다시 받습니다. 토요일에도 돕니다.</small></span></div>
+    <div class="slot kr"><span class="time">08:50</span><span class="dot"></span><span class="what">마지막 재시도<small>장 시작 전에 끝냅니다.</small></span></div>
+    <div class="slot mk"><span class="time">09:00</span><span class="dot"></span><span class="what">정규장 시작 · 앱의 "시가"<small>08:30~09:00 장전 동시호가로 정해지는 가격입니다. NXT 프리마켓(08:00~08:50) 가격은 쓰지 않습니다.</small></span></div>
+    <div class="slot mk"><span class="time">15:30</span><span class="dot"></span><span class="what">정규장 마감</span></div>
+    <div class="slot ev"><span class="time">16:40</span><span class="dot"></span><span class="what">당일 시세 임시 갱신<small>야후에서 받아 임시값으로 넣습니다. 시험했을 때 KRX 공식 값과 100% 같았습니다. 지수도 함께 갱신합니다.</small></span></div>
+    <div class="slot ev"><span class="time">18:10</span><span class="dot"></span><span class="what">임시 갱신 재시도</span></div>
+    <div class="slot ev"><span class="time">20:10</span><span class="dot"></span><span class="what">임시 갱신 마지막<small>이때부터 그날 신호를 보고 다음 날 주문을 준비할 수 있습니다.</small></span></div>
+  </div>
+  <p class="muted" style="font-size:.9rem">이 밖에 미국 종목·지수 갱신과, 15분마다 새 코드를 받아 반영하는 작업이 따로 돕니다.</p>
+</section>
+
+<section>
+  <header><span class="eyebrow">계산</span><h2>백테스트는 이렇게 합니다</h2></header>
+  <ul class="list">
+    <li><span class="lab">조건식</span><span class="body">한글로 쓰는 전용 문법을 만들었습니다. 서버가 전 종목·전 기간에 한 번에 계산합니다.<code>수익률(5) &lt;= -15 그리고 rsi(14) &lt;= 25</code><small>문장 탭에서 "5일간 15% 빠지고…" 같은 문장을 규칙으로 조건식으로 바꿉니다(AI 비용 없음). <code>지수</code>를 넣으면 시장 상황도 조건이 됩니다.</small></span></li>
+    <li><span class="lab">매수</span><span class="body">다음날 시가 · 지정가(n거래일 주문 유지) · 신호일 종가</span></li>
+    <li><span class="lab">청산</span><span class="body">목표 · 손절 · 보유기간 · 추적손절 · 조건 청산<small>조건 청산 예: <code>종가 &lt; 이평(종가, 50)</code> (50일선 이탈)</small></span></li>
+    <li><span class="lab">현실 반영</span><span class="body">수수료·세금·슬리피지를 뺀 수익률, 수정주가, 상장폐지 종목 포함</span></li>
+    <li><span class="lab">애매한 날</span><span class="body">하루에 목표가와 손절가를 둘 다 건드리면 손절로 칩니다.<small>일봉으로는 어느 쪽이 먼저인지 알 수 없어 보수적으로 봅니다. 낙관적으로 봤을 때의 결과도 함께 보여 줍니다.</small></span></li>
+    <li><span class="lab">과최적화 막기</span><span class="body">기간을 과거(~2020)와 검증(2021~)으로 나눕니다.<small>과거에서 고른 숫자가 검증 구간에서도 통해야 통과입니다.</small></span></li>
+  </ul>
+</section>
+
+<section>
+  <header><span class="eyebrow">화면</span><h2>탭별 기능</h2></header>
+  <div class="tabs">
+    <div class="tab wide"><h3>검증 <span class="en">run</span></h3><ul>
+      <li>성공률·평균 수익·연도별·시장별·가격대별 결과, 칸마다 (?) 설명</li>
+      <li>오늘 신호: 마지막 거래일 기준 조건에 맞는 종목. 바로 모투에 담거나 실투에 기록</li>
+      <li>차트: 이평선 5·20·60·120·240, 전략 이평선(점선), 볼린저, RSI, 지수 칸. 봉을 누르면 정보 카드</li>
+      <li>저장한 전략을 불러오면 결과 옆에 전략 이름 표시</li>
+    </ul></div>
+    <div class="tab"><h3>탐색 <span class="en">explore</span></h3><ul>
+      <li>목표·손절·기간 숫자 조합 자동 탐색</li>
+      <li>과거/검증 구간으로 과최적화 걸러내기</li>
+      <li>원하면 AI 검토</li>
+    </ul></div>
+    <div class="tab"><h3>실투 <span class="en">journal</span></h3><ul>
+      <li>분할 매수·매도 기록, 손익 자동 계산</li>
+      <li>"전략대로 했으면?"과 비교</li>
+      <li>엑셀 내보내기, AI 매매 복기</li>
+    </ul></div>
+    <div class="tab"><h3>모투 <span class="en">paper</span></h3><ul>
+      <li>전략별 카테고리, 자본금·입출금·1회 매수금</li>
+      <li>자동 담기로 전체 신호와 내 선택 비교</li>
+      <li>늦게 담으면 "소급", 통계에서 제외</li>
+      <li>체결·미체결·매도 알림</li>
+    </ul></div>
+    <div class="tab"><h3>지수 <span class="en">market</span></h3><ul>
+      <li>코스피·코스닥 나란히, S&amp;P 500·나스닥</li>
+      <li>연도별 → 월별, 히트맵</li>
+    </ul></div>
+    <div class="tab"><h3>전략 <span class="en">saved</span></h3><ul>
+      <li>저장한 조건식 목록</li>
+      <li>태블릿·휴대폰 어디서든 같은 목록</li>
+    </ul></div>
+    <div class="tab"><h3>설정 <span class="en">more</span></h3><ul>
+      <li>도움말, AI 월 사용 한도</li>
+      <li>앱을 다시 열면 마지막 화면 이어 보기</li>
+    </ul></div>
+  </div>
+</section>
+
+<section>
+  <header><span class="eyebrow">전략 연구 · 국내 2010~</span><h2>무엇이 실제로 통했나</h2></header>
+  <p style="font-size:.95rem">1차 연구에서 잘 알려진 전략 12가지를 돌렸고, 과거와 검증 구간 모두에서 버틴 건 <b>단기 급락 반등</b>뿐이었습니다. 2차 연구에서 이 전략을 쪼개 보니 결과는 시장 상황에 따라 크게 갈렸습니다.</p>
+  <div class="bars" role="img" aria-label="급락 반등 전략의 거래 1건당 평균 수익률 비교">
+    <div class="head"><span>거래 1건당 평균 수익률(비용 차감)</span><span class="key"><span><i class="i-is"></i>과거 ~2020</span><span><i class="i-oos"></i>검증 2021~</span></span></div>
+    <div id="rows" style="display:grid;gap:14px"></div>
+    <div class="axis"><span></span><div class="ticks" id="ticks"></div></div>
+  </div>
+  <ul class="takeaways">
+    <li>시장도 함께 폭락했을 때만 통했고, 종목 혼자 빠졌을 때는 거의 0이거나 손해였습니다.</li>
+    <li>수익이 2020년 3월 같은 폭락 시기에 몰려 있어서, 하루 매수 개수를 제한하면 오히려 나빠졌습니다.</li>
+    <li>상장폐지로 데이터가 끊긴 경우는 18,639건 중 3건으로 영향이 없었습니다.</li>
+    <li>52주 신고가 추세 전략은 반대로 지수가 60일선 위(상승장)일 때만 좋았습니다. 과거 +1.02% · 검증 +1.37%</li>
+  </ul>
+  <h3 style="margin-top:6px">전략 탭에 저장한 추천 전략</h3>
+  <div class="picks">
+    <div class="pick"><span class="reg dn">하락장</span><h3>급락 반등 v2 · 시장 폭락</h3><pre>수익률(5) &lt;= -15
+그리고 rsi(14) &lt;= 25
+그리고 지수 &lt;= 이전(지수, 5) * 0.95
+다음날시가 · 목표 10 · 손절 7 · 5일</pre></div>
+    <div class="pick"><span class="reg dn">하락장</span><h3>급락 반등 v2b · 시장 하락 -3%</h3><pre>v2와 같고 지수 조건만 완화
+지수 &lt;= 이전(지수, 5) * 0.97
+신호가 더 자주 나옴</pre></div>
+    <div class="pick"><span class="reg upm">상승장</span><h3>신고가 추세 v1 · 상승장</h3><pre>종가 &gt; 이전(최고(고가, 250), 1)
+그리고 거래량 &gt;= 이평(거래량, 20) * 1.5
+그리고 지수 &gt; 이평(지수, 60)
+목표 없음 · 손절 10 · 50일선 이탈 시 매도</pre></div>
+    <div class="pick"><span class="reg upm">상승장</span><h3>신고가 추세 v1b · 추적손절</h3><pre>v1과 같은 진입
+청산은 고점 대비 12% 하락(추적손절)
+손절 10 · 최대 120일</pre></div>
+  </div>
+</section>
+
+<section>
+  <header><span class="eyebrow">기록</span><h2>만든 순서</h2></header>
+  <div class="log">
+    <div class="d"><span class="date">10-01</span><ul><li>백테스트 엔진, 조건식 문법, KRX 수집기, 서버</li><li>휴대폰용 웹앱, 오라클 서버 설치 스크립트</li><li>AI 질문·결과 해설(월 한도), 미국 종목</li></ul></div>
+    <div class="d"><span class="date">10-12</span><ul><li>문장 → 조건식 변환, 오늘 신호(검색기)</li><li>차트 기간 버튼, 이평선·볼린저·RSI</li><li>전략 탐색 + AI 검토, 매매일지 + 엑셀·AI 복기</li><li>(?) 설명, 마지막 화면 이어 보기</li></ul></div>
+    <div class="d"><span class="date">10-13</span><ul><li>청산 조건식·추적손절, 봉 정보 카드</li><li>파스텔 이평선 색, 전략 이평선 버튼</li><li>지수 탭, KRX 이용 기간 경고 띠, 결과에 전략 이름</li></ul></div>
+    <div class="d"><span class="date">10-14</span><ul><li>국내 갱신을 아침 08:20으로 (재시도 08:35·08:50)</li><li>당일 저녁 갱신 방법 시험: KRX 웹(로그인 필요해 실패) → 야후(정확도 100%)</li><li>저녁 임시 갱신 16:40·18:10·20:10</li></ul></div>
+    <div class="d"><span class="date">10-15</span><ul><li>모투 1단계, 탭 이름 개편과 후광 표시</li><li>금액 입력 칸 천 단위 콤마</li><li>모투 소식(체결·미체결·매도)</li></ul></div>
+    <div class="d"><span class="date">10-17</span><ul><li>1차·2차 전략 연구, 조건식에 <code>지수</code> 추가, 추천 전략 4개</li><li>모투 새 카테고리 버튼</li><li>검증 차트에 지수 칸</li><li>설정 탭에 이 제작 노트</li></ul></div>
+  </div>
+</section>
+
+<section>
+  <header><span class="eyebrow">운영</span><h2>관리할 때 알아 둘 것</h2></header>
+  <ul class="list">
+    <li><span class="lab">바로 반영</span><span class="body"><span>15분을 기다리지 않고 새 코드를 반영할 때 (Termius)</span><span class="cmd"><code id="c1">bash ~/stock-backtest/deploy/update.sh --force</code><button type="button" data-copy="c1">복사</button></span></span></li>
+    <li><span class="lab">KRX 연장</span><span class="body">이용 기간은 1년. 2027-10-01부터 앱 위쪽에 연장 알림 띠가 나옵니다.<small>인증 오류로 갱신이 멈추면 빨간 띠와 재승인 방법이 나옵니다.</small></span></li>
+    <li><span class="lab">키 관리</span><span class="body">API 키는 서버의 <code>.env</code>에만 두고, 화면에 안 보이게 입력합니다.<small>키가 보이는 화면은 캡처하지 않습니다. 캡처 전에 <code>clear</code>로 터미널을 지웁니다. 노출됐다면 바로 지우고 새로 만듭니다.</small></span></li>
+    <li><span class="lab">AI</span><span class="body">선택 기능. 설정에서 월 사용 한도를 정합니다.</span></li>
+  </ul>
+</section>
+
+<section>
+  <header><span class="eyebrow">다음</span><h2>앞으로 할 만한 것</h2></header>
+  <ul class="next">
+    <li>recommend 결과로 v2와 v2b, v1과 v1b 비교</li>
+    <li>3차 연구: 상승장·하락장 전략을 합친 포트폴리오</li>
+    <li>모투 2단계: 자산 곡선과 지수 비교, 카테고리 비교, 엑셀</li>
+    <li>휴대폰 푸시 알림</li>
+  </ul>
+</section>
+
+<footer>수익률은 과거 데이터로 계산한 거래 1건당 평균이며, 앞으로의 수익을 보장하지 않습니다. 정리 기준일 2026-10-17.</footer>
+
+</div>
+
+<script>
+// 2차 연구 결과 (research2): 거래 1건당 평균 수익률 %
+const DATA = [
+  { name: "전체 최적 조합", note: "-15% · RSI 25 · 목표 10 · 손절 7", is: 1.46, oos: 1.46 },
+  { name: "지수도 5일 -5% 이하", note: "시장 폭락과 겹친 날", is: 2.40, oos: 3.41 },
+  { name: "종목만 급락", note: "지수는 멀쩡한 날", is: -0.01, oos: -0.98 },
+  { name: "폭락 상위 10일 제외", note: "몰림 효과 빼고", is: null, oos: 0.62 },
+];
+const MIN = -1.5, MAX = 4.5; // 0 이 25% 지점
+const pos = (v) => ((v - MIN) / (MAX - MIN)) * 100;
+const fmt = (v) => (v > 0 ? "+" : "") + v.toFixed(2) + "%";
+function bar(v, cls) {
+  if (v == null) return `<div class="bar"><span class="zero"></span><span class="val" style="left:calc(${pos(0)}% + 6px);color:var(--faint)">해당 없음</span></div>`;
+  const a = pos(Math.min(0, v)), b = pos(Math.max(0, v));
+  const label = v >= 0 ? `left:calc(${b}% + 6px)` : `right:calc(${100 - a}% + 6px)`;
+  return `<div class="bar"><span class="fill ${cls}" style="left:${a}%;width:${Math.max(b - a, 0.6)}%"></span><span class="zero"></span><span class="val" style="${label}">${fmt(v)}</span></div>`;
+}
+document.getElementById("rows").innerHTML = DATA.map((d) =>
+  `<div class="row"><div class="name">${d.name}<small>${d.note}</small></div><div class="track">${bar(d.is, "is")}${bar(d.oos, "oos")}</div></div>`
+).join("");
+document.getElementById("ticks").innerHTML = [-1, 0, 1, 2, 3, 4]
+  .map((t) => `<span style="left:${pos(t)}%">${t > 0 ? "+" : ""}${t}%</span>`).join("");
+
+document.querySelectorAll("[data-copy]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const el = document.getElementById(btn.dataset.copy);
+    const done = () => { btn.textContent = "복사됨"; setTimeout(() => (btn.textContent = "복사"), 1500); };
+    try {
+      navigator.clipboard.writeText(el.textContent).then(done, () => selectText(el));
+    } catch { selectText(el); }
+  });
+});
+function selectText(el) {
+  const r = document.createRange(); r.selectNodeContents(el);
+  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+}
+</script>
+</body>
+</html>

@@ -1114,6 +1114,18 @@ def stock_search(q: str, dataset: str = config.DEFAULT_DATASET, limit: int = 20)
     return out
 
 
+# ---------------------------------------------------------------- 제작 노트 (설정 탭)
+_NOTES = Path(__file__).resolve().parents[3] / "docs" / "notes.html"
+
+
+@app.get("/api/notes", dependencies=[Depends(auth)])
+def get_notes():
+    # 정적 파일로 두면 비밀번호 없이 열리므로 로그인한 사람에게만 API 로 준다
+    if not _NOTES.exists():
+        raise HTTPException(404, "제작 노트 파일이 없습니다")
+    return {"html": _NOTES.read_text(encoding="utf-8")}
+
+
 # ---------------------------------------------------------------- 웹 화면 (정적 파일)
 # web/ 를 'next build' 하면 생기는 out/ 폴더가 있으면 같은 주소에서 함께 서비스한다.
 _WEB_DIR = Path(os.environ.get("SBT_WEB_DIR", Path(__file__).resolve().parents[3] / "web" / "out"))

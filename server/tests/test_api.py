@@ -156,3 +156,8 @@ def test_journal(client):
     assert wb.sheetnames == ["거래", "체결", "월별", "전략별"] and wb["체결"].max_row == 3
     assert client.delete(f"/api/journal/{t['id']}").json()["ok"]
     assert client.get("/api/journal", params={"dataset": "demo"}).json() == []
+
+
+def test_notes(client):
+    r = client.get("/api/notes")
+    assert r.status_code == 200 and "제작 노트" in r.json()["html"]

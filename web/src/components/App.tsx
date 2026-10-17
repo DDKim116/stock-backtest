@@ -15,6 +15,7 @@ import KrxBanner from "./KrxBanner";
 import Market from "./Market";
 import Paper from "./Paper";
 import NumInput from "./NumInput";
+import Notes from "./Notes";
 
 type Tab = "run" | "explore" | "journal" | "paper" | "market" | "saved" | "more";
 
@@ -69,6 +70,7 @@ function StrategyTag({ name }: { name?: string }) {
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("run");
+  const [notes, setNotes] = useState(false);
   const [newsCount, setNewsCount] = useState(0); // 모투 새 소식 (체결·미체결·청산)
   const clearNews = useCallback(() => setNewsCount(0), []);
   const [spec, setSpec] = useState<Spec>(DEFAULT_SPEC);
@@ -432,12 +434,27 @@ export default function App() {
           <Settings onSaved={loadDatasets} />
           {!needLogin && (
             <section>
+              <h2 className="mb-3 text-lg font-bold">제작 노트</h2>
+              <button
+                type="button"
+                onClick={() => setNotes(true)}
+                className="w-full rounded-xl border border-border bg-card p-4 text-left"
+              >
+                <div className="font-medium">지금까지 만든 것 정리</div>
+                <div className="mt-0.5 text-xs text-muted">구조 · 서버의 하루 · 계산 방식 · 탭별 기능 · 전략 연구 결과 · 만든 순서 · 관리 방법</div>
+              </button>
+            </section>
+          )}
+          {!needLogin && (
+            <section>
               <h2 className="mb-3 text-lg font-bold">도움말</h2>
               <Help />
             </section>
           )}
         </div>
       )}
+
+      {notes && <Notes onClose={() => setNotes(false)} />}
 
       {toast && (
         <div className="fixed inset-x-0 bottom-24 z-40 mx-auto w-fit rounded-full bg-foreground px-4 py-2 text-sm text-background">
