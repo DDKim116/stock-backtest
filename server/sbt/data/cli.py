@@ -6,6 +6,7 @@
   python -m sbt.data.cli research --save 5          # 여러 전략 유형을 한꺼번에 돌려 순위 (약 10~30분)
   python -m sbt.data.cli research2                 # 2차: 급락 반등 정밀 점검 + 신고가 시장 필터
   python -m sbt.data.cli recommend --save          # 지수 조건을 붙인 추천 전략 검증 + 전략 탭에 저장
+  python -m sbt.data.cli rank                      # 하루 신호가 많을 때 고르는 순서 비교 (급락 반등 v2b, 하루 5종목·1회 500만원)
   python -m sbt.data.cli kr-evening                # 오늘 국내 시세를 야후로 임시 갱신 (다음 날 아침 공식 값으로 교체)
   python -m sbt.data.cli kr-build                  # 원본 → prices.parquet
   python -m sbt.data.cli us-collect                # 미국 전 종목 첫 수집 (야후)
@@ -47,6 +48,11 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("us-build")
     sub.add_parser("index-update")
     sub.add_parser("kr-evening")
+    rk = sub.add_parser("rank")
+    rk.add_argument("--dataset", default="kr")
+    rk.add_argument("--per", type=float, default=5_000_000, help="1회 매수금(원)")
+    rk.add_argument("--daily", type=int, default=5, help="하루 최대 종목 수")
+    rk.add_argument("--capital", default="50000000,100000000", help="자본(원), 쉼표로 여러 개")
     rc = sub.add_parser("recommend")
     rc.add_argument("--dataset", default="kr")
     rc.add_argument("--save", action="store_true", help="앱 '전략' 탭에 저장")
@@ -109,6 +115,9 @@ def main(argv: list[str] | None = None) -> None:
             print(f"미국 지수 갱신 실패: {e}")
     elif a.cmd == "us-build":
         us.build(config.dataset_dir("us"))
+    elif a.cmd == "rank":
+        from .. import research4
+        research4.run(a.dataset, a.per, a.daily, tuple(float(x) for x in a.capital.split(",") if x.strip()))
     elif a.cmd == "recommend":
         from .. import research3
         research3.run(a.dataset, a.save)
