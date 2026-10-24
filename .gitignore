@@ -9,3 +9,4 @@ node_modules/
 .next/
 web/out/
 *.tsbuildinfo
+*.egg-info/
