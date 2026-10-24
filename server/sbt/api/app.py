@@ -1323,6 +1323,110 @@ def broker_test(mode: str):
         raise HTTPException(502, str(e))
 
 
+# ---------------------------------------------------------------- 자동 매매 (키움 모의투자)
+
+def _auto():
+    global _AUTO
+    if _AUTO is None:
+        from .. import autotrade
+        from ..broker import kiwoom
+
+        _AUTO = autotrade.Auto(store, kiwoom, loaded.get,
+                               lambda title, body: push.send(store, title, body, tab="paper"), parse_text)
+    return _AUTO
+
+
+_AUTO = None
+
+
+class AutoSettingsIn(BaseModel):
+    enabled: bool | None = None
+    mode: str | None = None
+    strategy_id: int | None = None
+    per_trade: float | None = None
+    daily_max: int | None = None
+
+
+class AutoApproveIn(BaseModel):
+    approve: bool
+
+
+class AutoDateIn(BaseModel):
+    trade_date: str
+
+
+@app.get("/api/auto", dependencies=[Depends(auth)])
+def auto_view():
+    return _auto().view()
+
+
+@app.put("/api/auto/settings", dependencies=[Depends(auth)])
+def auto_settings(body: AutoSettingsIn):
+    try:
+        _auto().set_settings(**body.model_dump())
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    a = _auto()
+    a.log(_kst_now().replace(tzinfo=None), "설정 변경: " + ", ".join(f"{k}={v}" for k, v in body.model_dump().items() if v is not None))
+    return a.view()
+
+
+@app.post("/api/auto/plans/{pid}", dependencies=[Depends(auth)])
+def auto_approve(pid: int, body: AutoApproveIn):
+    try:
+        _auto().approve(pid, body.approve, _kst_now().replace(tzinfo=None))
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    return _auto().view()
+
+
+@app.post("/api/auto/approve-all", dependencies=[Depends(auth)])
+def auto_approve_all(body: AutoDateIn):
+    try:
+        _auto().approve_all(body.trade_date, _kst_now().replace(tzinfo=None))
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    return _auto().view()
+
+
+@app.post("/api/auto/plan-now", dependencies=[Depends(auth)])
+def auto_plan_now():
+    """지금 데이터로 다음 거래일 후보를 다시 만든다 (시험용: 주말에도 됨)."""
+    try:
+        rows = _auto().make_plans(_kst_now().replace(tzinfo=None), force=True)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return {"count": len(rows), **_auto().view()}
+
+
+@app.get("/api/auto/account", dependencies=[Depends(auth)])
+def auto_account():
+    from ..broker import kiwoom
+
+    try:
+        return {"cash": kiwoom.cash("mock"), "balance": kiwoom.balance("mock")}
+    except kiwoom.KiwoomError as e:
+        raise HTTPException(502, str(e))
+
+
+def _auto_loop() -> None:
+    time.sleep(30)
+    while True:
+        try:
+            _auto().tick(_kst_now().replace(tzinfo=None))
+        except Exception as e:  # noqa: BLE001
+            print("자동 매매 확인 실패:", e, flush=True)
+            try:
+                _auto().log(_kst_now().replace(tzinfo=None), f"⚠ 오류: {e}")
+            except Exception:  # noqa: BLE001
+                pass
+        time.sleep(20)
+
+
+if os.environ.get("SBT_AUTO_LOOP", "1") != "0":
+    threading.Thread(target=_auto_loop, daemon=True, name="autotrade").start()
+
+
 # ---------------------------------------------------------------- 제작 노트 (설정 탭)
 _NOTES = Path(__file__).resolve().parents[3] / "docs" / "notes.html"
 

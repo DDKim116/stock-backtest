@@ -2,7 +2,7 @@
 
 - 키는 data/broker.json (권한 600) 에만 저장하고, 화면에는 끝 4자리만 보여 준다.
 - 모의투자(mockapi)와 실전(api) 키는 서로 다르다.
-- 이 모듈에는 주문 기능이 없다. 자동 매매는 모의투자로 충분히 시험한 뒤 따로 만든다.
+- 주문은 모의투자(mock)에서만 된다 (ORDER_MODES). 실전 주문은 일부러 막아 두었다.
 """
 from __future__ import annotations
 
@@ -128,8 +128,21 @@ def token(mode: str) -> str:
 
 
 def call(mode: str, path: str, api_id: str, body: dict) -> dict:
-    return _post(mode, path, body, {"api-id": api_id, "authorization": f"Bearer {token(mode)}",
-                                    "cont-yn": "N", "next-key": ""})
+    for attempt in range(3):
+        try:
+            return _post(mode, path, body, {"api-id": api_id, "authorization": f"Bearer {token(mode)}",
+                                            "cont-yn": "N", "next-key": ""})
+        except KiwoomError as e:
+            msg = str(e)
+            if attempt < 2 and ("1700" in msg or "1701" in msg or "1702" in msg or "초과" in msg):
+                time.sleep(1.2)  # 요청 개수 제한 → 잠시 뒤 다시
+                continue
+            if attempt < 2 and ("8005" in msg or "Token이 유효하지" in msg):
+                with _lock:
+                    _tokens.pop(mode, None)
+                continue
+            raise
+    raise KiwoomError("키움 요청 재시도 실패")
 
 
 def num(v) -> float | None:
@@ -151,6 +164,108 @@ def quote(mode: str, code: str) -> dict:
 def test(mode: str) -> dict:
     q = quote(mode, "005930")
     return {"ok": True, "mode": mode, **q}
+
+
+def quotes(mode: str, codes: list[str]) -> dict[str, float]:
+    """지정종목 정보요청(ka10095): 여러 종목 현재가 한 번에 (KRX)."""
+    out: dict[str, float] = {}
+    for k in range(0, len(codes), 50):
+        d = call(mode, "/api/dostk/stkinfo", "ka10095", {"stk_cd": "|".join(codes[k:k + 50])})
+        for r in d.get("atn_stk_infr") or []:
+            v = num(r.get("cur_prc"))
+            if v:
+                out[str(r.get("stk_cd", "")).replace("_AL", "").replace("_NX", "")[-6:]] = abs(v)
+    return out
+
+
+# ---------------------------------------------------------------- 계좌
+def cash(mode: str) -> dict:
+    """예수금상세현황(kt00001): 주문가능금액 등."""
+    d = call(mode, "/api/dostk/acnt", "kt00001", {"qry_tp": "3"})
+    return {"deposit": num(d.get("entr")), "orderable": num(d.get("ord_alow_amt")),
+            "d2": num(d.get("d2_entra"))}
+
+
+def balance(mode: str) -> dict:
+    """계좌평가잔고내역(kt00018): 보유 종목."""
+    d = call(mode, "/api/dostk/acnt", "kt00018", {"qry_tp": "1", "dmst_stex_tp": "KRX"})
+    rows = []
+    for r in d.get("acnt_evlt_remn_indv_tot") or []:
+        qty = num(r.get("rmnd_qty")) or 0
+        if qty <= 0:
+            continue
+        rows.append({"code": str(r.get("stk_cd", ""))[-6:], "name": r.get("stk_nm", ""), "qty": int(qty),
+                     "avg_price": abs(num(r.get("pur_pric")) or 0), "price": abs(num(r.get("cur_prc")) or 0),
+                     "pnl": num(r.get("evltv_prft")), "ret": num(r.get("prft_rt"))})
+    return {"total_buy": num(d.get("tot_pur_amt")), "total_eval": num(d.get("tot_evlt_amt")),
+            "pnl": num(d.get("tot_evlt_pl")), "ret": num(d.get("tot_prft_rt")),
+            "assets": num(d.get("prsm_dpst_aset_amt")), "holdings": rows}
+
+
+def executions(mode: str) -> dict[str, dict]:
+    """체결요청(ka10076) 오늘 체결을 주문번호별로 모은다: {ord_no: {qty, price, left}}."""
+    d = call(mode, "/api/dostk/acnt", "ka10076", {"qry_tp": "0", "sell_tp": "0", "stex_tp": "0"})
+    by: dict[str, list[dict]] = {}
+    for r in d.get("cntr") or []:
+        by.setdefault(str(r.get("ord_no", "")).lstrip("0") or "0", []).append(r)
+    out = {}
+    for no, rs in by.items():
+        ordered = max(abs(num(r.get("ord_qty")) or 0) for r in rs)
+        left = min(abs(num(r.get("oso_qty")) or 0) for r in rs)
+        filled = ordered - left
+        q = [abs(num(r.get("cntr_qty")) or 0) for r in rs]
+        p = [abs(num(r.get("cntr_pric")) or 0) for r in rs]
+        if sum(q) and abs(sum(q) - filled) < 0.5:  # 체결마다 한 줄
+            price = sum(a * b for a, b in zip(q, p)) / sum(q)
+        else:  # 주문마다 누적 한 줄
+            price = p[-1]
+        out[no] = {"qty": int(filled), "price": price, "left": int(left), "ordered": int(ordered)}
+    return out
+
+
+# ---------------------------------------------------------------- 주문 (모의투자만)
+ORDER_MODES = {"mock"}
+
+
+def _ord(mode: str, api_id: str, body: dict) -> str:
+    if mode not in ORDER_MODES:
+        raise KiwoomError("실전 주문은 아직 막혀 있습니다 (모의투자에서 충분히 시험한 뒤 열 예정)")
+    d = call(mode, "/api/dostk/ordr", api_id, {"dmst_stex_tp": "KRX", **body})
+    no = str(d.get("ord_no", "")).lstrip("0")
+    if not no:
+        raise KiwoomError(d.get("return_msg") or "주문번호를 받지 못했습니다")
+    return no
+
+
+def buy_limit(mode: str, code: str, qty: int, price: int) -> str:
+    return _ord(mode, "kt10000", {"stk_cd": code, "ord_qty": str(qty), "ord_uv": str(price), "trde_tp": "0"})
+
+
+def sell_limit(mode: str, code: str, qty: int, price: int) -> str:
+    return _ord(mode, "kt10001", {"stk_cd": code, "ord_qty": str(qty), "ord_uv": str(price), "trde_tp": "0"})
+
+
+def sell_market(mode: str, code: str, qty: int) -> str:
+    return _ord(mode, "kt10001", {"stk_cd": code, "ord_qty": str(qty), "ord_uv": "", "trde_tp": "3"})
+
+
+def cancel(mode: str, code: str, ord_no: str) -> str:
+    return _ord(mode, "kt10003", {"orig_ord_no": ord_no.zfill(7), "stk_cd": code, "cncl_qty": "0"})
+
+
+def tick(price: float) -> int:
+    """KRX 호가 단위 (2023년 개편 기준, 코스피·코스닥 공통)."""
+    for lim, t in ((2000, 1), (5000, 5), (20000, 10), (50000, 50), (200000, 100), (500000, 500)):
+        if price < lim:
+            return t
+    return 1000
+
+
+def round_tick(price: float, up: bool) -> int:
+    import math
+
+    t = tick(price)
+    return int((math.ceil if up else math.floor)(price / t) * t)
 
 
 # ---------------------------------------------------------------- 이 서버의 바깥 주소 (허용 IP 등록용)

@@ -8,6 +8,7 @@ import { useBackClose } from "@/lib/useBackClose";
 import PaperPick from "./PaperPick";
 import TradeChart from "./TradeChart";
 import NumInput from "./NumInput";
+import AutoTrade from "./AutoTrade";
 
 const STATUS_STYLE: Record<string, string> = {
   pending: "bg-accent text-white",
@@ -195,6 +196,7 @@ export default function Paper({
           </div>
         )}
       </div>
+      {(ds === "all" || ds === "kr") && <AutoTrade onFlash={onFlash} />}
       {news && (
         <NewsCard
           news={news}
