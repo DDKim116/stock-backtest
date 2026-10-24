@@ -17,6 +17,7 @@ import Paper from "./Paper";
 import NumInput from "./NumInput";
 import Notes from "./Notes";
 import PushSettings from "./PushSettings";
+import BrokerSettings from "./BrokerSettings";
 
 type Tab = "run" | "explore" | "journal" | "paper" | "market" | "saved" | "more";
 const TAB_KEYS: Tab[] = ["run", "explore", "journal", "paper", "market", "saved", "more"];
@@ -456,6 +457,7 @@ export default function App() {
         <div className="space-y-8">
           <Settings onSaved={loadDatasets} />
           {!needLogin && <PushSettings />}
+          {!needLogin && <BrokerSettings />}
           {!needLogin && (
             <section>
               <h2 className="mb-3 text-lg font-bold">제작 노트</h2>

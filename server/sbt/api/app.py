@@ -1273,6 +1273,56 @@ if os.environ.get("SBT_PUSH_LOOP", "1") != "0":
     threading.Thread(target=_push_loop, daemon=True, name="push").start()
 
 
+# ---------------------------------------------------------------- 증권사 연결 (키움, 시세 조회만)
+
+class BrokerKeysIn(BaseModel):
+    appkey: str
+    secretkey: str
+
+
+def _broker_view() -> dict:
+    from ..broker import kiwoom
+
+    return {"ip": kiwoom.server_ip(), "kiwoom": kiwoom.view()}
+
+
+@app.get("/api/broker", dependencies=[Depends(auth)])
+def broker_info():
+    return _broker_view()
+
+
+@app.put("/api/broker/kiwoom/{mode}", dependencies=[Depends(auth)])
+def broker_set_keys(mode: str, body: BrokerKeysIn):
+    from ..broker import kiwoom
+
+    try:
+        kiwoom.set_keys(mode, body.appkey, body.secretkey)
+    except kiwoom.KiwoomError as e:
+        raise HTTPException(422, str(e))
+    return _broker_view()
+
+
+@app.delete("/api/broker/kiwoom/{mode}", dependencies=[Depends(auth)])
+def broker_clear_keys(mode: str):
+    from ..broker import kiwoom
+
+    try:
+        kiwoom.clear_keys(mode)
+    except kiwoom.KiwoomError as e:
+        raise HTTPException(422, str(e))
+    return _broker_view()
+
+
+@app.post("/api/broker/kiwoom/{mode}/test", dependencies=[Depends(auth)])
+def broker_test(mode: str):
+    from ..broker import kiwoom
+
+    try:
+        return kiwoom.test(mode)
+    except kiwoom.KiwoomError as e:
+        raise HTTPException(502, str(e))
+
+
 # ---------------------------------------------------------------- 제작 노트 (설정 탭)
 _NOTES = Path(__file__).resolve().parents[3] / "docs" / "notes.html"
 
