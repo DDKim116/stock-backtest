@@ -201,6 +201,7 @@ class Runner:
             er = int(t.exit_row_c[k])
             outcome = event.OUTCOME_LABEL[int(t.outcome_c[k])]
             ret_now = None
+            left = None
             if s.entry.type == "close":
                 fr = i
             if fr >= 0:
@@ -226,7 +227,8 @@ class Runner:
                 "limit": _r(t.limit[k]), "fill_date": str(p.dates[fr]) if fr >= 0 else None,
                 "fill_price": _r(t.fill_price[k]) if fr >= 0 else None,
                 "last_close": _r(c["close"][g_last]), "ret_now": ret_now,
-                "status": status, "kind": kind, "outcome": outcome,
+                "status": status, "kind": kind, "outcome": outcome, "left": left,
+                "held": (len(tdays) - 1 - day_idx[p.dates[fr]]) if fr >= 0 else None,
                 "exit_date": str(p.dates[er]) if er >= 0 and kind == "closed" else None,
                 "exit_price": _r(t.exit_price_c[k]) if kind == "closed" else None,
                 "ret": _r(t.ret_c[k]) if kind == "closed" else None,

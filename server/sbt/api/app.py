@@ -1409,9 +1409,43 @@ def auto_account():
         raise HTTPException(502, str(e))
 
 
+# ---------------------------------------------------------------- 장중 실시간 감시 (알림만)
+_WATCH = None
+
+
+def _watch():
+    global _WATCH
+    if _WATCH is None:
+        from .. import watch
+        from ..broker import kiwoom
+
+        _WATCH = watch.Watch(store, kiwoom, loaded.get,
+                             lambda title, body: push.send(store, title, body, tab="paper"), parse_text)
+    return _WATCH
+
+
+class WatchSettingsIn(BaseModel):
+    strategy_ids: list[int]
+
+
+@app.get("/api/watch", dependencies=[Depends(auth)])
+def watch_view():
+    return _watch().view(_kst_now().replace(tzinfo=None))
+
+
+@app.put("/api/watch/settings", dependencies=[Depends(auth)])
+def watch_settings(body: WatchSettingsIn):
+    _watch().set_settings(body.strategy_ids)
+    return _watch().view(_kst_now().replace(tzinfo=None))
+
+
 def _auto_loop() -> None:
     time.sleep(30)
     while True:
+        try:
+            _watch().tick(_kst_now().replace(tzinfo=None))
+        except Exception as e:  # noqa: BLE001
+            print("실시간 감시 실패:", e, flush=True)
         try:
             _auto().tick(_kst_now().replace(tzinfo=None))
         except Exception as e:  # noqa: BLE001

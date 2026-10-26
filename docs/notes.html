@@ -193,7 +193,7 @@ footer { font-size: 0.8rem; color: var(--faint); border-top: 1px solid var(--lin
   <p class="lede">조건식 하나로 2010년부터의 전 종목에서 "이 방법이 실제로 통했나"를 확인하고, 오늘 신호를 받아 모의 매매와 키움 모의투자 자동 매매까지 이어 가는 개인용 웹앱입니다. 지금까지 무엇을, 어떻게 만들었는지 정리했습니다.</p>
   <div class="facts">
     <span>기간 <b>2026-10-01 ~ 10-26</b></span>
-    <span>업데이트 <b>49</b>번</span>
+    <span>업데이트 <b>50</b>번</span>
     <span>국내 데이터 <b>2010~</b></span>
     <span>탭 <b>7</b>개</span>
   </div>
@@ -275,6 +275,7 @@ footer { font-size: 0.8rem; color: var(--faint); border-top: 1px solid var(--lin
       <li>늦게 담으면 "소급", 통계에서 제외</li>
       <li>체결·미체결·매도 알림</li>
       <li><b>키움 모의투자 자동 매매</b>: 매수 후보 승인, 보유·청산, 계좌·기록 보기</li>
+      <li><b>장중 실시간 감시</b>: 고른 전략의 대기·보유 종목 현재가, 매수가·목표·손절 도달 알림</li>
     </ul></div>
     <div class="tab"><h3>지수 <span class="en">market</span></h3><ul>
       <li>코스피·코스닥 나란히, S&amp;P 500·나스닥</li>
@@ -343,6 +344,7 @@ footer { font-size: 0.8rem; color: var(--faint); border-top: 1px solid var(--lin
     <div class="d"><span class="date">10-15</span><ul><li>모투 1단계, 탭 이름 개편과 후광 표시</li><li>금액 입력 칸 천 단위 콤마</li><li>모투 소식(체결·미체결·매도)</li></ul></div>
     <div class="d"><span class="date">10-17</span><ul><li>1차·2차 전략 연구, 조건식에 <code>지수</code> 추가, 추천 전략 4개</li><li>모투 새 카테고리 버튼</li><li>검증 차트에 지수 칸</li><li>설정 탭에 이 제작 노트</li><li>휴대폰 알림: 저녁 신호·모투 소식</li></ul></div>
     <div class="d"><span class="date">10-24</span><ul><li>키움 REST API 연결: 키 저장·연결 시험 (모의투자·실전)</li><li>서버 자동 업데이트가 10/17부터 멈춰 있던 문제 해결 (실수로 올라간 설치 파일)</li><li>매수 시점 비교: 다음날 시가가 신호일 종가보다 나음</li><li>고르는 순서 연구(rank): 거래대금 작은 순, 1회 500만원 × 하루 10종목</li><li>키움 모의투자 자동 매매 (승인 모드), 모투 탭 화면</li></ul></div>
+    <div class="d"><span class="date">10-26</span><ul><li>장중 실시간 감시: 고른 전략의 지정가 대기·보유 종목이 매수가·목표·손절에 닿으면 알림 (중간값 매수 전략용)</li></ul></div>
   </div>
 </section>
 
@@ -365,7 +367,7 @@ footer { font-size: 0.8rem; color: var(--faint); border-top: 1px solid var(--lin
     <li>키움 모의투자 자동 매매 첫 주문 확인 (앱 기록 ↔ 키움 체결 내역)</li>
     <li>매수 지정가(종가 +5%)가 결과를 바꾸는지 검증 화면에서 확인</li>
     <li>몇 주 운영 → 백테스트와 비교 → 완전 자동 → 실전 소액</li>
-    <li>중간값 매수 전략(3천억 이상, +15% 신호, 익절 5% · 손절 2%) 장중 실시간 감시</li>
+    <li>중간값 매수 전략: 실시간 감시로 몇 주 지켜본 뒤 백테스트(불확실 건수)와 비교</li>
     <li>앱에서 보유 종목 실시간 가격·수익률 보기</li>
     <li>자동 업데이트가 실패하면 휴대폰 알림</li>
     <li>미국 주식: 키움 해외 시세·모의투자 확인 후 같은 구조로</li>
