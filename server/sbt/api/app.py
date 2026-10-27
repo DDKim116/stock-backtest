@@ -1389,6 +1389,15 @@ def auto_approve_all(body: AutoDateIn):
     return _auto().view()
 
 
+@app.post("/api/auto/positions/{pid}/sell", dependencies=[Depends(auth)])
+def auto_manual_sell(pid: int):
+    try:
+        _auto().manual_sell(pid, _kst_now().replace(tzinfo=None))
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    return _auto().view()
+
+
 @app.post("/api/auto/plan-now", dependencies=[Depends(auth)])
 def auto_plan_now():
     """지금 데이터로 다음 거래일 후보를 다시 만든다 (시험용: 주말에도 됨)."""

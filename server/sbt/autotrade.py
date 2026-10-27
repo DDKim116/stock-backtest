@@ -41,6 +41,8 @@ DEFAULTS = {
     "buy_limit_pct": 5.0,
 }
 RANK_LABEL = {"value_asc": "거래대금 작은 순"}
+MANUAL = ("직접 매도", "키움에서 직접 매도")  # 전략 규칙이 아닌 매도 (통계 따로)
+RECONCILE_EVERY = 120  # 초: 키움 잔고와 맞춰 보는 간격
 APPROVE_UNTIL = dt.time(8, 45)
 BUY_AT = dt.time(8, 50)
 OPEN = dt.time(9, 0)
@@ -68,6 +70,8 @@ class Auto:
         self.store, self.kw, self.get_runner, self.notify, self.parse_text = store, kw, get_runner, notify, parse_text
         self.print = log_print
         self.lock = threading.Lock()
+        self._last_rec: dt.datetime | None = None
+        self._miss: dict[int, int] = {}  # 포지션 id → 잔고가 모자란 것을 본 횟수 (두 번 연속이면 직접 매도로 본다)
         db = store.db
         with _lock:
             db.execute("""CREATE TABLE IF NOT EXISTS at_plans (
@@ -170,8 +174,14 @@ class Auto:
         s = self.settings()
         strat = self.store.get(s["strategy_id"]) if s["strategy_id"] else None
         latest = self._q("SELECT MAX(trade_date) d FROM at_plans")[0]["d"]
-        closed = self._q("SELECT ret FROM at_positions WHERE status = 'closed' AND ret IS NOT NULL")
-        rets = [c["ret"] for c in closed]
+        closed = self._q("SELECT ret, exit_reason FROM at_positions WHERE status = 'closed' AND ret IS NOT NULL")
+
+        def stat(rows):
+            r = [c["ret"] for c in rows]
+            return {"n": len(r), "win": sum(1 for x in r if x > 0), "avg": round(sum(r) / len(r), 2) if r else None}
+
+        rule = [c for c in closed if c["exit_reason"] not in MANUAL]
+        manual = [c for c in closed if c["exit_reason"] in MANUAL]
         return {
             "key_saved": bool(self.kw.view().get("mock", {}).get("saved")), "rules": self.rules(),
             "settings": s, "rank_label": RANK_LABEL.get(s["rank"], s["rank"]),
@@ -179,8 +189,8 @@ class Auto:
             "plans": self.plans(latest) if latest else [],
             "plan_date": latest,
             "positions": self.positions(),
-            "stats": {"n": len(rets), "win": sum(1 for r in rets if r > 0),
-                      "avg": round(sum(rets) / len(rets), 2) if rets else None},
+            "stats": stat(rule), "stats_manual": stat(manual),
+            "last_plan": self._state().get("last_plan"),
             "log": self._q("SELECT ts, text FROM at_log ORDER BY id DESC LIMIT 60"),
             "state": self._state(),
         }
@@ -236,8 +246,8 @@ class Auto:
                     (t.isoformat(), r["code"], r["name"], as_of, k, r.get("value"), close, limit, qty, st, msg,
                      self._ts(now), self._ts(now)))
             out.append(r)
-        self._set_state(planned_asof=as_of)
         n = len(out)
+        self._set_state(planned_asof=as_of, last_plan={"trade_date": t.isoformat(), "signal_date": as_of, "count": n})
         md = f"{t.month}/{t.day}"
         if n:
             names = ", ".join(r["name"] for r in out[:4]) + (f" 외 {n - 4}" if n > 4 else "")
@@ -308,6 +318,68 @@ class Auto:
             return
         self._upd("at_positions", pos["id"], now, status="closing", exit_order=no, exit_reason=reason, target_order=None)
         self.log(now, f"{reason} 매도 주문 {pos['name']} {left}주 (시장가)")
+
+    def manual_sell(self, pid: int, now: dt.datetime) -> None:
+        """앱의 '지금 팔기': 목표가 주문 취소 → 시장가 매도. 통계는 '직접 매도'로 따로."""
+        with self.lock:
+            pos = self._q("SELECT * FROM at_positions WHERE id = ?", (pid,))
+            if not pos:
+                raise ValueError("보유 종목이 없습니다")
+            pos = pos[0]
+            if pos["status"] != "open":
+                raise ValueError("이미 매도 중이거나 끝난 종목입니다")
+            if not is_trading_day(now.date()) or not (dt.time(9, 0) <= now.time() < EXPIRE_UNTIL):
+                raise ValueError("장중(09:00~15:29)에만 팔 수 있습니다")
+            self._sell_all(now, pos, self.settings()["account"], "직접 매도")
+            if self._q("SELECT status FROM at_positions WHERE id = ?", (pid,))[0]["status"] != "closing":
+                raise ValueError("매도 주문을 내지 못했습니다. 기록을 확인하세요")
+
+    def _reconcile(self, now: dt.datetime, mode: str, ex: dict | None = None, force: bool = False) -> None:
+        """키움 잔고와 맞춰 본다: 우리가 낸 주문이 아닌데 수량이 줄었으면 키움에서 직접 판 것."""
+        if not force and self._last_rec and (now - self._last_rec).total_seconds() < RECONCILE_EVERY:
+            return
+        self._last_rec = now
+        opens = [p for p in self.positions("active") if p["status"] == "open"]
+        if not opens:
+            return
+        held = {h["code"]: h["qty"] for h in self.kw.balance(mode)["holdings"]}
+        today = now.date().isoformat()
+        if ex is None:
+            ex = self.kw.executions(mode)
+        ours = {p["target_order"] for p in self.positions("active")} | {p["exit_order"] for p in self.positions("active")}
+        for pos in opens:
+            tf = pos["target_filled"] if pos["target_date"] == today else 0
+            expected = pos["qty"] - pos["sold_qty"] - tf
+            have = held.get(pos["code"], 0)
+            if have >= expected:
+                self._miss.pop(pos["id"], None)
+                continue
+            self._miss[pos["id"]] = self._miss.get(pos["id"], 0) + 1
+            if self._miss[pos["id"]] < 2 and not force:
+                continue  # 잔고 반영이 늦을 수 있어 한 번 더 본다
+            self._miss.pop(pos["id"], None)
+            diff = expected - have
+            sells = [e for no, e in ex.items() if e.get("code") == pos["code"] and e.get("side") == "sell"
+                     and no not in ours and e["qty"] > 0]
+            if sells:
+                price = sum(e["qty"] * e["price"] for e in sells) / sum(e["qty"] for e in sells)
+            else:
+                price = (self.kw.quotes(mode, [pos["code"]]).get(pos["code"]) or pos["entry_price"])
+            sold_qty = pos["sold_qty"] + tf + diff
+            amount = pos["sold_amount"] + tf * pos["target_price"] + diff * price
+            if pos["target_order"] and pos["target_date"] == today:
+                try:
+                    self.kw.cancel(mode, pos["code"], pos["target_order"])
+                except Exception:  # noqa: BLE001
+                    pass
+            if have <= 0:
+                self._close(now, pos, "키움에서 직접 매도", sold_qty, amount)
+            else:
+                self._upd("at_positions", pos["id"], now, sold_qty=sold_qty, sold_amount=amount,
+                          target_order=None, target_filled=0, target_date=None)
+                self.log(now, f"키움에서 직접 일부 매도 {pos['name']} {diff}주 · 남은 {have}주")
+                if dt.time(9, 0) <= now.time() < STOP_UNTIL:
+                    self._place_target(now, self._q("SELECT * FROM at_positions WHERE id = ?", (pos["id"],))[0], mode, today)
 
     # ------------------------------------------------------------ 체결 확인
     def _close(self, now: dt.datetime, pos: dict, reason: str, sold_qty: int, sold_amount: float) -> None:
@@ -458,10 +530,15 @@ class Auto:
             self._set_state(buy_done=tstr)
             if s["enabled"]:
                 self._place_buys(now, tstr, mode)
+            try:
+                self._reconcile(now, mode, ex={}, force=True)  # 밤사이(시간외 등) 직접 판 것
+            except Exception as e:  # noqa: BLE001
+                self.log(now, f"잔고 확인 실패: {e}")
             self._refresh_targets(now, tstr, mode)
         # 3) 장중
         if OPEN <= t < CLOSE_AT:
             self.sync(now, mode)
+            self._reconcile(now, mode)
             if t < STOP_UNTIL:
                 self._check_stops(now, mode)
         # 4) 보유기간 만료

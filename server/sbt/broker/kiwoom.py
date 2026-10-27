@@ -219,7 +219,9 @@ def executions(mode: str) -> dict[str, dict]:
             price = sum(a * b for a, b in zip(q, p)) / sum(q)
         else:  # 주문마다 누적 한 줄
             price = p[-1]
-        out[no] = {"qty": int(filled), "price": price, "left": int(left), "ordered": int(ordered)}
+        out[no] = {"qty": int(filled), "price": price, "left": int(left), "ordered": int(ordered),
+                   "code": str(rs[0].get("stk_cd", ""))[-6:],
+                   "side": "sell" if "매도" in str(rs[0].get("io_tp_nm", "")) else "buy"}
     return out
 
 

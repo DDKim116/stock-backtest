@@ -45,6 +45,8 @@ interface AutoView {
   plan_date: string | null;
   positions: Position[];
   stats: { n: number; win: number; avg: number | null };
+  stats_manual: { n: number; win: number; avg: number | null };
+  last_plan: { trade_date: string; signal_date: string; count: number } | null;
   log: { ts: string; text: string }[];
 }
 interface Account {
@@ -76,6 +78,7 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
   const [edit, setEdit] = useState(false);
   const [showLog, setShowLog] = useState(false);
   const [acct, setAcct] = useState<Account | null>(null);
+  const [sellId, setSellId] = useState<number | null>(null); // '지금 팔기' 두 번 눌러 확인
 
   const load = useCallback(async () => {
     try {
@@ -132,6 +135,12 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
         {v.strategy?.name ?? "전략 없음"} · 1회 {man(s.per_trade)} · 하루 최대 {s.daily_max}종목 · {v.rank_label} · 목표{" "}
         {v.rules.target ?? "없음"}% · 손절 {v.rules.stop ?? "없음"}% · {v.rules.hold}거래일
       </p>
+
+      {v.last_plan && v.last_plan.count === 0 && v.last_plan.trade_date !== v.plan_date && (
+        <p className="rounded-lg bg-background p-2 text-xs text-muted">
+          {md(v.last_plan.trade_date)} 매수 후보 없음 · {md(v.last_plan.signal_date)}에는 이 전략의 신호가 없었습니다.
+        </p>
+      )}
 
       {/* 매수 후보 */}
       {v.plan_date && v.plans.length > 0 && (
@@ -210,8 +219,24 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
                   </span>
                   <span className="text-xs text-muted">{p.status === "closing" ? `${p.exit_reason} 매도 중` : `${md(p.entry_date)} 매수`}</span>
                 </div>
-                <div className="tabular text-xs text-muted">
-                  {p.qty.toLocaleString("ko-KR")}주 · 매수 {won(p.entry_price)} · 목표 {won(p.target_price || null)} · 손절 {won(p.stop_price || null)}
+                <div className="flex items-end justify-between gap-2">
+                  <div className="tabular text-xs text-muted">
+                    {p.qty.toLocaleString("ko-KR")}주 · 매수 {won(p.entry_price)} · 목표 {won(p.target_price || null)} · 손절 {won(p.stop_price || null)}
+                  </div>
+                  {p.status === "open" && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        if (sellId !== p.id) return setSellId(p.id);
+                        setSellId(null);
+                        run(() => api(`/api/auto/positions/${p.id}/sell`, { method: "POST" }), `${p.name} 시장가 매도 주문을 냈습니다`);
+                      }}
+                      className={`shrink-0 rounded-lg px-2.5 py-1 text-xs ${sellId === p.id ? "bg-critical text-white" : "border border-border"}`}
+                    >
+                      {sellId === p.id ? "정말 팔기" : "지금 팔기"}
+                    </button>
+                  )}
                 </div>
               </li>
             ))}
@@ -223,11 +248,16 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
       {closed.length > 0 && (
         <div className="space-y-1 text-sm">
           <div className="font-medium">
-            청산 {v.stats.n}건{" "}
+            전략대로 청산 {v.stats.n}건{" "}
             <span className="text-xs text-muted">
               · 수익 {v.stats.win}건 · 평균 <span className={retClass(v.stats.avg)}>{pct(v.stats.avg, 2, true)}</span> (수수료·세금 전)
             </span>
           </div>
+          {v.stats_manual.n > 0 && (
+            <div className="text-xs text-muted">
+              직접 매도 {v.stats_manual.n}건 · 평균 <span className={retClass(v.stats_manual.avg)}>{pct(v.stats_manual.avg, 2, true)}</span> (백테스트 비교에서는 뺌)
+            </div>
+          )}
           <ul className="divide-y divide-border rounded-lg border border-border">
             {closed.map((p) => (
               <li key={p.id} className="flex justify-between gap-2 px-3 py-2">
@@ -284,7 +314,7 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
         </ul>
       )}
       <p className="text-[11px] text-faint">
-        &apos;전체 중지&apos;는 새 매수만 멈춥니다. 이미 산 종목은 목표가·손절·기간 만료 매도를 계속합니다. 지금은 모의투자에서만 주문합니다.
+        &apos;전체 중지&apos;는 새 매수만 멈춥니다. 이미 산 종목은 목표가·손절·기간 만료 매도를 계속합니다. 직접 팔 때는 키움 앱 대신 &apos;지금 팔기&apos;를 쓰세요 (키움에서 판 것도 2~4분 안에 알아채 정리합니다). 지금은 모의투자에서만 주문합니다.
       </p>
     </section>
   );

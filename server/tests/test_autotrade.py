@@ -31,6 +31,7 @@ class FakeKw:
         self.prices = {}
         self.n = 0
         self.cancelled = []
+        self.manual = {}  # 키움 앱에서 손으로 판 수량 (음수)
 
     def view(self):
         return {"mock": {"saved": True}, "real": {"saved": False}}
@@ -63,7 +64,15 @@ class FakeKw:
 
     def executions(self, mode):
         return {no: {"qty": f["qty"], "price": f["price"], "left": self.orders[no]["qty"] - f["qty"],
-                     "ordered": self.orders[no]["qty"]} for no, f in self.fills.items()}
+                     "ordered": self.orders[no]["qty"], "code": self.orders[no]["code"],
+                     "side": self.orders[no]["side"]} for no, f in self.fills.items()}
+
+    def balance(self, mode):
+        q = dict(self.manual)
+        for no, f in self.fills.items():
+            o = self.orders[no]
+            q[o["code"]] = q.get(o["code"], 0) + (f["qty"] if o["side"] == "buy" else -f["qty"])
+        return {"holdings": [{"code": c, "qty": n} for c, n in q.items() if n > 0]}
 
     def fill(self, no, price, qty=None):
         self.fills[no] = {"qty": qty or self.orders[no]["qty"], "price": price}
@@ -217,3 +226,46 @@ def test_target_and_disable(env):
 def test_real_orders_blocked():
     with pytest.raises(kiwoom.KiwoomError, match="실전 주문"):
         kiwoom.buy_limit("real", "005930", 1, 70000)
+
+
+def test_manual_and_reconcile(env):
+    a, kw, runner, sent = env
+    runner.rows["2026-10-23"] = [
+        {"code": "000011", "name": "갑", "signal_date": "2026-10-23", "close": 10_000, "value": 1e9},
+        {"code": "000012", "name": "을", "signal_date": "2026-10-23", "close": 10_000, "value": 2e9},
+    ]
+    a.set_settings(mode="auto")
+    a.tick(T(23, 20, 15))
+    assert a.view()["last_plan"] == {"trade_date": "2026-10-26", "signal_date": "2026-10-23", "count": 2}
+    a.tick(T(26, 8, 50))
+    for no in kw.find(side="buy"):
+        kw.fill(no, 10_000)
+    a.tick(T(26, 9, 1))
+    gap, eul = sorted(a.positions("active"), key=lambda p: p["code"])
+
+    # 앱의 '지금 팔기'
+    with pytest.raises(ValueError):
+        a.manual_sell(gap["id"], T(26, 8, 0))  # 장 전
+    a.manual_sell(gap["id"], T(26, 10, 0))
+    m = kw.find(side="sell", kind="market", code="000011")[0]
+    kw.fill(m, 10_200)
+    a.tick(T(26, 10, 1))
+    g = [p for p in a.positions() if p["code"] == "000011"][0]
+    assert g["status"] == "closed" and g["exit_reason"] == "직접 매도" and g["ret"] == pytest.approx(2.0)
+
+    # 키움 앱에서 '을'을 손으로 판 경우: 우리 주문이 아닌 매도 체결 + 잔고 0
+    kw.manual["000012"] = -500
+    no = kw._new(side="sell", kind="limit", code="000012", qty=500, price=9_900)
+    kw.fill(no, 9_900)
+    a.tick(T(26, 11, 0))  # 한 번 본 것으로는 정리하지 않는다
+    assert [p["status"] for p in a.positions() if p["code"] == "000012"] == ["open"]
+    a.tick(T(26, 11, 3))
+    e = [p for p in a.positions() if p["code"] == "000012"][0]
+    assert e["status"] == "closed" and e["exit_reason"] == "키움에서 직접 매도" and e["ret"] == pytest.approx(-1.0)
+    v = a.view()
+    assert v["stats"]["n"] == 0 and v["stats_manual"]["n"] == 2
+
+    # 신호 없는 날: last_plan 은 0종목으로
+    runner.days.append("2026-10-26")
+    a.tick(T(26, 20, 15))
+    assert a.view()["last_plan"]["count"] == 0 and a.view()["last_plan"]["trade_date"] == "2026-10-27"
