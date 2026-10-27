@@ -163,7 +163,8 @@ class Auto:
     def positions(self, status: str | None = None) -> list[dict]:
         if status == "active":
             return self._q("SELECT * FROM at_positions WHERE status != 'closed' ORDER BY entry_date, id")
-        return self._q("SELECT * FROM at_positions ORDER BY (status = 'closed'), COALESCE(exit_date, entry_date) DESC, id DESC LIMIT 200")
+        return self._q("""SELECT a.*, p.signal_date, p.limit_price FROM at_positions a LEFT JOIN at_plans p ON p.id = a.plan_id
+                          ORDER BY (a.status = 'closed'), COALESCE(a.exit_date, a.entry_date) DESC, a.id DESC LIMIT 200""")
 
     def _upd(self, table: str, rid: int, now: dt.datetime, **kw) -> None:
         sets = ", ".join(f"{k} = ?" for k in kw)
@@ -186,6 +187,7 @@ class Auto:
             "key_saved": bool(self.kw.view().get("mock", {}).get("saved")), "rules": self.rules(),
             "settings": s, "rank_label": RANK_LABEL.get(s["rank"], s["rank"]),
             "strategy": {"id": strat["id"], "name": strat["name"]} if strat else None,
+            "spec": self.parse_text(strat["text"]).model_dump(mode="json") if strat else None,
             "plans": self.plans(latest) if latest else [],
             "plan_date": latest,
             "positions": self.positions(),

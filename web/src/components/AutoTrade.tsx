@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { pct, retClass } from "@/lib/format";
-import type { Strategy } from "@/lib/types";
+import type { Spec, Strategy, Trade } from "@/lib/types";
+import { useBackClose } from "@/lib/useBackClose";
 import NumInput from "./NumInput";
+import TradeChart from "./TradeChart";
 
 interface Plan {
   id: number;
@@ -34,6 +36,8 @@ interface Position {
   exit_date: string | null;
   exit_price: number | null;
   ret: number | null;
+  signal_date: string | null;
+  limit_price: number | null;
 }
 interface AutoView {
   key_saved: boolean;
@@ -41,6 +45,7 @@ interface AutoView {
   settings: { enabled: boolean; mode: "approve" | "auto"; strategy_id: number | null; per_trade: number; daily_max: number };
   rank_label: string;
   strategy: { id: number; name: string } | null;
+  spec: Spec | null;
   plans: Plan[];
   plan_date: string | null;
   positions: Position[];
@@ -70,6 +75,17 @@ const won = (v: number | null | undefined) => (v == null ? "–" : `${Math.round
 const man = (v: number) => `${(v / 10000).toLocaleString("ko-KR")}만원`;
 const md = (d: string) => `${+d.slice(5, 7)}/${+d.slice(8, 10)}`;
 
+// 차트에 넘길 거래 (실제 키움 체결가 기준)
+function asTrade(x: { code: string; name: string; signal_date: string | null; limit: number | null }, pos?: Position): Trade {
+  const outcome = pos ? (pos.status === "closed" ? (pos.exit_reason === "목표" ? "목표도달" : (pos.exit_reason ?? "청산")) : "진행중") : "주문 전";
+  return {
+    code: x.code, name: x.name, market: "", signal_date: x.signal_date ?? pos?.entry_date ?? "", signal_close: null,
+    limit: x.limit, fill_date: pos?.entry_date ?? null, fill_price: pos?.entry_price ?? null, outcome, outcome_opt: outcome,
+    uncertain: false, exit_date: pos?.exit_date ?? null, exit_price: pos?.exit_price ?? null, days: null,
+    ret: pos?.ret ?? null, ret_opt: pos?.ret ?? null, mfe: null, mae: null,
+  };
+}
+
 // 모투 탭 맨 위: 키움 모의투자 자동 매매 (설정, 매수 후보 승인, 보유·청산, 기록)
 export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void }) {
   const [v, setV] = useState<AutoView | null>(null);
@@ -79,6 +95,13 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
   const [showLog, setShowLog] = useState(false);
   const [acct, setAcct] = useState<Account | null>(null);
   const [sellId, setSellId] = useState<number | null>(null); // '지금 팔기' 두 번 눌러 확인
+  const [chart, setChart] = useState<Trade | null>(null);
+  const closeChart = useCallback(() => setChart(null), []);
+  const chartBack = useBackClose(!!chart, closeChart);
+  const openChart = (t: Trade) => {
+    chartBack.push();
+    setChart(t);
+  };
 
   const load = useCallback(async () => {
     try {
@@ -166,15 +189,19 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
               const [label, cls] = STATUS[p.status] ?? [p.status, "text-muted"];
               return (
                 <li key={p.id} className="flex items-center justify-between gap-2 px-3 py-2">
-                  <div className="min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => openChart(asTrade({ code: p.code, name: p.name, signal_date: p.signal_date, limit: p.limit_price }))}
+                    className="min-w-0 text-left"
+                  >
                     <div className="truncate">
-                      {p.rank}. {p.name} <span className="text-xs text-faint">{p.code}</span>
+                      {p.rank}. {p.name} <span className="text-xs text-faint">{p.code}</span> <span className="text-xs text-accent">차트</span>
                     </div>
                     <div className="tabular text-xs text-muted">
                       {p.qty.toLocaleString("ko-KR")}주 · 지정가 {won(p.limit_price)} · 종가 {won(p.close)}
                       {p.msg && <span className="text-faint"> · {p.msg}</span>}
                     </div>
-                  </div>
+                  </button>
                   {["proposed", "approved", "rejected"].includes(p.status) && s.mode === "approve" ? (
                     <div className="flex shrink-0 gap-1">
                       <button
@@ -214,9 +241,13 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
             {active.map((p) => (
               <li key={p.id} className="px-3 py-2">
                 <div className="flex justify-between gap-2">
-                  <span className="truncate">
-                    {p.name} <span className="text-xs text-faint">{p.code}</span>
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => openChart(asTrade({ code: p.code, name: p.name, signal_date: p.signal_date, limit: p.limit_price }, p))}
+                    className="min-w-0 truncate text-left"
+                  >
+                    {p.name} <span className="text-xs text-faint">{p.code}</span> <span className="text-xs text-accent">차트</span>
+                  </button>
                   <span className="text-xs text-muted">{p.status === "closing" ? `${p.exit_reason} 매도 중` : `${md(p.entry_date)} 매수`}</span>
                 </div>
                 <div className="flex items-end justify-between gap-2">
@@ -261,9 +292,13 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
           <ul className="divide-y divide-border rounded-lg border border-border">
             {closed.map((p) => (
               <li key={p.id} className="flex justify-between gap-2 px-3 py-2">
-                <span className="min-w-0 truncate">
+                <button
+                  type="button"
+                  onClick={() => openChart(asTrade({ code: p.code, name: p.name, signal_date: p.signal_date, limit: p.limit_price }, p))}
+                  className="min-w-0 truncate text-left"
+                >
                   {p.name} <span className="text-xs text-faint">{p.exit_reason} · {p.exit_date && md(p.exit_date)}</span>
-                </span>
+                </button>
                 <span className={`tabular ${retClass(p.ret)}`}>{pct(p.ret, 2, true)}</span>
               </li>
             ))}
@@ -313,6 +348,7 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
           ))}
         </ul>
       )}
+      {chart && v.spec && <TradeChart trade={chart} spec={v.spec} dataset="kr" currency="KRW" onClose={chartBack.close} />}
       <p className="text-[11px] text-faint">
         &apos;전체 중지&apos;는 새 매수만 멈춥니다. 이미 산 종목은 목표가·손절·기간 만료 매도를 계속합니다. 직접 팔 때는 키움 앱 대신 &apos;지금 팔기&apos;를 쓰세요 (키움에서 판 것도 2~4분 안에 알아채 정리합니다). 지금은 모의투자에서만 주문합니다.
       </p>
