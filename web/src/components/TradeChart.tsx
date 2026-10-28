@@ -103,6 +103,12 @@ function shiftDate(d: string, days: number): string {
   return t.toISOString().slice(0, 10);
 }
 
+// 지정가 식이 (시가+종가)/2 면 '중간값'
+export function limitLabel(spec: Spec): string {
+  const e = spec.entry.price.replace(/\s/g, "");
+  return spec.entry.type === "limit" && /^\(?(시가\+종가|종가\+시가)\)?\/2$/.test(e) ? "중간값" : "지정가";
+}
+
 export default function TradeChart({
   trade,
   spec,
@@ -364,9 +370,18 @@ export default function TradeChart({
           lineWidth: 1,
           title: `손절 -${s}%`,
         });
-    } else if (trade.limit) {
+    } else if (trade.limit && spec.entry.type !== "limit") {
       candles.createPriceLine({ price: trade.limit, color: fg, lineStyle: LineStyle.Dashed, lineWidth: 1, title: "지정가" });
     }
+    // 지정가 전략(중간값 등): 체결 뒤에도 그 가격을 포인트 색(라임) 실선으로 남긴다
+    if (strategy && trade.limit && spec.entry.type === "limit")
+      candles.createPriceLine({
+        price: trade.limit,
+        color: cssVar("--mid"),
+        lineStyle: LineStyle.Solid,
+        lineWidth: 2,
+        title: limitLabel(spec),
+      });
 
     chartRef.current = chart;
 
@@ -654,7 +669,7 @@ export default function TradeChart({
       {strategy && !mine && (
       <dl className="tabular grid grid-cols-3 gap-px border-t border-border bg-border text-center text-sm">
         {[
-          ["지정가", price(trade.limit, currency)],
+          [limitLabel(spec), price(trade.limit, currency)],
           ["매수", trade.fill_date ? `${price(trade.fill_price, currency)}` : "미체결"],
           ["매도", trade.exit_date ? price(trade.exit_price, currency) : "–"],
           ["수익률", pct(trade.ret, 2, true)],

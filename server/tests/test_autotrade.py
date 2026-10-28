@@ -85,6 +85,7 @@ class FakeRunner:
     def __init__(self):
         self.days = ["2026-10-22", "2026-10-23"]
         self.rows = {}
+        self.lrows = {}  # 지정가(중간값) 전략용
 
     @property
     def panel(self):
@@ -92,7 +93,8 @@ class FakeRunner:
 
     def scan(self, spec, days):
         d = self.days[-1]
-        return {"rows": self.rows.get(d, [])}
+        src = self.lrows if spec.entry.type == "limit" else self.rows
+        return {"rows": src.get(d, [])}
 
 
 @pytest.fixture
@@ -236,7 +238,7 @@ def test_manual_and_reconcile(env):
     ]
     a.set_settings(mode="auto")
     a.tick(T(23, 20, 15))
-    assert a.view()["last_plan"] == {"trade_date": "2026-10-26", "signal_date": "2026-10-23", "count": 2}
+    assert {k: v for k, v in a.view()["last_plan"].items() if k != "per"} == {"trade_date": "2026-10-26", "signal_date": "2026-10-23", "count": 2}
     a.tick(T(26, 8, 50))
     for no in kw.find(side="buy"):
         kw.fill(no, 10_000)
@@ -269,3 +271,80 @@ def test_manual_and_reconcile(env):
     runner.days.append("2026-10-26")
     a.tick(T(26, 20, 15))
     assert a.view()["last_plan"]["count"] == 0 and a.view()["last_plan"]["trade_date"] == "2026-10-27"
+
+
+MID = """[신호]
+수익률(1) >= 15
+[매수]
+지정가 = (시가 + 종가) / 2
+유효기간 = 3
+[청산]
+목표 = 5
+손절 = 2
+보유기간 = 5
+[대상]
+시장 = 코스피, 코스닥
+"""
+
+
+def test_two_strategies_shared_cash(env):
+    a, kw, runner, sent = env
+    mid = a.store.save("중간값 매수 · 시험", MID)["id"]
+    x = a.set_strategy(mid)
+    assert x["per_trade"] == 3_000_000 and x["daily_max"] == 5 and x["color"] != a.settings()["strategies"][0]["color"]
+    a.set_settings(mode="auto")
+    runner.rows["2026-10-23"] = [{"code": "000001", "name": "가", "signal_date": "2026-10-23", "close": 10_000, "value": 1e9}]
+    runner.lrows["2026-10-23"] = [
+        {"code": "000001", "name": "가", "signal_date": "2026-10-23", "close": 11_000, "limit": 10_000, "value": 1e9},
+        {"code": "000021", "name": "중", "signal_date": "2026-10-23", "close": 23_000, "limit": 20_037, "value": 3e9},
+    ]
+    a.tick(T(23, 20, 15))
+    plans = {p["code"]: p for p in a.plans("2026-10-26")}
+    assert set(plans) == {"000001", "000021"}  # 같은 종목은 앞 전략에만
+    m = plans["000021"]
+    assert m["strategy_id"] == mid and m["entry_kind"] == "limit" and m["limit_price"] == 20_000  # 호가 내림
+    assert m["qty"] == 150 and m["valid_until"] == "2026-10-28"
+    assert a.view()["last_plan"]["per"] == {"급락 반등 v2b · 시험": 1, "중간값 매수 · 시험": 1}
+    v = a.view()
+    assert [s["midpoint"] for s in v["strategies"]] == [False, True]
+
+    # 월: 둘 다 주문, '중'은 안 닿음 → 장 마감 뒤 다시 승인 상태
+    a.tick(T(26, 8, 50))
+    assert len(kw.find(side="buy")) == 2
+    b1 = kw.find(side="buy", code="000001")[0]
+    kw.fill(b1, 10_000)
+    a.tick(T(26, 9, 1))
+    a.tick(T(26, 15, 32))
+    m = [p for p in a.plans() if p["code"] == "000021"][0] if hasattr(a, "plans") else None
+    m = a._q("SELECT * FROM at_plans WHERE code = '000021'")[0]
+    assert m["status"] == "approved" and "남은 2일" in m["msg"]
+
+    # 화: 다시 주문 → 체결 → 중간값 전략 규칙(+5 / −2)으로 목표가
+    runner.days.append("2026-10-26")
+    a.tick(T(27, 8, 50))
+    b2 = kw.find(side="buy", code="000021")
+    assert len(b2) == 2 and kw.orders[b2[-1]]["price"] == 20_000
+    kw.fill(b2[-1], 20_000)
+    a.tick(T(27, 9, 5))
+    pos = {p["code"]: p for p in a.positions("active")}
+    assert pos["000021"]["strategy_id"] == mid and pos["000021"]["target_price"] == 21_000
+    assert pos["000021"]["stop_price"] == pytest.approx(19_600)
+    assert pos["000001"]["target_price"] == 11_000
+    assert a._q("SELECT status FROM at_plans WHERE code = '000021'")[0]["status"] == "filled"
+
+
+def test_limit_plan_waits_for_cash(env):
+    a, kw, runner, sent = env
+    mid = a.store.save("중간값 매수 · 시험", MID)["id"]
+    a.remove_strategy(a.settings()["strategies"][0]["id"])
+    a.set_strategy(mid, per_trade=3_000_000)
+    a.set_settings(mode="auto")
+    runner.lrows["2026-10-23"] = [{"code": "000021", "name": "중", "signal_date": "2026-10-23", "close": 23_000,
+                                   "limit": 20_000, "value": 3e9}]
+    a.tick(T(23, 20, 15))
+    kw.cash = lambda mode: {"orderable": 1_000_000}
+    a.tick(T(26, 8, 50))
+    p = a._q("SELECT * FROM at_plans")[0]
+    assert p["status"] == "approved" and "내일 다시" in p["msg"] and not kw.find(side="buy")
+    a.approve(p["id"], False, T(27, 8, 0))  # 둘째 날에도 뺄 수 있다
+    assert a._q("SELECT status FROM at_plans")[0]["status"] == "rejected"

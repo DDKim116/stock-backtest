@@ -1402,7 +1402,7 @@ def _auto():
         from ..broker import kiwoom
 
         _AUTO = autotrade.Auto(store, kiwoom, loaded.get,
-                               lambda title, body: push.send(store, title, body, tab="paper"), parse_text)
+                               lambda title, body: push.send(store, title, body, tab="auto"), parse_text)
     return _AUTO
 
 
@@ -1425,9 +1425,37 @@ class AutoDateIn(BaseModel):
     trade_date: str
 
 
+class AutoStrategyIn(BaseModel):
+    enabled: bool | None = None
+    per_trade: float | None = None
+    daily_max: int | None = None
+
+
 @app.get("/api/auto", dependencies=[Depends(auth)])
 def auto_view():
-    return _auto().view()
+    return _auto().view(_kst_now().date().isoformat())
+
+
+@app.put("/api/auto/strategies/{sid}", dependencies=[Depends(auth)])
+def auto_strategy_put(sid: int, body: AutoStrategyIn):
+    """전략 추가(없으면) 또는 설정 변경. 계좌 돈은 모든 전략이 같이 쓴다."""
+    a = _auto()
+    try:
+        a.set_strategy(sid, **body.model_dump())
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    a.log(_kst_now().replace(tzinfo=None), f"전략 설정 #{sid}: " +
+          ", ".join(f"{k}={v}" for k, v in body.model_dump().items() if v is not None))
+    return auto_view()
+
+
+@app.delete("/api/auto/strategies/{sid}", dependencies=[Depends(auth)])
+def auto_strategy_delete(sid: int):
+    """자동 매매에서 뺀다. 이미 산 종목은 계속 규칙대로 판다."""
+    a = _auto()
+    a.remove_strategy(sid)
+    a.log(_kst_now().replace(tzinfo=None), f"전략 빼기 #{sid}")
+    return auto_view()
 
 
 @app.put("/api/auto/settings", dependencies=[Depends(auth)])
@@ -1438,7 +1466,7 @@ def auto_settings(body: AutoSettingsIn):
         raise HTTPException(422, str(e))
     a = _auto()
     a.log(_kst_now().replace(tzinfo=None), "설정 변경: " + ", ".join(f"{k}={v}" for k, v in body.model_dump().items() if v is not None))
-    return a.view()
+    return auto_view()
 
 
 @app.post("/api/auto/plans/{pid}", dependencies=[Depends(auth)])
@@ -1447,7 +1475,7 @@ def auto_approve(pid: int, body: AutoApproveIn):
         _auto().approve(pid, body.approve, _kst_now().replace(tzinfo=None))
     except ValueError as e:
         raise HTTPException(409, str(e))
-    return _auto().view()
+    return auto_view()
 
 
 @app.post("/api/auto/approve-all", dependencies=[Depends(auth)])
@@ -1456,7 +1484,7 @@ def auto_approve_all(body: AutoDateIn):
         _auto().approve_all(body.trade_date, _kst_now().replace(tzinfo=None))
     except ValueError as e:
         raise HTTPException(409, str(e))
-    return _auto().view()
+    return auto_view()
 
 
 @app.post("/api/auto/positions/{pid}/sell", dependencies=[Depends(auth)])
@@ -1465,7 +1493,7 @@ def auto_manual_sell(pid: int):
         _auto().manual_sell(pid, _kst_now().replace(tzinfo=None))
     except ValueError as e:
         raise HTTPException(409, str(e))
-    return _auto().view()
+    return auto_view()
 
 
 @app.post("/api/auto/plan-now", dependencies=[Depends(auth)])
@@ -1475,7 +1503,7 @@ def auto_plan_now():
         rows = _auto().make_plans(_kst_now().replace(tzinfo=None), force=True)
     except ValueError as e:
         raise HTTPException(422, str(e))
-    return {"count": len(rows), **_auto().view()}
+    return {"count": len(rows), **auto_view()}
 
 
 @app.get("/api/auto/account", dependencies=[Depends(auth)])
@@ -1499,7 +1527,7 @@ def _watch():
         from ..broker import kiwoom
 
         _WATCH = watch.Watch(store, kiwoom, loaded.get,
-                             lambda title, body: push.send(store, title, body, tab="paper"), parse_text)
+                             lambda title, body: push.send(store, title, body, tab="auto"), parse_text)
     return _WATCH
 
 

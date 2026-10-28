@@ -17,6 +17,7 @@
   --accent: #9a5b00;
   --accent-soft: #fff4e0;
   --on-accent: #ffffff;
+  --mid: #5c8a00; /* 중간값·지정가 선 (라임) */
   /* 국내 관례: 상승 빨강 / 하락 파랑 */
   --up: #cf222e;
   --down: #0969da;
@@ -44,6 +45,7 @@
   --accent: #f0a63a;
   --accent-soft: #2a2113;
   --on-accent: #1a1206;
+  --mid: #b5e655;
   --up: #f26d6d;
   --down: #5b9bf0;
   --good: #3fb950;
@@ -67,6 +69,7 @@
   --accent: #f0a63a;
   --accent-soft: #2a2113;
   --on-accent: #1a1206;
+  --mid: #b5e655;
   --up: #f26d6d;
   --down: #5b9bf0;
   --good: #3fb950;
@@ -88,6 +91,7 @@
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
   --color-on-accent: var(--on-accent);
+  --color-mid: var(--mid);
   --color-up: var(--up);
   --color-down: var(--down);
   --color-good: var(--good);

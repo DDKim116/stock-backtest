@@ -2,62 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { pct, retClass } from "@/lib/format";
+import { type Account, asTrade, type AutoStrategy, type AutoView, entryLabel, man, md, type Plan, type Position, won } from "@/lib/auto";
+import { pct, retClass, today } from "@/lib/format";
 import type { Spec, Strategy, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
 import NumInput from "./NumInput";
 import TradeChart from "./TradeChart";
-
-interface Plan {
-  id: number;
-  trade_date: string;
-  code: string;
-  name: string;
-  signal_date: string;
-  rank: number;
-  value: number | null;
-  close: number;
-  limit_price: number;
-  qty: number;
-  status: string;
-  msg: string;
-}
-interface Position {
-  id: number;
-  code: string;
-  name: string;
-  qty: number;
-  entry_date: string;
-  entry_price: number;
-  target_price: number;
-  stop_price: number;
-  status: string;
-  exit_reason: string | null;
-  exit_date: string | null;
-  exit_price: number | null;
-  ret: number | null;
-  signal_date: string | null;
-  limit_price: number | null;
-}
-interface AutoView {
-  key_saved: boolean;
-  rules: { target: number | null; stop: number | null; hold: number };
-  settings: { enabled: boolean; mode: "approve" | "auto"; strategy_id: number | null; per_trade: number; daily_max: number };
-  rank_label: string;
-  strategy: { id: number; name: string } | null;
-  spec: Spec | null;
-  plans: Plan[];
-  plan_date: string | null;
-  positions: Position[];
-  stats: { n: number; win: number; avg: number | null };
-  stats_manual: { n: number; win: number; avg: number | null };
-  last_plan: { trade_date: string; signal_date: string; count: number } | null;
-  log: { ts: string; text: string }[];
-}
-interface Account {
-  cash: { orderable: number | null; deposit: number | null };
-  balance: { assets: number | null; total_eval: number | null; pnl: number | null; holdings: unknown[] };
-}
 
 const STATUS: Record<string, [string, string]> = {
   proposed: ["승인 대기", "text-warning"],
@@ -71,42 +21,33 @@ const STATUS: Record<string, [string, string]> = {
   skipped: ["건너뜀", "text-faint"],
   failed: ["주문 실패", "text-critical"],
 };
-const won = (v: number | null | undefined) => (v == null ? "–" : `${Math.round(v).toLocaleString("ko-KR")}원`);
-const man = (v: number) => `${(v / 10000).toLocaleString("ko-KR")}만원`;
-const md = (d?: string | null) => (d ? `${+d.slice(5, 7)}/${+d.slice(8, 10)}` : "–");
+const INK = "#10131A"; // 전략 색 띠 위 글자
 
-// 차트에 넘길 거래 (실제 키움 체결가 기준)
-function asTrade(x: { code: string; name: string; signal_date: string | null; limit: number | null }, pos?: Position): Trade {
-  const outcome = pos ? (pos.status === "closed" ? (pos.exit_reason === "목표" ? "목표도달" : (pos.exit_reason ?? "청산")) : "진행중") : "주문 전";
-  return {
-    code: x.code, name: x.name, market: "", signal_date: x.signal_date ?? pos?.entry_date ?? "", signal_close: null,
-    limit: x.limit, fill_date: pos?.entry_date ?? null, fill_price: pos?.entry_price ?? null, outcome, outcome_opt: outcome,
-    uncertain: false, exit_date: pos?.exit_date ?? null, exit_price: pos?.exit_price ?? null, days: null,
-    ret: pos?.ret ?? null, ret_opt: pos?.ret ?? null, mfe: null, mae: null,
-  };
-}
+type Run = (f: () => Promise<unknown>, ok?: string) => Promise<void>;
 
-// 모투 탭 맨 위: 키움 모의투자 자동 매매 (설정, 매수 후보 승인, 보유·청산, 기록)
+// 매매 → 키움 자동: 전략별 카드(색 띠), 계좌 돈은 모든 전략이 같이 쓴다
 export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void }) {
   const [v, setV] = useState<AutoView | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [edit, setEdit] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [showLog, setShowLog] = useState(false);
   const [acct, setAcct] = useState<Account | null>(null);
-  const [sellId, setSellId] = useState<number | null>(null); // '지금 팔기' 두 번 눌러 확인
-  const [chart, setChart] = useState<Trade | null>(null);
+  const [chart, setChart] = useState<{ trade: Trade; spec: Spec } | null>(null);
   const closeChart = useCallback(() => setChart(null), []);
   const chartBack = useBackClose(!!chart, closeChart);
-  const openChart = (t: Trade) => {
+  const openChart = (trade: Trade, spec: Spec) => {
     chartBack.push();
-    setChart(t);
+    setChart({ trade, spec });
   };
 
   const load = useCallback(async () => {
     try {
-      setV(await api<AutoView>("/api/auto"));
+      const r = await api<AutoView>("/api/auto");
+      setV(r);
       setErr(null);
+      if (r.key_saved) api<Account>("/api/auto/account").then(setAcct, () => {});
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -118,11 +59,11 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
     return () => clearInterval(t);
   }, [load]);
 
-  const run = async (f: () => Promise<unknown>, ok?: string) => {
+  const run: Run = async (f, ok) => {
     setBusy(true);
     try {
       const r = await f();
-      if (r && typeof r === "object" && "settings" in r) setV(r as AutoView);
+      if (r && typeof r === "object" && "strategies" in r) setV(r as AutoView);
       if (ok) onFlash(ok);
     } catch (e) {
       onFlash((e as Error).message);
@@ -134,150 +75,132 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
   if (err) return <p className="text-sm text-critical">⚠ 자동 매매: {err}</p>;
   if (!v) return null;
   const s = v.settings;
+  const first = v.strategies[0]?.id;
+  const sid = (x: { strategy_id: number | null }) => x.strategy_id ?? first;
   const active = v.positions.filter((p) => p.status !== "closed");
-  const closed = v.positions.filter((p) => p.status === "closed").slice(0, 10);
+  const closed = v.positions.filter((p) => p.status === "closed").slice(0, 12);
   const waiting = v.plans.filter((p) => p.status === "proposed");
+  const used = (id: number) =>
+    active.filter((p) => sid(p) === id).reduce((a, p) => a + p.entry_price * (p.qty - (p.sold_qty ?? 0)), 0);
+  const usedAll = v.strategies.reduce((a, x) => a + used(x.id), 0);
+  const total = acct?.balance.assets ?? null;
+  const base = Math.max(total ?? 0, usedAll + (acct?.cash.orderable ?? 0), 1);
+  const color = (id: number | undefined) => v.strategies.find((x) => x.id === id)?.color ?? "var(--faint)";
 
   return (
-    <section className="space-y-3 rounded-xl border border-border bg-card p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-semibold">키움 모의투자 자동 매매</h3>
-        <div className="flex gap-1 text-xs">
-          <span className={`rounded-full px-2 py-0.5 ${s.enabled ? "bg-accent/10 text-accent" : "bg-background text-faint"}`}>
-            {s.enabled ? "켜짐" : "꺼짐"}
-          </span>
-          <span className="rounded-full bg-background px-2 py-0.5 text-muted">{s.mode === "auto" ? "완전 자동" : "승인 모드"}</span>
+    <div className="space-y-3">
+      {/* 계좌 사용 (전략 색으로 나눠 보기) */}
+      <section className="space-y-2 rounded-xl border border-border bg-card p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-semibold">키움 모의투자 자동 매매</h3>
+          <div className="flex gap-1 text-xs">
+            <span className={`rounded-full px-2 py-0.5 ${s.enabled ? "bg-accent/10 text-accent" : "bg-background text-faint"}`}>
+              {s.enabled ? "켜짐" : "꺼짐"}
+            </span>
+            <span className="rounded-full bg-background px-2 py-0.5 text-muted">{s.mode === "auto" ? "완전 자동" : "승인 모드"}</span>
+          </div>
         </div>
-      </div>
-
-      {!v.key_saved && (
-        <p className="rounded-lg bg-background p-3 text-sm text-warning">설정 → 키움 연결에서 모의투자 키를 먼저 넣어 주세요.</p>
-      )}
-
-      <p className="text-xs text-muted">
-        {v.strategy?.name ?? "전략 없음"} · 1회 {man(s.per_trade)} · 하루 최대 {s.daily_max}종목 · {v.rank_label} · 목표{" "}
-        {v.rules.target ?? "없음"}% · 손절 {v.rules.stop ?? "없음"}% · {v.rules.hold}거래일
-      </p>
+        {!v.key_saved && (
+          <p className="rounded-lg bg-background p-3 text-sm text-warning">설정 → 키움 연결에서 모의투자 키를 먼저 넣어 주세요.</p>
+        )}
+        <div className="flex justify-between gap-2 text-sm">
+          <span className="text-muted">계좌 사용</span>
+          <span className="tabular">
+            {man(usedAll)}
+            {total != null && <> / {man(total)}</>}
+            {acct?.cash.orderable != null && <span className="text-muted"> · 주문가능 {man(acct.cash.orderable)}</span>}
+          </span>
+        </div>
+        <div className="flex h-2.5 overflow-hidden rounded-full bg-background" aria-hidden>
+          {v.strategies.map((x) => (
+            <div key={x.id} style={{ width: `${(used(x.id) / base) * 100}%`, background: x.color }} />
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
+          {v.strategies.map((x) => (
+            <span key={x.id} className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-sm" style={{ background: x.color }} />
+              {x.name} <span className="tabular">{man(used(x.id))}</span>
+            </span>
+          ))}
+          <span className="ml-auto">
+            자금 <b className="text-foreground">같이 쓰기</b>
+          </span>
+        </div>
+        {acct && (
+          <p className="tabular text-xs text-faint">
+            추정자산 {won(acct.balance.assets)} · 평가손익 <span className={retClass(acct.balance.pnl)}>{won(acct.balance.pnl)}</span> · 키움
+            보유 {acct.balance.holdings.length}종목
+          </p>
+        )}
+      </section>
 
       {v.last_plan && v.last_plan.count === 0 && v.last_plan.trade_date !== v.plan_date && (
-        <p className="rounded-lg bg-background p-2 text-xs text-muted">
-          {md(v.last_plan.trade_date)} 매수 후보 없음 · {md(v.last_plan.signal_date)}에는 이 전략의 신호가 없었습니다.
+        <p className="rounded-lg bg-card p-3 text-xs text-muted">
+          {md(v.last_plan.trade_date)} 매수 후보 없음 · {md(v.last_plan.signal_date)}에는 켜진 전략의 신호가 없었습니다.
         </p>
       )}
 
-      {/* 매수 후보 */}
-      {v.plan_date && v.plans.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-sm">
-            <span className="font-medium">
-              {md(v.plan_date)} 매수 후보 <span className="text-xs text-muted">(신호일 {md(v.plans[0].signal_date)})</span>
-            </span>
-            {waiting.length > 0 && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => run(() => api("/api/auto/approve-all", { body: { trade_date: v.plan_date } }), "모두 승인했습니다")}
-                className="rounded-lg bg-accent px-3 py-1 text-xs font-semibold text-on-accent disabled:opacity-50"
-              >
-                모두 승인 ({waiting.length})
-              </button>
-            )}
-          </div>
-          {waiting.length > 0 && <p className="text-xs text-warning">{md(v.plan_date)} 08:45 까지 승인한 종목만 08:50 에 주문합니다.</p>}
-          <ul className="divide-y divide-border rounded-lg border border-border text-sm">
-            {v.plans.map((p) => {
-              const [label, cls] = STATUS[p.status] ?? [p.status, "text-muted"];
-              return (
-                <li key={p.id} className="flex items-center justify-between gap-2 px-3 py-2">
-                  <button
-                    type="button"
-                    onClick={() => openChart(asTrade({ code: p.code, name: p.name, signal_date: p.signal_date, limit: p.limit_price }))}
-                    className="min-w-0 text-left"
-                  >
-                    <div className="truncate">
-                      {p.rank}. {p.name} <span className="text-xs text-faint">{p.code}</span> <span className="text-xs text-accent">차트</span>
-                    </div>
-                    <div className="tabular text-xs text-muted">
-                      {p.qty.toLocaleString("ko-KR")}주 · 지정가 {won(p.limit_price)} · 종가 {won(p.close)}
-                      {p.msg && <span className="text-faint"> · {p.msg}</span>}
-                    </div>
-                  </button>
-                  {["proposed", "approved", "rejected"].includes(p.status) && s.mode === "approve" ? (
-                    <div className="flex shrink-0 gap-1">
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => run(() => api(`/api/auto/plans/${p.id}`, { body: { approve: true } }))}
-                        className={`rounded-lg px-2.5 py-1 text-xs ${p.status === "approved" ? "bg-accent text-on-accent" : "border border-border"}`}
-                      >
-                        승인
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => run(() => api(`/api/auto/plans/${p.id}`, { body: { approve: false } }))}
-                        className={`rounded-lg px-2.5 py-1 text-xs ${p.status === "rejected" ? "bg-foreground text-background" : "border border-border"}`}
-                      >
-                        빼기
-                      </button>
-                    </div>
-                  ) : (
-                    <span className={`shrink-0 text-xs ${cls}`}>{label}</span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+      {waiting.length > 0 && v.plan_date && (
+        <div className="flex items-center justify-between gap-2 rounded-xl bg-accent-soft p-3 text-sm text-accent">
+          <span>
+            <b>{md(v.plan_date)} 후보 {waiting.length}종목 승인 대기</b>
+            <span className="block text-xs">08:45 까지 승인한 종목만 08:50 에 주문합니다</span>
+          </span>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => run(() => api("/api/auto/approve-all", { body: { trade_date: v.plan_date } }), "모두 승인했습니다")}
+            className="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-50"
+          >
+            모두 승인
+          </button>
         </div>
       )}
 
-      {/* 보유 */}
-      <div className="space-y-1 text-sm">
-        <div className="font-medium">보유 {active.length}종목</div>
-        {active.length === 0 ? (
-          <p className="text-xs text-faint">보유 종목이 없습니다.</p>
-        ) : (
-          <ul className="divide-y divide-border rounded-lg border border-border">
-            {active.map((p) => (
-              <li key={p.id} className="px-3 py-2">
-                <div className="flex justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={() => openChart(asTrade({ code: p.code, name: p.name, signal_date: p.signal_date, limit: p.limit_price }, p))}
-                    className="min-w-0 truncate text-left"
-                  >
-                    {p.name} <span className="text-xs text-faint">{p.code}</span> <span className="text-xs text-accent">차트</span>
-                  </button>
-                  <span className="text-xs text-muted">{p.status === "closing" ? `${p.exit_reason} 매도 중` : `${md(p.entry_date)} 매수`}</span>
-                </div>
-                <div className="flex items-end justify-between gap-2">
-                  <div className="tabular text-xs text-muted">
-                    {p.qty.toLocaleString("ko-KR")}주 · 매수 {won(p.entry_price)} · 목표 {won(p.target_price || null)} · 손절 {won(p.stop_price || null)}
-                  </div>
-                  {p.status === "open" && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => {
-                        if (sellId !== p.id) return setSellId(p.id);
-                        setSellId(null);
-                        run(() => api(`/api/auto/positions/${p.id}/sell`, { method: "POST" }), `${p.name} 시장가 매도 주문을 냈습니다`);
-                      }}
-                      className={`shrink-0 rounded-lg px-2.5 py-1 text-xs ${sellId === p.id ? "bg-critical text-white" : "border border-border"}`}
-                    >
-                      {sellId === p.id ? "정말 팔기" : "지금 팔기"}
-                    </button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+      {/* 전략별 카드: 폴드 펼침(넓은 화면)에서는 나란히 */}
+      <div className="grid items-start gap-3 md:grid-cols-2">
+        {v.strategies.map((x) => (
+          <StrategyCard
+            key={x.id}
+            x={x}
+            mode={s.mode}
+            busy={busy}
+            plans={v.plans.filter((p) => sid(p) === x.id)}
+            positions={active.filter((p) => sid(p) === x.id)}
+            run={run}
+            openChart={openChart}
+          />
+        ))}
+        {v.strategies.length === 0 && <p className="text-sm text-muted">자동 매매할 전략을 추가하세요.</p>}
       </div>
 
-      {/* 청산 */}
+      {adding ? (
+        <AddStrategy
+          have={v.strategies.map((x) => x.id)}
+          busy={busy}
+          onCancel={() => setAdding(false)}
+          onAdd={(id) =>
+            run(async () => {
+              const r = await api(`/api/auto/strategies/${id}`, { method: "PUT", body: {} });
+              setAdding(false);
+              return r;
+            }, "전략을 추가했습니다 · 1회 300만 × 하루 5종목 (카드의 '설정'에서 바꿀 수 있어요)")
+          }
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAdding(true)}
+          className="w-full rounded-xl border border-dashed border-border py-3 text-sm text-muted md:w-auto md:px-5"
+        >
+          + 전략 추가
+        </button>
+      )}
+
+      {/* 청산 (모든 전략) */}
       {closed.length > 0 && (
-        <div className="space-y-1 text-sm">
+        <section className="space-y-1 rounded-xl border border-border bg-card p-4 text-sm">
           <div className="font-medium">
             전략대로 청산 {v.stats.n}건{" "}
             <span className="text-xs text-muted">
@@ -289,32 +212,37 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
               직접 매도 {v.stats_manual.n}건 · 평균 <span className={retClass(v.stats_manual.avg)}>{pct(v.stats_manual.avg, 2, true)}</span> (백테스트 비교에서는 뺌)
             </div>
           )}
-          <ul className="divide-y divide-border rounded-lg border border-border">
-            {closed.map((p) => (
-              <li key={p.id} className="flex justify-between gap-2 px-3 py-2">
-                <button
-                  type="button"
-                  onClick={() => openChart(asTrade({ code: p.code, name: p.name, signal_date: p.signal_date, limit: p.limit_price }, p))}
-                  className="min-w-0 truncate text-left"
-                >
-                  {p.name} <span className="text-xs text-faint">{p.exit_reason} · {p.exit_date && md(p.exit_date)}</span>
-                </button>
-                <span className={`tabular ${retClass(p.ret)}`}>{pct(p.ret, 2, true)}</span>
-              </li>
-            ))}
+          <ul className="divide-y divide-border">
+            {closed.map((p) => {
+              const st = v.strategies.find((x) => x.id === sid(p));
+              return (
+                <li key={p.id} className="flex justify-between gap-2 py-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      st && openChart(asTrade({ code: p.code, name: p.name, signal_date: p.signal_date, limit: p.limit_price }, p), st.spec)
+                    }
+                    className="flex min-w-0 items-center gap-2 truncate text-left"
+                  >
+                    <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: color(sid(p)) }} />
+                    {p.name} <span className="text-xs text-faint">{p.exit_reason} · {p.exit_date && md(p.exit_date)}</span>
+                  </button>
+                  <span className={`tabular ${retClass(p.ret)}`}>{pct(p.ret, 2, true)}</span>
+                </li>
+              );
+            })}
           </ul>
-        </div>
+        </section>
       )}
 
-      {/* 계좌 */}
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
           disabled={busy || !v.key_saved}
-          onClick={() => run(async () => setAcct(await api<Account>("/api/auto/account")))}
+          onClick={() => run(async () => setAcct(await api<Account>("/api/auto/account")), "계좌를 새로 불러왔습니다")}
           className="rounded-lg border border-border px-3 py-1.5 text-xs disabled:opacity-50"
         >
-          모의 계좌 보기
+          계좌 새로고침
         </button>
         <button
           type="button"
@@ -325,21 +253,15 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
           지금 후보 만들기
         </button>
         <button type="button" onClick={() => setEdit((x) => !x)} className="rounded-lg border border-border px-3 py-1.5 text-xs">
-          설정 바꾸기
+          켜기·끄기 / 주문 방식
         </button>
         <button type="button" onClick={() => setShowLog((x) => !x)} className="rounded-lg border border-border px-3 py-1.5 text-xs">
           기록 {showLog ? "닫기" : "보기"}
         </button>
       </div>
-      {acct && (
-        <p className="tabular rounded-lg bg-background p-2 text-xs text-muted">
-          주문가능 {won(acct.cash.orderable)} · 추정자산 {won(acct.balance.assets)} · 평가손익{" "}
-          <span className={retClass(acct.balance.pnl)}>{won(acct.balance.pnl)}</span> · 보유 {acct.balance.holdings.length}종목
-        </p>
-      )}
-      {edit && <Settings v={v} busy={busy} onSave={(b) => run(() => api("/api/auto/settings", { method: "PUT", body: b }), "저장했습니다")} />}
+      {edit && <GlobalSettings v={v} busy={busy} onSave={(b) => run(() => api("/api/auto/settings", { method: "PUT", body: b }), "저장했습니다")} />}
       {showLog && (
-        <ul className="max-h-60 space-y-0.5 overflow-y-auto rounded-lg bg-background p-2 text-xs text-muted">
+        <ul className="max-h-60 space-y-0.5 overflow-y-auto rounded-lg bg-card p-2 text-xs text-muted">
           {v.log.length === 0 && <li>기록이 없습니다.</li>}
           {v.log.map((l, i) => (
             <li key={i}>
@@ -348,66 +270,299 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
           ))}
         </ul>
       )}
-      {chart && v.spec && <TradeChart trade={chart} spec={v.spec} dataset="kr" currency="KRW" onClose={chartBack.close} />}
+      {chart && <TradeChart trade={chart.trade} spec={chart.spec} dataset="kr" currency="KRW" onClose={chartBack.close} />}
       <p className="text-[11px] text-faint">
-        &apos;전체 중지&apos;는 새 매수만 멈춥니다. 이미 산 종목은 목표가·손절·기간 만료 매도를 계속합니다. 직접 팔 때는 키움 앱 대신 &apos;지금 팔기&apos;를 쓰세요 (키움에서 판 것도 2~4분 안에 알아채 정리합니다). 지금은 모의투자에서만 주문합니다.
+        계좌 돈은 모든 전략이 같이 씁니다. 아침 주문은 위 전략 순서대로 나가고, 주문가능금액이 모자라면 그 종목은 건너뜁니다 (지정가 전략은 다음 날 다시
+        시도). &apos;전체 중지&apos;는 새 매수만 멈추고, 이미 산 종목은 목표가·손절·기간 만료 매도를 계속합니다. 지금은 모의투자에서만 주문합니다.
       </p>
+    </div>
+  );
+}
+
+function StrategyCard({
+  x,
+  mode,
+  busy,
+  plans,
+  positions,
+  run,
+  openChart,
+}: {
+  x: AutoStrategy;
+  mode: "approve" | "auto";
+  busy: boolean;
+  plans: Plan[];
+  positions: Position[];
+  run: Run;
+  openChart: (t: Trade, spec: Spec) => void;
+}) {
+  const [edit, setEdit] = useState(false);
+  const [sellId, setSellId] = useState<number | null>(null); // '지금 팔기' 두 번 눌러 확인
+  const r = x.rules;
+  const now = today();
+  const limitName = x.midpoint ? "중간값" : "지정가";
+  const dates = [...new Set(plans.map((p) => p.trade_date))];
+  return (
+    <section className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="flex items-center justify-between gap-2 px-4 py-2.5" style={{ background: x.color, color: INK }}>
+        <span className="truncate font-bold">{x.name}</span>
+        <span className="flex shrink-0 items-center gap-2 text-xs font-semibold">
+          {x.enabled ? `켜짐 · ${mode === "auto" ? "자동" : "승인"}` : "꺼짐"}
+          <button type="button" onClick={() => setEdit((e) => !e)} className="rounded-md px-2 py-0.5" style={{ background: "#10131A22" }}>
+            {edit ? "닫기" : "설정"}
+          </button>
+        </span>
+      </div>
+      <div className="space-y-3 p-4 text-sm">
+        <p className="tabular text-xs text-muted">
+          {entryLabel(x)} · {man(x.per_trade)} × 하루 {x.daily_max} · +{r.target ?? "–"} / −{r.stop ?? "–"} · {r.hold}일
+        </p>
+        {edit && <StrategySettings x={x} busy={busy} run={run} />}
+
+        {plans.length > 0 && (
+          <div className="space-y-1">
+            <div className="text-xs text-muted">
+              {dates.map(md).join(" · ")} 후보
+              {r.entry === "limit" && ` · 매일 아침 ${limitName}에 다시 주문 (최대 ${r.valid_days}일)`}
+            </div>
+            <ul className="divide-y divide-border">
+              {plans.map((p) => {
+                const [label, cls] = STATUS[p.status] ?? [p.status, "text-muted"];
+                const later = p.trade_date < now; // 지정가 후보의 둘째 날부터
+                const canApprove = mode === "approve" && !later && ["proposed", "approved", "rejected"].includes(p.status);
+                const canDrop = p.status === "approved" && (later || mode === "auto");
+                return (
+                  <li key={p.id} className="flex items-center justify-between gap-2 py-2">
+                    <button
+                      type="button"
+                      onClick={() => openChart(asTrade({ code: p.code, name: p.name, signal_date: p.signal_date, limit: p.limit_price }), x.spec)}
+                      className="min-w-0 text-left"
+                    >
+                      <div className="truncate">
+                        {p.name} <span className="text-xs text-faint">{p.code}</span>
+                      </div>
+                      <div className="tabular text-xs text-muted">
+                        {p.qty.toLocaleString("ko-KR")}주 ·{" "}
+                        {p.entry_kind === "limit" ? (
+                          <span className="text-mid">
+                            {limitName} {won(p.limit_price)}
+                          </span>
+                        ) : (
+                          <>지정가 {won(p.limit_price)}</>
+                        )}
+                        {p.entry_kind === "limit" && p.valid_until && <> · ~{md(p.valid_until)}</>}
+                        {p.msg && <span className="text-faint"> · {p.msg}</span>}
+                      </div>
+                    </button>
+                    {canApprove ? (
+                      <div className="flex shrink-0 gap-1">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => run(() => api(`/api/auto/plans/${p.id}`, { body: { approve: true } }))}
+                          className={`rounded-lg px-2.5 py-1 text-xs ${p.status === "approved" ? "bg-accent text-on-accent" : "border border-border"}`}
+                        >
+                          승인
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => run(() => api(`/api/auto/plans/${p.id}`, { body: { approve: false } }))}
+                          className={`rounded-lg px-2.5 py-1 text-xs ${p.status === "rejected" ? "bg-foreground text-background" : "border border-border"}`}
+                        >
+                          빼기
+                        </button>
+                      </div>
+                    ) : canDrop ? (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => run(() => api(`/api/auto/plans/${p.id}`, { body: { approve: false } }), `${p.name} 다음 주문을 멈췄습니다`)}
+                        className="shrink-0 rounded-lg border border-border px-2.5 py-1 text-xs"
+                      >
+                        빼기
+                      </button>
+                    ) : (
+                      <span className={`shrink-0 text-xs ${cls}`}>{label}</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
+        <div className="space-y-1 border-t border-border pt-2">
+          <div className="text-xs text-muted">
+            보유 {positions.length} · 청산 {x.stats.n}건
+            {x.stats.n > 0 && (
+              <>
+                {" "}
+                · 평균 <span className={retClass(x.stats.avg)}>{pct(x.stats.avg, 2, true)}</span>
+              </>
+            )}
+          </div>
+          {positions.length > 0 && (
+            <ul className="divide-y divide-border">
+              {positions.map((p) => (
+                <li key={p.id} className="py-2">
+                  <div className="flex justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openChart(asTrade({ code: p.code, name: p.name, signal_date: p.signal_date, limit: p.limit_price }, p), x.spec)}
+                      className="min-w-0 truncate text-left"
+                    >
+                      {p.name} <span className="text-xs text-faint">{p.code}</span>
+                    </button>
+                    <span className="shrink-0 text-xs text-muted">
+                      {p.status === "closing" ? `${p.exit_reason} 매도 중` : `${md(p.entry_date)} 매수`}
+                    </span>
+                  </div>
+                  <div className="flex items-end justify-between gap-2">
+                    <div className="tabular text-xs text-muted">
+                      {(p.qty - (p.sold_qty ?? 0)).toLocaleString("ko-KR")}주 · {won(p.entry_price)} · 목표 {won(p.target_price || null)} · 손절{" "}
+                      {won(p.stop_price || null)}
+                    </div>
+                    {p.status === "open" && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          if (sellId !== p.id) return setSellId(p.id);
+                          setSellId(null);
+                          run(() => api(`/api/auto/positions/${p.id}/sell`, { method: "POST" }), `${p.name} 시장가 매도 주문을 냈습니다`);
+                        }}
+                        className={`shrink-0 rounded-lg px-2.5 py-1 text-xs ${sellId === p.id ? "bg-critical text-white" : "border border-border"}`}
+                      >
+                        {sellId === p.id ? "정말 팔기" : "지금 팔기"}
+                      </button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
     </section>
   );
 }
 
-function Settings({ v, busy, onSave }: { v: AutoView; busy: boolean; onSave: (b: object) => void }) {
-  const s = v.settings;
-  const [strategies, setStrategies] = useState<Strategy[]>([]);
-  const [mode, setMode] = useState(s.mode);
-  const [sid, setSid] = useState<number | null>(s.strategy_id);
-  const [per, setPer] = useState(String(s.per_trade));
-  const [daily, setDaily] = useState(String(s.daily_max));
-  useEffect(() => {
-    api<Strategy[]>("/api/strategies").then(setStrategies, () => {});
-  }, []);
+function StrategySettings({ x, busy, run }: { x: AutoStrategy; busy: boolean; run: Run }) {
+  const [per, setPer] = useState(String(x.per_trade));
+  const [daily, setDaily] = useState(String(x.daily_max));
+  const [drop, setDrop] = useState(false);
+  const put = (b: object, ok: string) => run(() => api(`/api/auto/strategies/${x.id}`, { method: "PUT", body: b }), ok);
   return (
-    <div className="space-y-3 rounded-lg border border-border p-3 text-sm">
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => onSave({ enabled: !s.enabled })}
-        className={`w-full rounded-xl py-2.5 font-semibold disabled:opacity-50 ${s.enabled ? "border border-critical text-critical" : "bg-accent text-on-accent"}`}
-      >
-        {s.enabled ? "전체 중지 (새 매수 멈춤)" : "자동 매매 켜기"}
-      </button>
+    <div className="space-y-2 rounded-lg border border-border p-3">
+      <div className="grid grid-cols-2 gap-2">
+        <label className="block">
+          <span className="text-xs text-muted">1회 매수금 (원)</span>
+          <NumInput value={per} onChange={setPer} className="mt-1" />
+        </label>
+        <label className="block">
+          <span className="text-xs text-muted">하루 최대 종목</span>
+          <NumInput value={daily} onChange={setDaily} className="mt-1" />
+        </label>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => put({ per_trade: Number(per), daily_max: Number(daily) }, "저장했습니다")}
+          className="rounded-lg border border-accent px-3 py-1.5 text-xs font-semibold text-accent disabled:opacity-50"
+        >
+          저장
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => put({ enabled: !x.enabled }, x.enabled ? "이 전략의 새 매수를 멈췄습니다" : "이 전략을 켰습니다")}
+          className="rounded-lg border border-border px-3 py-1.5 text-xs disabled:opacity-50"
+        >
+          {x.enabled ? "이 전략 끄기" : "이 전략 켜기"}
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            if (!drop) return setDrop(true);
+            run(() => api(`/api/auto/strategies/${x.id}`, { method: "DELETE" }), "자동 매매에서 뺐습니다");
+          }}
+          className={`ml-auto rounded-lg px-3 py-1.5 text-xs ${drop ? "bg-critical text-white" : "border border-border text-muted"}`}
+        >
+          {drop ? "정말 빼기" : "자동 매매에서 빼기"}
+        </button>
+      </div>
+      <p className="text-[11px] text-faint">끄거나 빼도 이미 산 종목은 규칙대로 계속 팝니다.</p>
+    </div>
+  );
+}
+
+function AddStrategy({ have, busy, onAdd, onCancel }: { have: number[]; busy: boolean; onAdd: (id: number) => void; onCancel: () => void }) {
+  const [list, setList] = useState<Strategy[]>([]);
+  const [sid, setSid] = useState<number | null>(null);
+  useEffect(() => {
+    api<Strategy[]>("/api/strategies").then(setList, () => {});
+  }, []);
+  const left = list.filter((x) => !have.includes(x.id));
+  return (
+    <div className="space-y-2 rounded-xl border border-dashed border-border p-3 text-sm">
       <label className="block">
-        <span className="text-muted">주문 방식</span>
-        <select value={mode} onChange={(e) => setMode(e.target.value as "approve" | "auto")} className="mt-1">
-          <option value="approve">승인 모드 — 아침에 승인한 종목만 주문</option>
-          <option value="auto">완전 자동 — 승인 없이 주문</option>
-        </select>
-      </label>
-      <label className="block">
-        <span className="text-muted">전략</span>
+        <span className="text-muted">추가할 전략 (저장한 전략에서)</span>
         <select value={sid ?? ""} onChange={(e) => setSid(e.target.value ? +e.target.value : null)} className="mt-1">
           <option value="">고르세요</option>
-          {strategies.map((x) => (
+          {left.map((x) => (
             <option key={x.id} value={x.id}>
               {x.name}
             </option>
           ))}
         </select>
       </label>
-      <div className="grid grid-cols-2 gap-2">
-        <label className="block">
-          <span className="text-muted">1회 매수금 (원)</span>
-          <NumInput value={per} onChange={setPer} className="mt-1" />
-        </label>
-        <label className="block">
-          <span className="text-muted">하루 최대 종목</span>
-          <NumInput value={daily} onChange={setDaily} className="mt-1" />
-        </label>
+      <p className="text-xs text-faint">
+        처음엔 1회 300만원 × 하루 5종목으로 시작합니다. 카드의 &apos;설정&apos;에서 바꿀 수 있어요. &apos;당일종가&apos; 매수 전략은 쓸 수 없습니다.
+      </p>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={busy || !sid}
+          onClick={() => sid && onAdd(sid)}
+          className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-50"
+        >
+          추가
+        </button>
+        <button type="button" onClick={onCancel} className="rounded-lg border border-border px-3 py-1.5 text-xs">
+          취소
+        </button>
       </div>
+    </div>
+  );
+}
+
+function GlobalSettings({ v, busy, onSave }: { v: AutoView; busy: boolean; onSave: (b: object) => void }) {
+  const s = v.settings;
+  const [mode, setMode] = useState(s.mode);
+  return (
+    <div className="space-y-3 rounded-xl border border-border bg-card p-3 text-sm">
       <button
         type="button"
-        disabled={busy || !sid}
-        onClick={() => onSave({ mode, strategy_id: sid, per_trade: Number(per), daily_max: Number(daily) })}
+        disabled={busy}
+        onClick={() => onSave({ enabled: !s.enabled })}
+        className={`w-full rounded-xl py-2.5 font-semibold disabled:opacity-50 ${s.enabled ? "border border-critical text-critical" : "bg-accent text-on-accent"}`}
+      >
+        {s.enabled ? "전체 중지 (모든 전략 새 매수 멈춤)" : "자동 매매 켜기"}
+      </button>
+      <label className="block">
+        <span className="text-muted">주문 방식 (모든 전략)</span>
+        <select value={mode} onChange={(e) => setMode(e.target.value as "approve" | "auto")} className="mt-1">
+          <option value="approve">승인 모드 — 아침에 승인한 종목만 주문</option>
+          <option value="auto">완전 자동 — 승인 없이 주문</option>
+        </select>
+      </label>
+      <button
+        type="button"
+        disabled={busy || mode === s.mode}
+        onClick={() => onSave({ mode })}
         className="w-full rounded-xl border border-accent py-2 font-semibold text-accent disabled:opacity-50"
       >
         저장

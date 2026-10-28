@@ -3,37 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { pct, retClass } from "@/lib/format";
+import { type AutoView, type Position as Pos, stratOf } from "@/lib/auto";
 import type { Spec, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
 import TradeChart from "./TradeChart";
 
-interface Pos {
-  id: number;
-  code: string;
-  name: string;
-  qty: number;
-  entry_date: string;
-  entry_price: number;
-  target_price: number;
-  stop_price: number;
-  status: string;
-  exit_reason: string | null;
-  exit_date: string | null;
-  exit_price: number | null;
-  ret: number | null;
-  signal_date: string | null;
-  limit_price: number | null;
-}
-interface AutoView {
-  key_saved: boolean;
-  settings: { enabled: boolean; mode: "approve" | "auto" };
-  strategy: { name: string } | null;
-  spec: Spec | null;
-  plans: { status: string; trade_date: string }[];
-  plan_date: string | null;
-  positions: Pos[];
-  last_plan: { trade_date: string; signal_date: string; count: number } | null;
-}
 interface Quote {
   price: number;
   change_pct: number | null;
@@ -97,7 +71,7 @@ function asTrade(p: Pos): Trade {
 }
 
 // 홈 '오늘': 자동 매매 현황·보유 종목 실시간·다음 일정·지수·실시간 감시를 한 화면에
-export default function Today({ onGo, newsCount }: { onGo: (tab: "paper" | "run" | "market") => void; newsCount: number }) {
+export default function Today({ onGo, newsCount }: { onGo: (tab: "auto" | "paper" | "run" | "market") => void; newsCount: number }) {
   const [auto, setAuto] = useState<AutoView | null>(null);
   const [acct, setAcct] = useState<Account | null>(null);
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
@@ -106,7 +80,7 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "paper" | "run"
   const [at, setAt] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [now, setNow] = useState(kstNow);
-  const [chart, setChart] = useState<Trade | null>(null);
+  const [chart, setChart] = useState<{ trade: Trade; spec: Spec } | null>(null);
   const closeChart = useCallback(() => setChart(null), []);
   const back = useBackClose(!!chart, closeChart);
 
@@ -150,6 +124,26 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "paper" | "run"
   const waiting = (auto?.plans ?? []).filter((p) => p.status === "proposed");
   const [nextT, nextL] = nextEvent(now.hm, now.wd, auto?.settings.mode === "approve");
   const watchN = watch?.items.length ?? 0;
+  const color = (p: Pos) => (auto && stratOf(auto, p.strategy_id)?.color) || "var(--faint)";
+  const open = (p: Pos) => {
+    const st = auto && stratOf(auto, p.strategy_id);
+    if (!st) return;
+    back.push();
+    setChart({ trade: asTrade(p), spec: st.spec });
+  };
+  const per = auto?.strategies.map((x) => [x, waiting.filter((p) => p.strategy_id === x.id).length] as const).filter(([, n]) => n > 0);
+  const banner = waiting.length > 0 && auto?.plan_date && (
+    <button type="button" onClick={() => onGo("auto")} className="flex w-full items-center justify-between gap-3 rounded-xl bg-accent px-4 py-3 text-left text-on-accent">
+      <span>
+        <span className="block font-semibold">{md(auto.plan_date)} 매수 후보 {waiting.length}종목 승인 대기</span>
+        <span className="text-xs">
+          {per && per.length > 1 && per.map(([x, n]) => `${x.name} ${n}`).join(" · ") + " · "}
+          {md(auto.plan_date)} 08:45 까지
+        </span>
+      </span>
+      <span className="shrink-0 text-sm font-semibold">승인하기 →</span>
+    </button>
+  );
 
   return (
     <div className="space-y-3">
@@ -163,7 +157,7 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "paper" | "run"
         {auto && (
           <button
             type="button"
-            onClick={() => onGo("paper")}
+            onClick={() => onGo("auto")}
             className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs ${auto.settings.enabled ? "border-border text-accent" : "border-border text-faint"}`}
           >
             <span className={`h-2 w-2 rounded-full ${auto.settings.enabled ? "bg-accent" : "bg-faint"}`} />
@@ -174,19 +168,25 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "paper" | "run"
 
       {err && <p className="text-sm text-critical">⚠ {err}</p>}
 
-      {waiting.length > 0 && auto?.plan_date && (
-        <button type="button" onClick={() => onGo("paper")} className="flex w-full items-center justify-between gap-3 rounded-xl bg-accent px-4 py-3 text-left text-on-accent">
-          <span>
-            <span className="block font-semibold">{md(auto.plan_date)} 매수 후보 {waiting.length}종목 승인 대기</span>
-            <span className="text-xs">{md(auto.plan_date)} 08:45 까지 승인한 종목만 주문합니다</span>
-          </span>
-          <span className="shrink-0 text-sm font-semibold">승인하기 →</span>
-        </button>
-      )}
+      <div className="md:hidden">{banner}</div>
 
+      <div className="space-y-3 md:grid md:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] md:items-start md:gap-4 md:space-y-0">
+      <div className="space-y-3">
       <section className="space-y-2.5 rounded-xl border border-border bg-card p-4">
         <div className="flex items-baseline justify-between text-xs text-muted">
-          <span>키움 모의투자 · {auto?.strategy?.name ?? "전략 없음"}</span>
+          <span className="flex min-w-0 flex-wrap items-center gap-x-2">
+            키움 모의투자 ·
+            {auto?.strategies.length ? (
+              auto.strategies.map((x) => (
+                <span key={x.id} className="flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-sm" style={{ background: x.color }} />
+                  {x.name}
+                </span>
+              ))
+            ) : (
+              <span>전략 없음</span>
+            )}
+          </span>
           {at && <span className="tabular">{at} 기준</span>}
         </div>
         <div className="grid grid-cols-3 gap-2">
@@ -223,14 +223,14 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "paper" | "run"
               <button
                 key={p.id}
                 type="button"
-                onClick={() => {
-                  back.push();
-                  setChart(asTrade(p));
-                }}
-                className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-2.5 text-left"
+                onClick={() => open(p)}
+                className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-2.5 text-left md:grid-cols-[minmax(0,1fr)_auto_auto_6rem]"
               >
                 <span className="min-w-0">
-                  <span className="block truncate text-sm">{p.name}</span>
+                  <span className="flex items-center gap-1.5 truncate text-sm">
+                    <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: color(p) }} />
+                    {p.name}
+                  </span>
                   <span className="text-[11px] text-faint">
                     {p.qty.toLocaleString("ko-KR")}주 · {md(p.entry_date)} 매수{p.status === "closing" ? ` · ${p.exit_reason} 매도 중` : ""}
                   </span>
@@ -240,18 +240,22 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "paper" | "run"
                   <span className="block text-sm text-foreground">{q ? won(q.price) : "–"}</span>
                 </span>
                 <span className={`tabular w-16 text-right text-sm font-semibold ${retClass(r)}`}>{pct(r, 2, true)}</span>
+                <StopTarget p={p} price={q?.price ?? null} />
               </button>
             );
           })}
           {active.length > 6 && (
-            <button type="button" onClick={() => onGo("paper")} className="w-full px-4 py-2.5 text-left text-xs text-accent">
+            <button type="button" onClick={() => onGo("auto")} className="w-full px-4 py-2.5 text-left text-xs text-accent">
               외 {active.length - 6}종목 · 모두 보기
             </button>
           )}
         </div>
       </section>
 
-      <section className="grid grid-cols-2 gap-2">
+      </div>
+      <div className="space-y-3">
+      <div className="hidden md:block">{banner}</div>
+      <section className="grid grid-cols-2 gap-2 md:grid-cols-1">
         <div className="rounded-xl border border-border bg-card p-3">
           <div className="text-[11px] text-muted">다음 일정</div>
           <div className="tabular text-lg font-semibold text-accent">{nextT}</div>
@@ -273,7 +277,7 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "paper" | "run"
         </button>
       </section>
 
-      <button type="button" onClick={() => onGo("paper")} className="flex w-full items-center justify-between rounded-xl border border-dashed border-border px-4 py-3 text-left">
+      <button type="button" onClick={() => onGo("auto")} className="flex w-full items-center justify-between rounded-xl border border-dashed border-border px-4 py-3 text-left">
         <span>
           <span className="block text-sm">장중 실시간 감시</span>
           <span className="text-[11px] text-muted">
@@ -299,13 +303,11 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "paper" | "run"
                 <button
                   key={p.id}
                   type="button"
-                  onClick={() => {
-                    back.push();
-                    setChart(asTrade(p));
-                  }}
+                  onClick={() => open(p)}
                   className="flex w-full justify-between gap-2 px-4 py-2.5 text-left text-sm"
                 >
-                  <span className="truncate">
+                  <span className="flex min-w-0 items-center gap-1.5 truncate">
+                    <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: color(p) }} />
                     {p.name} <span className="text-xs text-faint">{p.exit_reason} · {p.exit_date && md(p.exit_date)}</span>
                   </span>
                   <span className={`tabular ${retClass(p.ret)}`}>{pct(p.ret, 2, true)}</span>
@@ -321,8 +323,21 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "paper" | "run"
           {md(auto.last_plan.trade_date)} 매수 후보 없음 · {md(auto.last_plan.signal_date)}에는 신호가 없었습니다.
         </p>
       )}
+      </div>
+      </div>
 
-      {chart && auto?.spec && <TradeChart trade={chart} spec={auto.spec} dataset="kr" currency="KRW" onClose={back.close} />}
+      {chart && <TradeChart trade={chart.trade} spec={chart.spec} dataset="kr" currency="KRW" onClose={back.close} />}
     </div>
+  );
+}
+
+// 넓은 화면: 손절선(왼쪽)~목표가(오른쪽) 사이 현재가 위치
+function StopTarget({ p, price }: { p: Pos; price: number | null }) {
+  if (!p.stop_price || !p.target_price || price == null) return <span className="hidden md:block" />;
+  const f = Math.min(1, Math.max(0, (price - p.stop_price) / (p.target_price - p.stop_price)));
+  return (
+    <span className="relative hidden h-1.5 rounded-full bg-background md:block" title="손절 ← → 목표">
+      <span className="absolute top-1/2 h-2.5 w-1 -translate-y-1/2 rounded-sm bg-foreground" style={{ left: `calc(${f * 100}% - 2px)` }} />
+    </span>
   );
 }

@@ -19,14 +19,17 @@ import Notes from "./Notes";
 import PushSettings from "./PushSettings";
 import BrokerSettings from "./BrokerSettings";
 import Today from "./Today";
+import AutoTrade from "./AutoTrade";
+import WatchCard from "./WatchCard";
 
-type Tab = "today" | "run" | "explore" | "journal" | "paper" | "market" | "saved" | "more";
-const TAB_KEYS: Tab[] = ["today", "run", "explore", "journal", "paper", "market", "saved", "more"];
+type Tab = "today" | "run" | "explore" | "journal" | "auto" | "paper" | "market" | "saved" | "more";
+const TAB_KEYS: Tab[] = ["today", "run", "explore", "journal", "auto", "paper", "market", "saved", "more"];
 // 아래 메뉴 5개 (시안 A). 둘 이상 묶인 곳은 위에 작은 탭으로 고른다
-const GROUPS: { label: string; tabs: [Tab, string][]; icon: string }[] = [
+// 탭 이름 뒤 셋째 값은 작은 설명 (매매: 실제 주문인지 앱 계산인지 한눈에)
+const GROUPS: { label: string; tabs: [Tab, string, string?][]; icon: string }[] = [
   { label: "오늘", tabs: [["today", "오늘"]], icon: "M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" },
   { label: "검증", tabs: [["run", "검증"], ["explore", "탐색"]], icon: "M4 19h16M7 16V9M12 16V5M17 16v-4" },
-  { label: "매매", tabs: [["paper", "자동·모투"], ["journal", "실투"]], icon: "M4 7h13l-3-3M20 17H7l3 3" },
+  { label: "매매", tabs: [["auto", "키움 자동", "실제 주문"], ["paper", "앱 모의", "계산만"], ["journal", "실투", "내 매매 기록"]], icon: "M4 7h13l-3-3M20 17H7l3 3" },
   { label: "시장", tabs: [["market", "지수"]], icon: "M3 17l5-6 4 4 8-9" },
   { label: "더보기", tabs: [["saved", "전략"], ["more", "설정"]], icon: "M5 12h.01M12 12h.01M19 12h.01" },
 ];
@@ -270,7 +273,7 @@ export default function App() {
   const current = datasets.find((d) => d.name === dataset);
 
   return (
-    <div className="mx-auto min-h-dvh max-w-3xl px-4 pb-28 pt-4">
+    <div className="mx-auto min-h-dvh max-w-3xl px-4 pb-28 pt-4 md:max-w-6xl md:pb-10 md:pl-28 md:pr-6">
       <header className="mb-4 flex items-center justify-between">
         <h1 className="text-lg font-bold">주식 검증기</h1>
         {datasets.length > 0 && ["run", "explore", "saved", "journal"].includes(tab) && (
@@ -299,17 +302,20 @@ export default function App() {
 
       {!needLogin && groupOf(tab).tabs.length > 1 && (
         <div className="mb-4 flex gap-1 rounded-xl border border-border bg-card p-1" role="tablist">
-          {groupOf(tab).tabs.map(([k, label]) => (
+          {groupOf(tab).tabs.map(([k, label, sub]) => (
             <button
               key={k}
               type="button"
               role="tab"
               aria-selected={tab === k}
               onClick={() => setTab(k)}
-              className={`flex-1 rounded-lg py-2 text-sm ${tab === k ? "bg-accent-soft font-semibold text-accent" : "text-muted"}`}
+              className={`flex flex-1 flex-col items-center justify-center gap-x-1.5 rounded-lg px-1 py-2 text-sm md:flex-row ${tab === k ? "bg-accent-soft font-semibold text-accent" : "text-muted"}`}
             >
-              {label}
-              {k === "paper" && newsCount > 0 && <span className="ml-1 text-xs text-critical">●</span>}
+              <span>
+                {label}
+                {k === "paper" && newsCount > 0 && <span className="ml-1 text-xs text-critical">●</span>}
+              </span>
+              {sub && <span className="text-[10px] font-normal md:text-xs">{sub}</span>}
             </button>
           ))}
         </div>
@@ -474,6 +480,21 @@ export default function App() {
       {!needLogin && tab === "journal" && (
         <Journal dataset={current} prefill={journalPrefill} onPrefillUsed={clearPrefill} />
       )}
+      {!needLogin && tab === "auto" && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2.5 rounded-xl bg-accent-soft px-3 py-2.5 text-xs text-accent">
+            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="shrink-0">
+              <path d="M12 3l9 16H3z" />
+              <path d="M12 10v4M12 17h.01" />
+            </svg>
+            <span>
+              키움 <b>모의투자</b> 계좌로 <b>실제 주문</b>이 나갑니다. 앱 안에서 계산만 하는 모투는 &apos;앱 모의&apos;에 있어요.
+            </span>
+          </div>
+          <AutoTrade onFlash={flash} />
+          <WatchCard onFlash={flash} />
+        </div>
+      )}
       {!needLogin && tab === "paper" && (
         <Paper
           spec={spec}
@@ -521,13 +542,17 @@ export default function App() {
       {notes && <Notes onClose={() => setNotes(false)} />}
 
       {toast && (
-        <div className="fixed inset-x-0 bottom-24 z-40 mx-auto w-fit rounded-full bg-foreground px-4 py-2 text-sm text-background">
+        <div className="fixed inset-x-0 bottom-24 z-40 md:bottom-8 mx-auto w-fit rounded-full bg-foreground px-4 py-2 text-sm text-background">
           {toast}
         </div>
       )}
 
-      <nav aria-label="주 메뉴" className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
-        <div className="mx-auto grid max-w-3xl grid-cols-5">
+      {/* 폰: 아래 메뉴 / 폴드 펼침·태블릿(넓은 화면): 왼쪽 세로 메뉴 */}
+      <nav
+        aria-label="주 메뉴"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:inset-y-0 md:right-auto md:w-20 md:border-r md:border-t-0 md:pb-0"
+      >
+        <div className="mx-auto grid max-w-3xl grid-cols-5 md:mt-16 md:grid-cols-1 md:gap-2">
           {GROUPS.map((g) => {
             const on = groupOf(tab) === g;
             return (

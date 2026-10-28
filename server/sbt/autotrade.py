@@ -1,11 +1,13 @@
-"""자동 매매 (키움 모의투자). 백테스트와 같은 규칙으로 주문을 낸다.
+"""자동 매매 (키움 모의투자). 여러 전략을 한 계좌에서, 전략마다 백테스트와 같은 규칙으로 주문을 낸다.
 
 하루 흐름 (거래일, 한국시간)
 - 새 거래일 데이터가 들어오면 (저녁 임시값이든 아침 공식 값이든 먼저 온 쪽) 다음 거래일 '매수 후보'를 만든다.
-  고른 전략의 그날 신호 → 이미 보유 중인 종목 제외 → 거래대금 작은 순 → 하루 최대 n종목.
+  켜진 전략마다 그날 신호 → 이미 보유·대기 중인 종목 제외 → 거래대금 작은 순 → 그 전략의 하루 최대 n종목.
   승인 모드면 휴대폰으로 알리고 08:45 까지 승인을 기다린다. 승인 안 한 것은 사지 않는다.
-- 08:50 매수: 지정가 = 신호일 종가 × (1 + buy_limit_pct%) — 장전 동시호가라 시가가 그 아래면 시가에 체결된다.
-  같은 시각, 보유 종목의 목표가 매도(지정가 +10%)를 다시 건다 (KRX 지정가 주문은 그날만 유효).
+- 08:50 매수 (계좌 돈은 전략들이 같이 쓴다. 모자라면 전략 순서·후보 순서대로):
+  · '다음날시가' 전략: 지정가 = 신호일 종가 × (1 + buy_limit_pct%) — 장전 동시호가라 시가가 그 아래면 시가 체결.
+  · '지정가' 전략 (예: 중간값): 그 지정가로, 유효기간 동안 매일 아침 다시 주문 (KRX 지정가는 그날만 유효).
+  같은 시각, 보유 종목의 목표가 매도를 다시 건다. 목표·손절·보유기간은 그 종목을 산 전략의 규칙.
 - 09:00~15:19 체결 확인 (체결되면 목표가 매도 주문), 손절가 이하면 시장가 매도.
 - 15:20 보유기간이 끝난 종목은 시장가 매도 (종가 동시호가).
 - 15:31 마무리: 안 된 매수 주문은 '미체결'로, 목표가 주문은 내일 다시.
@@ -34,12 +36,12 @@ DEFAULTS = {
     "enabled": False,
     "mode": "approve",  # approve | auto
     "account": "mock",
-    "strategy_id": None,
-    "per_trade": 5_000_000,
-    "daily_max": 10,
-    "rank": "value_asc",  # 거래대금 작은 순
     "buy_limit_pct": 5.0,
+    "strategies": None,  # [{id, enabled, per_trade, daily_max, rank, color}]
 }
+# 전략 색 (차트·목록에서 같은 색). 상승 빨강·하락 파랑·강조 호박색과 겹치지 않게
+COLORS = ["#A99CF5", "#3CC4B4", "#F08A5D", "#7EC8F2", "#E3B341"]
+NEW_STRATEGY = {"enabled": True, "per_trade": 3_000_000, "daily_max": 5, "rank": "value_asc"}
 RANK_LABEL = {"value_asc": "거래대금 작은 순"}
 MANUAL = ("직접 매도", "키움에서 직접 매도")  # 전략 규칙이 아닌 매도 (통계 따로)
 RECONCILE_EVERY = 120  # 초: 키움 잔고와 맞춰 보는 간격
@@ -93,6 +95,13 @@ class Auto:
                 created_at TEXT NOT NULL, updated_at TEXT NOT NULL)""")
             db.execute("""CREATE TABLE IF NOT EXISTS at_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, text TEXT NOT NULL)""")
+            # 여러 전략용 칸 (예전 데이터는 첫 전략으로 본다)
+            for table, cols in (("at_plans", {"strategy_id": "INTEGER", "valid_until": "TEXT", "entry_kind": "TEXT"}),
+                                ("at_positions", {"strategy_id": "INTEGER", "hold_days": "INTEGER"})):
+                have = {r[1] for r in db.execute(f"PRAGMA table_info({table})").fetchall()}
+                for c, typ in cols.items():
+                    if c not in have:
+                        db.execute(f"ALTER TABLE {table} ADD COLUMN {c} {typ}")
             db.commit()
 
     # ------------------------------------------------------------ 저장
@@ -115,34 +124,89 @@ class Auto:
         self._x("DELETE FROM at_log WHERE id <= (SELECT MAX(id) - 1000 FROM at_log)")
 
     def settings(self) -> dict:
-        s = {**DEFAULTS, **self.store.get_setting("autotrade", {})}
-        if not s["strategy_id"]:
-            s["strategy_id"] = next((x["id"] for x in self.store.list() if "v2b" in x["name"]), None)
+        raw = self.store.get_setting("autotrade", {})
+        s = {**DEFAULTS, **raw}
+        if s["strategies"] is None:  # 예전(전략 하나) 설정을 옮긴다
+            sid = raw.get("strategy_id") or next((x["id"] for x in self.store.list() if "v2b" in x["name"]), None)
+            s["strategies"] = ([{"id": sid, "enabled": True, "per_trade": raw.get("per_trade", 5_000_000),
+                                 "daily_max": raw.get("daily_max", 10), "rank": raw.get("rank", "value_asc")}]
+                               if sid else [])
+        for k, x in enumerate(s["strategies"]):
+            x.setdefault("color", COLORS[k % len(COLORS)])
+        for k in ("strategy_id", "per_trade", "daily_max", "rank"):
+            s.pop(k, None)
         return s
+
+    def _save(self, s: dict) -> None:
+        self.store.set_setting("autotrade", {k: v for k, v in s.items() if k in DEFAULTS})
 
     def set_settings(self, **kw) -> dict:
+        """전체 켜기·끄기와 주문 방식. (예전 호출 호환: strategy_id·per_trade·daily_max 는 첫 전략에)"""
         s = self.settings()
-        for k, v in kw.items():
-            if k in DEFAULTS and k != "account" and v is not None:
-                s[k] = v
+        for k in ("enabled", "mode"):
+            if kw.get(k) is not None:
+                s[k] = kw[k]
         if s["mode"] not in ("approve", "auto"):
             raise ValueError("mode 는 approve 또는 auto")
-        if s["per_trade"] < 100_000 or not 1 <= int(s["daily_max"]) <= 30:
-            raise ValueError("1회 매수금은 10만원 이상, 하루 최대는 1~30종목")
-        self.store.set_setting("autotrade", s)
-        return s
+        self._save(s)
+        legacy = {k: kw[k] for k in ("per_trade", "daily_max") if kw.get(k) is not None}
+        if kw.get("strategy_id"):
+            first = s["strategies"][0]["id"] if s["strategies"] else None
+            if first != kw["strategy_id"]:
+                if first is not None:
+                    self.remove_strategy(first)
+                self.set_strategy(kw["strategy_id"], **legacy)
+                s = self.settings()
+                s["strategies"].sort(key=lambda x: x["id"] != kw["strategy_id"])
+                self._save(s)
+                return self.settings()
+        if legacy and s["strategies"]:
+            self.set_strategy(s["strategies"][0]["id"], **legacy)
+        return self.settings()
 
-    def rules(self) -> dict:
-        """고른 전략의 청산 규칙: 목표 %, 손절 %, 보유 거래일."""
+    def set_strategy(self, sid: int, enabled: bool | None = None, per_trade: float | None = None,
+                     daily_max: int | None = None) -> dict:
+        if not self.store.get(sid):
+            raise ValueError("전략이 없습니다")
+        spec = self.parse_text(self.store.get(sid)["text"])
+        if spec.entry.type == "close":
+            raise ValueError("'당일종가' 매수 전략은 자동 매매에 쓸 수 없습니다 (다음날시가·지정가만)")
         s = self.settings()
-        strat = self.store.get(s["strategy_id"]) if s["strategy_id"] else None
-        if not strat:
-            return {"target": 10.0, "stop": 7.0, "hold": 5}
-        x = self.parse_text(strat["text"]).exit
-        return {"target": x.target_pct, "stop": x.stop_pct, "hold": int(x.max_days)}
+        x = next((x for x in s["strategies"] if x["id"] == sid), None)
+        if x is None:
+            used = {y["color"] for y in s["strategies"]}
+            x = {"id": sid, **NEW_STRATEGY, "color": next((c for c in COLORS if c not in used), COLORS[0])}
+            s["strategies"].append(x)
+        for k, v in (("enabled", enabled), ("per_trade", per_trade), ("daily_max", daily_max)):
+            if v is not None:
+                x[k] = v
+        if x["per_trade"] < 100_000 or not 1 <= int(x["daily_max"]) <= 30:
+            raise ValueError("1회 매수금은 10만원 이상, 하루 최대는 1~30종목")
+        self._save(s)
+        return x
 
-    def _levels(self, price: float) -> tuple[int, float]:
-        r = self.rules()
+    def remove_strategy(self, sid: int) -> None:
+        s = self.settings()
+        s["strategies"] = [x for x in s["strategies"] if x["id"] != sid]
+        self._save(s)
+        self._x("""UPDATE at_plans SET status = 'expired', msg = '전략을 자동 매매에서 뺌'
+                   WHERE strategy_id = ? AND status IN ('proposed', 'approved')""", (sid,))
+
+    def rules(self, sid: int | None = None) -> dict:
+        """전략의 매수·청산 규칙: 목표 %, 손절 %, 보유 거래일, 매수 방식."""
+        if sid is None:
+            ss = self.settings()["strategies"]
+            sid = ss[0]["id"] if ss else None
+        strat = self.store.get(sid) if sid else None
+        if not strat:
+            return {"target": 10.0, "stop": 7.0, "hold": 5, "entry": "next_open", "valid_days": 1, "limit_expr": None}
+        spec = self.parse_text(strat["text"])
+        x = spec.exit
+        return {"target": x.target_pct, "stop": x.stop_pct, "hold": int(x.max_days), "entry": spec.entry.type,
+                "valid_days": int(spec.entry.valid_days or 1), "limit_expr": spec.entry.price}
+
+    def _levels(self, price: float, sid: int | None = None) -> tuple[int, float]:
+        r = self.rules(sid)
         tgt = self.kw.round_tick(price * (1 + r["target"] / 100), up=True) if r["target"] is not None else 0
         stop = price * (1 - r["stop"] / 100) if r["stop"] is not None else 0.0
         return tgt, stop
@@ -157,8 +221,13 @@ class Auto:
 
     def plans(self, trade_date: str | None = None) -> list[dict]:
         if trade_date:
-            return self._q("SELECT * FROM at_plans WHERE trade_date = ? ORDER BY rank", (trade_date,))
+            return self._q("SELECT * FROM at_plans WHERE trade_date = ? ORDER BY strategy_id, rank", (trade_date,))
         return self._q("SELECT * FROM at_plans ORDER BY trade_date DESC, rank LIMIT 100")
+
+    def live_plans(self, today: str) -> list[dict]:
+        """오늘 주문할 수 있는 후보: 승인됐고 유효기간 안 (지정가 전략은 여러 날)."""
+        return self._q("""SELECT * FROM at_plans WHERE status = 'approved' AND trade_date <= ?
+                          AND COALESCE(valid_until, trade_date) >= ? ORDER BY trade_date, rank""", (today, today))
 
     def positions(self, status: str | None = None) -> list[dict]:
         if status == "active":
@@ -171,11 +240,12 @@ class Auto:
         self._x(f"UPDATE {table} SET {sets}, updated_at = ? WHERE id = ?", (*kw.values(), self._ts(now), rid))
 
     # ------------------------------------------------------------ 화면용
-    def view(self) -> dict:
+    def view(self, today: str | None = None) -> dict:
         s = self.settings()
-        strat = self.store.get(s["strategy_id"]) if s["strategy_id"] else None
+        first = s["strategies"][0]["id"] if s["strategies"] else None
         latest = self._q("SELECT MAX(trade_date) d FROM at_plans")[0]["d"]
-        closed = self._q("SELECT ret, exit_reason FROM at_positions WHERE status = 'closed' AND ret IS NOT NULL")
+        today = today or dt.date.today().isoformat()
+        closed = self._q("SELECT ret, exit_reason, strategy_id FROM at_positions WHERE status = 'closed' AND ret IS NOT NULL")
 
         def stat(rows):
             r = [c["ret"] for c in rows]
@@ -183,14 +253,34 @@ class Auto:
 
         rule = [c for c in closed if c["exit_reason"] not in MANUAL]
         manual = [c for c in closed if c["exit_reason"] in MANUAL]
+        strategies = []
+        for x in s["strategies"]:
+            st = self.store.get(x["id"])
+            if not st:
+                continue
+            r = self.rules(x["id"])
+            sid_of = lambda c: c["strategy_id"] or first  # noqa: E731 — 예전 거래는 첫 전략
+            strategies.append({**x, "name": st["name"], "rules": r,
+                               "midpoint": r["entry"] == "limit" and bool(r["limit_expr"]) and "시가" in r["limit_expr"] and "종가" in r["limit_expr"]
+                               and "/ 2" in r["limit_expr"].replace("/2", "/ 2"),
+                               "spec": self.parse_text(st["text"]).model_dump(mode="json"),
+                               "stats": stat([c for c in rule if sid_of(c) == x["id"]])})
+        plans = self._q("""SELECT * FROM at_plans WHERE trade_date = ? OR (status IN ('approved','ordered','partial')
+                           AND COALESCE(valid_until, trade_date) >= ?) ORDER BY trade_date DESC, rank""",
+                        (latest or "", today))
+        for p in plans:
+            p["strategy_id"] = p["strategy_id"] or first
+        positions = self.positions()
+        for p in positions:
+            p["strategy_id"] = p["strategy_id"] or first
         return {
             "key_saved": bool(self.kw.view().get("mock", {}).get("saved")), "rules": self.rules(),
-            "settings": s, "rank_label": RANK_LABEL.get(s["rank"], s["rank"]),
-            "strategy": {"id": strat["id"], "name": strat["name"]} if strat else None,
-            "spec": self.parse_text(strat["text"]).model_dump(mode="json") if strat else None,
-            "plans": self.plans(latest) if latest else [],
+            "settings": s, "strategies": strategies, "rank_label": RANK_LABEL["value_asc"],
+            "strategy": {"id": strategies[0]["id"], "name": strategies[0]["name"]} if strategies else None,
+            "spec": strategies[0]["spec"] if strategies else None,
+            "plans": plans,
             "plan_date": latest,
-            "positions": self.positions(),
+            "positions": positions,
             "stats": stat(rule), "stats_manual": stat(manual),
             "last_plan": self._state().get("last_plan"),
             "log": self._q("SELECT ts, text FROM at_log ORDER BY id DESC LIMIT 60"),
@@ -205,8 +295,9 @@ class Auto:
         deadline = dt.datetime.combine(dt.date.fromisoformat(p["trade_date"]), APPROVE_UNTIL)
         if p["status"] not in ("proposed", "approved", "rejected"):
             raise ValueError("이미 주문 단계입니다")
-        if now >= deadline:
+        if now >= deadline and (ok or p["status"] != "approved"):
             raise ValueError("승인 시간(08:45)이 지났습니다")
+        # 여러 날 거는 지정가 후보는 둘째 날부터도 '빼기'로 다음 주문을 멈출 수 있다
         self._upd("at_plans", pid, now, status="approved" if ok else "rejected")
 
     def approve_all(self, trade_date: str, now: dt.datetime) -> int:
@@ -220,52 +311,75 @@ class Auto:
     # ------------------------------------------------------------ 매수 후보
     def make_plans(self, now: dt.datetime, force: bool = False) -> list[dict]:
         s = self.settings()
-        if not s["strategy_id"]:
+        strats = [x for x in s["strategies"] if x.get("enabled", True) and self.store.get(x["id"])]
+        if not strats:
             raise ValueError("자동 매매에 쓸 전략을 고르세요")
-        strat = self.store.get(s["strategy_id"])
-        if not strat:
-            raise ValueError("고른 전략이 지워졌습니다")
         runner = self.get_runner("kr")
         as_of = str(runner.panel.dates.max())
         t = next_trading_day(dt.date.fromisoformat(as_of))
         if not force and now >= dt.datetime.combine(t, APPROVE_UNTIL):
             return []  # 이미 늦음
-        spec = self.parse_text(strat["text"])
-        rows = [r for r in runner.scan(spec, 1)["rows"] if r["signal_date"] == as_of]
-        held = {p["code"] for p in self.positions("active")}
-        rows = [r for r in rows if r["code"] not in held and r.get("close")]
-        rows.sort(key=lambda r: (r.get("value") is None, r.get("value") or 0))
-        rows = rows[: int(s["daily_max"])]
         status = "approved" if s["mode"] == "auto" else "proposed"
-        out = []
-        for k, r in enumerate(rows, 1):
-            close = float(r["close"])
-            limit = self.kw.round_tick(close * (1 + s["buy_limit_pct"] / 100), up=False)
-            qty = int(s["per_trade"] // close)
-            st, msg = (status, "") if qty >= 1 else ("skipped", "1주 가격이 1회 매수금보다 큼")
-            self._x("""INSERT OR IGNORE INTO at_plans (trade_date, code, name, signal_date, rank, value, close, limit_price,
-                       qty, status, msg, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (t.isoformat(), r["code"], r["name"], as_of, k, r.get("value"), close, limit, qty, st, msg,
-                     self._ts(now), self._ts(now)))
-            out.append(r)
+        taken = {p["code"] for p in self.positions("active")} | {
+            p["code"] for p in self._q("""SELECT code FROM at_plans WHERE status IN ('proposed','approved','ordered','partial')
+                                          AND COALESCE(valid_until, trade_date) >= ?""", (t.isoformat(),))}
+        out, per = [], {}
+        for x in strats:
+            strat = self.store.get(x["id"])
+            spec = self.parse_text(strat["text"])
+            r_ = self.rules(x["id"])
+            rows = [r for r in runner.scan(spec, 1)["rows"] if r["signal_date"] == as_of]
+            rows = [r for r in rows if r["code"] not in taken and r.get("close")]
+            if r_["entry"] == "limit":
+                rows = [r for r in rows if r.get("limit")]
+            rows.sort(key=lambda r: (r.get("value") is None, r.get("value") or 0))
+            rows = rows[: int(x["daily_max"])]
+            valid_until = t
+            for _ in range(max(1, r_["valid_days"]) - 1 if r_["entry"] == "limit" else 0):
+                valid_until = next_trading_day(valid_until)
+            n = 0
+            for k, r in enumerate(rows, 1):
+                close = float(r["close"])
+                if r_["entry"] == "limit":
+                    limit = self.kw.round_tick(float(r["limit"]), up=False)
+                else:
+                    limit = self.kw.round_tick(close * (1 + s["buy_limit_pct"] / 100), up=False)
+                qty = int(x["per_trade"] // (limit if r_["entry"] == "limit" else close))
+                st, msg = (status, "") if qty >= 1 else ("skipped", "1주 가격이 1회 매수금보다 큼")
+                if self._q("SELECT id FROM at_plans WHERE trade_date = ? AND code = ?", (t.isoformat(), r["code"])):
+                    continue
+                self._x("""INSERT INTO at_plans (trade_date, code, name, signal_date, rank, value, close, limit_price,
+                           qty, status, msg, created_at, updated_at, strategy_id, valid_until, entry_kind)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (t.isoformat(), r["code"], r["name"], as_of, k, r.get("value"), close, limit, qty, st, msg,
+                         self._ts(now), self._ts(now), x["id"], valid_until.isoformat(), r_["entry"]))
+                taken.add(r["code"])
+                out.append({**r, "strategy": strat["name"]})
+                n += 1
+            per[strat["name"]] = n
+            self.log(now, f"{t.month}/{t.day} 매수 후보 {n}종목 ({strat['name']}, 신호일 {as_of})")
         n = len(out)
-        self._set_state(planned_asof=as_of, last_plan={"trade_date": t.isoformat(), "signal_date": as_of, "count": n})
+        self._set_state(planned_asof=as_of, last_plan={"trade_date": t.isoformat(), "signal_date": as_of, "count": n,
+                                                       "per": per})
         md = f"{t.month}/{t.day}"
         if n:
             names = ", ".join(r["name"] for r in out[:4]) + (f" 외 {n - 4}" if n > 4 else "")
+            split = " · ".join(f"{k} {v}" for k, v in per.items() if v)
             if s["mode"] == "approve":
-                self.notify(f"{md} 매수 후보 {n}종목 · 승인 필요", f"{names}\n08:45 까지 앱(모투 → 자동 매매)에서 승인하세요")
+                self.notify(f"{md} 매수 후보 {n}종목 · 승인 필요", f"{split}\n{names}\n08:45 까지 앱(매매 → 키움 자동)에서 승인하세요")
             else:
-                self.notify(f"{md} 자동 매수 예정 {n}종목", f"{names}\n08:50 에 주문합니다")
-        self.log(now, f"{md} 매수 후보 {n}종목 ({strat['name']}, 신호일 {as_of})")
+                self.notify(f"{md} 자동 매수 예정 {n}종목", f"{split}\n{names}\n08:50 에 주문합니다")
         return out
 
     # ------------------------------------------------------------ 주문
     def _place_buys(self, now: dt.datetime, today: str, mode: str) -> None:
-        plans = [p for p in self.plans(today) if p["status"] == "approved"]
         for p in self.plans(today):
             if p["status"] == "proposed":
                 self._upd("at_plans", p["id"], now, status="expired", msg="승인하지 않아 사지 않음")
+        order = {x["id"]: k for k, x in enumerate(self.settings()["strategies"])}
+        on = {x["id"] for x in self.settings()["strategies"] if x.get("enabled", True)}
+        plans = [p for p in self.live_plans(today) if (p["strategy_id"] or next(iter(order), None)) in on or not order]
+        plans.sort(key=lambda p: (order.get(p["strategy_id"], 0), p["trade_date"], p["rank"]))
         if not plans:
             return
         orderable = (self.kw.cash(mode).get("orderable") or 0)
@@ -273,7 +387,10 @@ class Auto:
         for p in plans:
             need = p["qty"] * p["limit_price"] * 1.001
             if orderable < need:
-                self._upd("at_plans", p["id"], now, status="skipped", msg="주문가능금액 부족")
+                if today < (p["valid_until"] or p["trade_date"]):
+                    self._upd("at_plans", p["id"], now, msg="주문가능금액 부족 · 내일 다시 시도")
+                else:
+                    self._upd("at_plans", p["id"], now, status="skipped", msg="주문가능금액 부족")
                 continue
             try:
                 no = self.kw.buy_limit(mode, p["code"], p["qty"], p["limit_price"])
@@ -283,10 +400,10 @@ class Auto:
                 continue
             orderable -= need
             self._upd("at_plans", p["id"], now, status="ordered", order_no=no)
-            placed.append(f"{p['name']} {p['qty']}주")
+            placed.append(f"{p['name']} {p['qty']}주" + (f" @{p['limit_price']:,}" if p["entry_kind"] == "limit" else ""))
         if placed:
             self.log(now, "매수 주문: " + ", ".join(placed))
-            self.notify(f"매수 주문 {len(placed)}건", ", ".join(placed[:6]) + " · 지정가(시가 체결 예상)")
+            self.notify(f"매수 주문 {len(placed)}건", ", ".join(placed[:6]) + " · 지정가")
 
     def _place_target(self, now: dt.datetime, pos: dict, mode: str, today: str) -> None:
         left = pos["qty"] - pos["sold_qty"]
@@ -395,21 +512,24 @@ class Auto:
     def sync(self, now: dt.datetime, mode: str) -> None:
         today = now.date().isoformat()
         ex = self.kw.executions(mode)
-        # 매수 체결
-        for p in self.plans(today):
-            if p["status"] not in ("ordered", "partial") or not p["order_no"]:
+        # 매수 체결 (여러 날 유효한 지정가 주문도 있으니 날짜가 아니라 상태로 찾는다)
+        first = (self.settings()["strategies"] or [{"id": None}])[0]["id"]
+        for p in self._q("SELECT * FROM at_plans WHERE status IN ('ordered', 'partial')"):
+            if not p["order_no"]:
                 continue
+            sid = p["strategy_id"] or first
             e = ex.get(p["order_no"])
             if not e or e["qty"] <= 0:
                 continue
             pos = self._q("SELECT * FROM at_positions WHERE plan_id = ?", (p["id"],))
             if not pos:
                 price = e["price"]
-                tgt, stop = self._levels(price)
+                tgt, stop = self._levels(price, sid)
                 pid = self._x("""INSERT INTO at_positions (plan_id, code, name, qty, entry_date, entry_price, target_price,
-                                 stop_price, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                                 stop_price, status, created_at, updated_at, strategy_id, hold_days)
+                                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                               (p["id"], p["code"], p["name"], e["qty"], today, price, tgt, stop, "open",
-                               self._ts(now), self._ts(now)))
+                               self._ts(now), self._ts(now), sid, self.rules(sid)["hold"]))
                 self.log(now, f"매수 체결 {p['name']} {e['qty']}주 {price:,.0f}원")
                 self.notify(f"매수 체결 · {p['name']}", f"{e['qty']}주 {price:,.0f}원 · 목표 {tgt:,}원 · 손절 {stop:,.0f}원")
                 self._place_target(now, self._q("SELECT * FROM at_positions WHERE id = ?", (pid,))[0], mode, today)
@@ -420,7 +540,7 @@ class Auto:
                         self.kw.cancel(mode, pos["code"], pos["target_order"])
                     except Exception:  # noqa: BLE001
                         pass
-                tgt, stop = self._levels(e["price"])
+                tgt, stop = self._levels(e["price"], sid)
                 self._upd("at_positions", pos["id"], now, qty=e["qty"], entry_price=e["price"],
                           target_price=tgt, stop_price=stop, target_order=None)
                 self._place_target(now, self._q("SELECT * FROM at_positions WHERE id = ?", (pos["id"],))[0], mode, today)
@@ -469,14 +589,23 @@ class Auto:
                 n += 1
         return n + (1 if is_trading_day(today) else 0)
 
-    def _expire(self, now: dt.datetime, mode: str, hold_days: int) -> None:
+    def _expire(self, now: dt.datetime, mode: str) -> None:
         for pos in self.positions("active"):
-            if pos["status"] == "open" and self._held_days(pos["entry_date"], now.date()) >= hold_days:
+            hold = pos["hold_days"] or self.rules(pos["strategy_id"])["hold"]
+            if pos["status"] == "open" and self._held_days(pos["entry_date"], now.date()) >= hold:
                 self._sell_all(now, pos, mode, "기간만료")
 
     def _finish_day(self, now: dt.datetime, today: str) -> None:
-        for p in self.plans(today):
-            if p["status"] == "ordered":
+        for p in self._q("SELECT * FROM at_plans WHERE status IN ('ordered', 'partial')"):
+            if p["status"] == "partial":
+                self._upd("at_plans", p["id"], now, status="filled", msg="일부만 체결")
+                continue
+            until = p["valid_until"] or p["trade_date"]
+            if today < until:
+                left = sum(1 for _ in self._trading_days(today, until))
+                self._upd("at_plans", p["id"], now, status="approved",
+                          msg=f"지정가에 안 닿음 · 내일 다시 주문 (남은 {left}일)")
+            else:
                 self._upd("at_plans", p["id"], now, status="nofill", msg="지정가에 닿지 않아 미체결 (주문은 장 마감에 사라짐)")
         for pos in self.positions("active"):
             if pos["status"] == "open" and pos["target_date"] == today:
@@ -489,6 +618,16 @@ class Auto:
                 self._upd("at_positions", pos["id"], now, status="open", exit_order=None)
         n = len(self.positions("active"))
         self.log(now, f"장 마감 정리 · 보유 {n}종목")
+
+    @staticmethod
+    def _trading_days(after: str, until: str):
+        d = dt.date.fromisoformat(after)
+        end = dt.date.fromisoformat(until)
+        while True:
+            d = next_trading_day(d)
+            if d > end:
+                return
+            yield d
 
     # ------------------------------------------------------------ 주기 실행
     def tick(self, now: dt.datetime) -> None:
@@ -546,7 +685,7 @@ class Auto:
         # 4) 보유기간 만료
         if EXPIRE_AT <= t < EXPIRE_UNTIL and st.get("expire_done") != tstr:
             self._set_state(expire_done=tstr)
-            self._expire(now, mode, self.rules()["hold"])
+            self._expire(now, mode)
         # 5) 마무리
         if t >= CLOSE_AT and st.get("close_done") != tstr:
             self.sync(now, mode)
