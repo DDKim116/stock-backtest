@@ -207,7 +207,7 @@ export default function Explore({
           type="button"
           onClick={start}
           disabled={!plan}
-          className="w-full rounded-xl bg-accent py-3 font-semibold text-white disabled:opacity-50"
+          className="w-full rounded-xl bg-accent py-3 font-semibold text-on-accent disabled:opacity-50"
         >
           탐색 시작 ({plan?.n_combos ?? 0}개 조합)
         </button>
@@ -380,7 +380,7 @@ function Card({
     <div className={`space-y-2 rounded-xl border bg-card p-3 text-sm ${best ? "border-accent" : "border-border"}`}>
       <div className="flex flex-wrap items-center gap-1.5">
         {rank && <span className="mr-1 font-bold text-accent">{rank}위</span>}
-        {best && <span className="rounded bg-accent px-1.5 py-0.5 text-[11px] font-semibold text-white">AI 추천</span>}
+        {best && <span className="rounded bg-accent px-1.5 py-0.5 text-[11px] font-semibold text-on-accent">AI 추천</span>}
         {axes.map((a, k) => (
           <span key={a.key} className="tabular rounded bg-accent-soft px-1.5 py-0.5 text-xs text-accent">
             {shortKey(a)} {fmtVal(a, r.combo[k])}

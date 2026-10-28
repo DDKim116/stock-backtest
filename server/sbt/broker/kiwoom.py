@@ -127,8 +127,25 @@ def token(mode: str) -> str:
     return tok
 
 
+# API 별 최소 호출 간격(초). 키움 유량 제한보다 넉넉하게 (kt00018 은 2026-10-29 부터 초당 3회)
+MIN_GAP = {"kt00018": 0.4}
+DEFAULT_GAP = 0.25
+_rate_lock = threading.Lock()
+_last_call: dict[str, float] = {}
+
+
+def _throttle(api_id: str) -> None:
+    gap = MIN_GAP.get(api_id, DEFAULT_GAP)
+    with _rate_lock:
+        wait = _last_call.get(api_id, 0) + gap - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        _last_call[api_id] = time.monotonic()
+
+
 def call(mode: str, path: str, api_id: str, body: dict) -> dict:
     for attempt in range(3):
+        _throttle(api_id)
         try:
             return _post(mode, path, body, {"api-id": api_id, "authorization": f"Bearer {token(mode)}",
                                             "cont-yn": "N", "next-key": ""})
@@ -166,16 +183,63 @@ def test(mode: str) -> dict:
     return {"ok": True, "mode": mode, **q}
 
 
-def quotes(mode: str, codes: list[str]) -> dict[str, float]:
-    """지정종목 정보요청(ka10095): 여러 종목 현재가 한 번에 (KRX)."""
-    out: dict[str, float] = {}
+def quotes_full(mode: str, codes: list[str]) -> dict[str, dict]:
+    """지정종목 정보요청(ka10095): 여러 종목의 오늘 시가·고가·저가·현재가·등락률 (KRX)."""
+    out: dict[str, dict] = {}
     for k in range(0, len(codes), 50):
         d = call(mode, "/api/dostk/stkinfo", "ka10095", {"stk_cd": "|".join(codes[k:k + 50])})
         for r in d.get("atn_stk_infr") or []:
             v = num(r.get("cur_prc"))
-            if v:
-                out[str(r.get("stk_cd", "")).replace("_AL", "").replace("_NX", "")[-6:]] = abs(v)
+            if not v:
+                continue
+            a = lambda key: abs(num(r.get(key)) or 0) or None  # noqa: E731
+            out[str(r.get("stk_cd", "")).replace("_AL", "").replace("_NX", "")[-6:]] = {
+                "price": abs(v), "open": a("open_pric"), "high": a("high_pric"), "low": a("low_pric"),
+                "change_pct": num(r.get("flu_rt")), "volume": a("trde_qty"), "value": a("trde_prica"),
+                "name": r.get("stk_nm", ""), "time": r.get("cntr_tm"), "date": r.get("dt"),
+            }
     return out
+
+
+def quotes(mode: str, codes: list[str]) -> dict[str, float]:
+    """여러 종목 현재가만."""
+    return {c: q["price"] for c, q in quotes_full(mode, codes).items()}
+
+
+INDEX_CODES = {"KOSPI": ("0", "001"), "KOSDAQ": ("1", "101")}
+
+
+def index_quotes(mode: str) -> dict[str, dict]:
+    """업종현재가요청(ka20001): 코스피·코스닥 종합지수 현재가."""
+    out = {}
+    for key, (mk, cd) in INDEX_CODES.items():
+        d = call(mode, "/api/dostk/sect", "ka20001", {"mrkt_tp": mk, "inds_cd": cd})
+        v = num(d.get("cur_prc"))
+        if v:
+            out[key] = {"price": abs(v), "change": num(d.get("pred_pre")), "change_pct": num(d.get("flu_rt")),
+                        "time": d.get("inds_cur_prc_tm")}
+    return out
+
+
+def minute_bars(mode: str, code: str, scope: int = 5) -> list[dict]:
+    """주식분봉차트조회(ka10080): 가장 최근 거래일의 분봉 (오래된 것부터)."""
+    if scope not in (1, 3, 5, 10, 15, 30, 45, 60):
+        raise KiwoomError("분봉 단위는 1·3·5·10·15·30·45·60분")
+    d = call(mode, "/api/dostk/chart", "ka10080", {"stk_cd": code, "tic_scope": str(scope), "upd_stkpc_tp": "1"})
+    rows = []
+    for r in d.get("stk_min_pole_chart_qry") or []:
+        t = str(r.get("cntr_tm", ""))
+        c = num(r.get("cur_prc"))
+        if len(t) < 12 or not c:
+            continue
+        rows.append({"t": f"{t[:4]}-{t[4:6]}-{t[6:8]} {t[8:10]}:{t[10:12]}", "c": abs(c),
+                     "o": abs(num(r.get("open_pric")) or c), "h": abs(num(r.get("high_pric")) or c),
+                     "l": abs(num(r.get("low_pric")) or c), "v": abs(num(r.get("trde_qty")) or 0)})
+    if not rows:
+        return []
+    rows.sort(key=lambda x: x["t"])
+    last_day = rows[-1]["t"][:10]
+    return [x for x in rows if x["t"].startswith(last_day)]
 
 
 # ---------------------------------------------------------------- 계좌

@@ -556,7 +556,7 @@ export default function Editor({
             type="button"
             onClick={run}
             disabled={running}
-            className="flex-1 rounded-xl bg-accent py-3 font-semibold text-white disabled:opacity-60"
+            className="flex-1 rounded-xl bg-accent py-3 font-semibold text-on-accent disabled:opacity-60"
           >
             {running ? "계산 중…" : "검증 실행"}
           </button>

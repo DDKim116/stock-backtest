@@ -73,7 +73,7 @@ const STATUS: Record<string, [string, string]> = {
 };
 const won = (v: number | null | undefined) => (v == null ? "–" : `${Math.round(v).toLocaleString("ko-KR")}원`);
 const man = (v: number) => `${(v / 10000).toLocaleString("ko-KR")}만원`;
-const md = (d: string) => `${+d.slice(5, 7)}/${+d.slice(8, 10)}`;
+const md = (d?: string | null) => (d ? `${+d.slice(5, 7)}/${+d.slice(8, 10)}` : "–");
 
 // 차트에 넘길 거래 (실제 키움 체결가 기준)
 function asTrade(x: { code: string; name: string; signal_date: string | null; limit: number | null }, pos?: Position): Trade {
@@ -177,7 +177,7 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
                 type="button"
                 disabled={busy}
                 onClick={() => run(() => api("/api/auto/approve-all", { body: { trade_date: v.plan_date } }), "모두 승인했습니다")}
-                className="rounded-lg bg-accent px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
+                className="rounded-lg bg-accent px-3 py-1 text-xs font-semibold text-on-accent disabled:opacity-50"
               >
                 모두 승인 ({waiting.length})
               </button>
@@ -208,7 +208,7 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
                         type="button"
                         disabled={busy}
                         onClick={() => run(() => api(`/api/auto/plans/${p.id}`, { body: { approve: true } }))}
-                        className={`rounded-lg px-2.5 py-1 text-xs ${p.status === "approved" ? "bg-accent text-white" : "border border-border"}`}
+                        className={`rounded-lg px-2.5 py-1 text-xs ${p.status === "approved" ? "bg-accent text-on-accent" : "border border-border"}`}
                       >
                         승인
                       </button>
@@ -372,7 +372,7 @@ function Settings({ v, busy, onSave }: { v: AutoView; busy: boolean; onSave: (b:
         type="button"
         disabled={busy}
         onClick={() => onSave({ enabled: !s.enabled })}
-        className={`w-full rounded-xl py-2.5 font-semibold disabled:opacity-50 ${s.enabled ? "border border-critical text-critical" : "bg-accent text-white"}`}
+        className={`w-full rounded-xl py-2.5 font-semibold disabled:opacity-50 ${s.enabled ? "border border-critical text-critical" : "bg-accent text-on-accent"}`}
       >
         {s.enabled ? "전체 중지 (새 매수 멈춤)" : "자동 매매 켜기"}
       </button>

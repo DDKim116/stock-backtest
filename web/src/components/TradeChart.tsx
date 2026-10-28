@@ -75,6 +75,27 @@ function loadInd(): Ind {
   return { ma: true, st: false, bb: false, rsi: false, ix: true };
 }
 
+// 분봉 시각("2026-10-28 09:05")은 차트에 '한국시간 그대로' 보이도록 UTC 숫자로 바꾼다
+function toTime(t: string): Time {
+  if (t.length <= 10) return t as Time;
+  const [d, hm] = t.split(" ");
+  const [y, m, dd] = d.split("-").map(Number);
+  const [hh, mi] = hm.split(":").map(Number);
+  return (Date.UTC(y, m - 1, dd, hh, mi) / 1000) as Time;
+}
+function todayKST(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date());
+}
+const SCOPES = [1, 5, 15, 30];
+interface LiveQuote {
+  price: number;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  volume: number | null;
+  value: number | null;
+}
+
 function shiftDate(d: string, days: number): string {
   const t = new Date(d + "T00:00:00Z");
   t.setUTCDate(t.getUTCDate() + days);
@@ -99,7 +120,16 @@ export default function TradeChart({
   strategy?: boolean; // false 면 전략 표시(신호·매수·청산·가격선)를 빼고 내 체결만
 }) {
   const box = useRef<HTMLDivElement>(null);
-  const [bars, setBars] = useState<Bar[] | null>(null);
+  const [dayBars, setDayBars] = useState<Bar[] | null>(null);
+  const [live, setLive] = useState<Bar | null>(null); // 오늘 봉 (키움 실시간)
+  const [mode, setMode] = useState<"day" | number>("day"); // 일봉 또는 분봉 단위(분)
+  const [mbars, setMbars] = useState<Bar[] | null>(null);
+  const [liveAt, setLiveAt] = useState<string | null>(null);
+  const [liveErr, setLiveErr] = useState<string | null>(null);
+  const isDay = mode === "day";
+  const lastDay = dayBars && dayBars.length ? dayBars[dayBars.length - 1].t : null;
+  const withLive = dayBars && live && lastDay && live.t > lastDay ? [...dayBars, live] : dayBars;
+  const bars = isDay ? withLive : mbars;
   const [ixName, setIxName] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [hover, setHover] = useState<Bar | null>(null);
@@ -117,13 +147,15 @@ export default function TradeChart({
     });
   const stratMA = strategyPeriods(spec);
   // 지금 그릴 이평선: 기본선(이평선 버튼) + 전략 이평선(전략 이평선 버튼)
-  const periods = [...(ind.ma ? DEFAULT_MA : []), ...(ind.st ? stratMA : [])];
+  const periods = isDay ? [...(ind.ma ? DEFAULT_MA : []), ...(ind.st ? stratMA : [])] : [];
   const isStrat = (n: number) => !DEFAULT_MA.includes(n);
   const maColor = (n: number) =>
     isStrat(n) ? STRAT_COLORS[stratMA.indexOf(n) % STRAT_COLORS.length] : n === 240 && isDark() ? "#9a9ea6" : MA_COLORS[n];
   const ixP = indexPeriods(spec);
   const hasIx = !!bars?.some((b) => b.x != null);
-  const showIx = ind.ix && hasIx;
+  const showIx = isDay && ind.ix && hasIx;
+  const showBB = isDay && ind.bb;
+  const showRSI = isDay && ind.rsi;
   const chartRef = useRef<IChartApi | null>(null);
 
   useEffect(() => {
@@ -136,11 +168,57 @@ export default function TradeChart({
     });
     api<{ bars: Bar[]; index_name?: string | null }>(`/api/chart?${q}`)
       .then((r) => {
-        setBars(r.bars);
+        setDayBars(r.bars);
         setIxName(r.index_name ?? null);
       })
       .catch((e) => setErr((e as Error).message));
   }, [trade, dataset]);
+
+  // 오늘 봉: 일봉 데이터에 오늘이 아직 없으면 키움 현재가로 붙이고 20초마다 갱신 (국내만)
+  useEffect(() => {
+    if (dataset !== "kr" || !lastDay || lastDay >= todayKST()) return;
+    let stop = false;
+    const pull = () =>
+      api<Record<string, LiveQuote>>(`/api/live/quote?codes=${trade.code}`)
+        .then((r) => {
+          const q = r[trade.code];
+          if (stop || !q || !q.open) return;
+          setLive({ t: todayKST(), o: q.open, h: q.high ?? q.price, l: q.low ?? q.price, c: q.price, v: q.volume ?? 0, a: q.value });
+          setLiveAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+          setLiveErr(null);
+        })
+        .catch((e) => {
+          if (!stop) setLiveErr((e as Error).message);
+          stop = true; // 키가 없거나 오류면 더 묻지 않는다
+        });
+    pull();
+    const t = setInterval(() => !stop && pull(), 20_000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [dataset, lastDay, trade.code]);
+
+  // 분봉: 30초마다
+  useEffect(() => {
+    if (mode === "day") return;
+    let stop = false;
+    const pull = () =>
+      api<{ bars: Bar[] }>(`/api/live/minute?code=${trade.code}&scope=${mode}`)
+        .then((r) => {
+          if (stop) return;
+          setMbars(r.bars);
+          setLiveAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+          setLiveErr(null);
+        })
+        .catch((e) => !stop && setLiveErr((e as Error).message));
+    pull();
+    const t = setInterval(pull, 30_000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [mode, trade.code]);
 
   useEffect(() => {
     if (!bars || !box.current) return;
@@ -154,12 +232,12 @@ export default function TradeChart({
       layout: {
         background: { color: "transparent" },
         textColor: text,
-        fontFamily: "Pretendard, sans-serif",
+        fontFamily: "'IBM Plex Sans KR', sans-serif",
         panes: { separatorColor: grid },
       },
       grid: { vertLines: { visible: false }, horzLines: { color: grid } },
       rightPriceScale: { borderVisible: false },
-      timeScale: { borderVisible: false },
+      timeScale: { borderVisible: false, timeVisible: !isDay, secondsVisible: false },
       localization: { locale: "ko-KR" },
     });
     const candles = chart.addSeries(CandlestickSeries, {
@@ -172,7 +250,7 @@ export default function TradeChart({
       priceLineVisible: false,
       priceFormat: { type: "custom", formatter: (p: number) => price(p, currency), minMove: 0.01 },
     });
-    candles.setData(bars.map((b) => ({ time: b.t as Time, open: b.o, high: b.h, low: b.l, close: b.c })));
+    candles.setData(bars.map((b) => ({ time: toTime(b.t), open: b.o, high: b.h, low: b.l, close: b.c })));
     // 거래량은 아래 별도 칸에 (같은 축을 쓰면 가격 축에 0·음수 눈금이 생김)
     const vol = chart.addSeries(
       HistogramSeries,
@@ -199,11 +277,11 @@ export default function TradeChart({
         },
         pane,
       );
-      ls.setData(bars.map((b, i) => (vals[i] == null ? { time: b.t as Time } : { time: b.t as Time, value: vals[i] as number })));
+      ls.setData(bars.map((b, i) => (vals[i] == null ? { time: toTime(b.t) } : { time: toTime(b.t), value: vals[i] as number })));
       return ls;
     };
     for (const n of periods) line(sma(closes, n), maColor(n), 0, isStrat(n) ? LineStyle.Dashed : LineStyle.Solid, MA_WIDTH[n] ?? 1);
-    if (ind.bb) {
+    if (showBB) {
       const bb = bollinger(closes, 20, 2);
       const c = cssVar("--muted");
       line(bb.up, c, 0, LineStyle.Dashed);
@@ -223,7 +301,7 @@ export default function TradeChart({
       });
       nextPane++;
     }
-    if (ind.rsi) {
+    if (showRSI) {
       const r = line(rsi(closes, 14), cssVar("--accent"), nextPane);
       r.createPriceLine({ price: 70, color: up, lineStyle: LineStyle.Dotted, lineWidth: 1, title: "70" });
       r.createPriceLine({ price: 30, color: down, lineStyle: LineStyle.Dotted, lineWidth: 1, title: "30" });
@@ -234,17 +312,17 @@ export default function TradeChart({
     for (const pn of panes.slice(2)) pn.setStretchFactor(1.3);
     candles.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.05 } });
     vol.setData(
-      bars.map((b) => ({ time: b.t as Time, value: b.v, color: (b.c >= b.o ? up : down) + "66" })),
+      bars.map((b) => ({ time: toTime(b.t), value: b.v, color: (b.c >= b.o ? up : down) + "66" })),
     );
 
     const fg = cssVar("--foreground");
     const tag = mine ? "전략 " : "";
-    const markers: SeriesMarker<Time>[] = strategy
+    const markers: SeriesMarker<Time>[] = strategy && isDay
       ? [{ time: trade.signal_date as Time, position: "aboveBar", shape: "circle", color: fg, text: "신호" }]
       : [];
-    if (strategy && trade.fill_date)
+    if (strategy && isDay && trade.fill_date)
       markers.push({ time: trade.fill_date as Time, position: "belowBar", shape: "arrowUp", color: up, text: tag + "매수" });
-    if (strategy && trade.exit_date) {
+    if (strategy && isDay && trade.exit_date) {
       const label =
         trade.outcome === "목표도달"
           ? "목표"
@@ -254,7 +332,7 @@ export default function TradeChart({
       markers.push({ time: trade.exit_date as Time, position: "aboveBar", shape: "arrowDown", color: down, text: tag + label });
     }
     const acc = cssVar("--accent");
-    for (const f of mine ?? [])
+    for (const f of isDay ? (mine ?? []) : [])
       markers.push(
         f.side === "buy"
           ? { time: f.date as Time, position: "belowBar", shape: "square", color: acc, text: "내 매수" }
@@ -291,7 +369,7 @@ export default function TradeChart({
 
     chartRef.current = chart;
 
-    const byTime = new Map(bars.map((b) => [b.t, b]));
+    const byTime = new Map(bars.map((b) => [String(toTime(b.t)), b]));
     chart.subscribeCrosshairMove((p) => {
       setHover(p.time ? (byTime.get(String(p.time)) ?? null) : null);
     });
@@ -305,17 +383,21 @@ export default function TradeChart({
       chart.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- periods·maColor 는 spec 에서 나옴
-  }, [bars, trade, spec, currency, ind, mine, strategy, ixName]);
+  }, [bars, trade, spec, currency, ind, mine, strategy, ixName, isDay]);
 
   // 보이는 기간: 매수·매도 지점이 오른쪽에 오도록 앞쪽을 span 만큼 보여 준다
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart || !bars) return;
+    if (!isDay) {
+      chart.timeScale().fitContent();
+      return;
+    }
     const idx = Math.max(0, bars.findIndex((b) => b.t >= trade.signal_date));
     const exitIdx = bars.findIndex((b) => b.t >= (trade.exit_date ?? trade.signal_date));
     const right = Math.min(bars.length - 1, Math.max(idx, exitIdx) + Math.max(10, Math.round(span * 0.12)));
     chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, right - span), to: right + 1 });
-  }, [bars, trade, span, ind]);
+  }, [bars, trade, span, ind, isDay]);
 
   const shown = hover ?? pinned ?? bars?.find((b) => b.t === trade.signal_date) ?? null;
 
@@ -327,8 +409,8 @@ export default function TradeChart({
     const closes = bars.map((b) => b.c);
     const prev = i > 0 ? bars[i - 1].c : null;
     const mas = periods.map((n) => ({ n, v: sma(closes, n)[i] }));
-    const r = ind.rsi ? rsi(closes, 14)[i] : null;
-    const bb = ind.bb ? bollinger(closes, 20, 2) : null;
+    const r = showRSI ? rsi(closes, 14)[i] : null;
+    const bb = showBB ? bollinger(closes, 20, 2) : null;
     const base = trade.fill_price ?? null;
     return {
       chg: prev ? (shown.c / prev - 1) * 100 : null,
@@ -363,11 +445,11 @@ export default function TradeChart({
       const v = sma(closes, n)[i];
       if (v != null) rows.push([`${n}일선${isStrat(n) ? " (전략)" : ""}`, price(v, currency)]);
     }
-    if (ind.bb) {
+    if (showBB) {
       const bb = bollinger(closes, 20, 2);
       if (bb.up[i] != null) rows.push(["볼린저", `${price(bb.lo[i], currency)}~${price(bb.up[i], currency)}`]);
     }
-    if (ind.rsi) {
+    if (showRSI) {
       const r = rsi(closes, 14)[i];
       if (r != null) rows.push(["RSI", r.toFixed(1)]);
     }
@@ -455,13 +537,38 @@ export default function TradeChart({
           <span>차트의 봉을 누르면 그날 정보가 나옵니다</span>
         )}
       </div>
+      {dataset === "kr" && (
+        <div className="flex flex-wrap items-center gap-1 px-4 pb-1">
+          {([["day", "일봉"], ...SCOPES.map((n) => [n, `${n}분`])] as [("day" | number), string][]).map(([k, label]) => (
+            <button
+              key={String(k)}
+              type="button"
+              onClick={() => {
+                setPinned(null);
+                setMode(k);
+              }}
+              aria-pressed={mode === k}
+              className={`rounded-md px-2.5 py-1 text-xs ${mode === k ? "bg-foreground text-background" : "border border-border text-muted"}`}
+            >
+              {label}
+            </button>
+          ))}
+          {(liveAt || liveErr) && (
+            <span className={`ml-auto text-[11px] ${liveErr ? "text-faint" : "text-accent"}`}>
+              {liveErr ? "실시간 시세 없음" : `● 실시간 ${liveAt}`}
+            </span>
+          )}
+        </div>
+      )}
+      {!isDay && mbars && mbars.length === 0 && <p className="px-4 pb-1 text-xs text-muted">분봉이 아직 없습니다 (장 시작 후 생깁니다).</p>}
+      {isDay && (
       <div className="flex flex-wrap items-center gap-1 px-4 pb-1">
         {RANGES.map((r) => (
           <button
             key={r.label}
             type="button"
             onClick={() => setSpan(r.bars)}
-            className={`rounded-md px-2.5 py-1 text-xs ${span === r.bars ? "bg-accent text-white" : "border border-border text-muted"}`}
+            className={`rounded-md px-2.5 py-1 text-xs ${span === r.bars ? "bg-accent text-on-accent" : "border border-border text-muted"}`}
           >
             {r.label}
           </button>
@@ -489,6 +596,7 @@ export default function TradeChart({
           </button>
         ))}
       </div>
+      )}
       {periods.length > 0 && (
         <div className="flex flex-wrap gap-x-3 px-4 pb-1 text-[11px] text-muted">
           {periods.map((n) => (
@@ -501,7 +609,7 @@ export default function TradeChart({
               {n}일{isStrat(n) && " (전략)"}
             </span>
           ))}
-          {ind.bb && <span>볼린저 20일 ±2σ (점선)</span>}
+          {showBB && <span>볼린저 20일 ±2σ (점선)</span>}
         </div>
       )}
       {showIx && ixP.ma.length > 0 && (
@@ -514,7 +622,7 @@ export default function TradeChart({
           ))}
         </div>
       )}
-      {periods.length === 0 && ind.bb && <div className="px-4 pb-1 text-[11px] text-muted">볼린저 20일 ±2σ (점선)</div>}
+      {periods.length === 0 && showBB && <div className="px-4 pb-1 text-[11px] text-muted">볼린저 20일 ±2σ (점선)</div>}
       <div className="relative min-h-0 flex-1">
         {err && <p className="p-4 text-sm text-critical">⚠ {err}</p>}
         {!bars && !err && <p className="p-4 text-sm text-muted">불러오는 중…</p>}
@@ -557,7 +665,7 @@ export default function TradeChart({
         ))}
       </dl>
       )}
-      <p className="bg-card px-4 pb-3 text-[11px] text-faint">수정주가 기준 · 일봉 · 최고/최저는 보유기간 중 고가/저가 기준</p>
+      <p className="bg-card px-4 pb-3 text-[11px] text-faint">{isDay ? "수정주가 기준 · 일봉 · 최고/최저는 보유기간 중 고가/저가 기준" : `${mode}분봉 · 키움 실시간 (가장 최근 거래일)`}</p>
     </div>
   );
 }

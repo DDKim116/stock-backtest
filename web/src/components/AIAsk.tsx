@@ -153,7 +153,7 @@ export default function AIAsk({
                       <button
                         type="button"
                         onClick={() => onRun(t.result!.spec!)}
-                        className="flex-1 rounded-xl bg-accent py-2.5 font-semibold text-white"
+                        className="flex-1 rounded-xl bg-accent py-2.5 font-semibold text-on-accent"
                       >
                         이대로 검증 (무료)
                       </button>
@@ -191,7 +191,7 @@ export default function AIAsk({
             type="button"
             onClick={() => ask(q)}
             disabled={busy || !q.trim()}
-            className="flex-1 rounded-xl bg-accent py-3 font-semibold text-white disabled:opacity-50"
+            className="flex-1 rounded-xl bg-accent py-3 font-semibold text-on-accent disabled:opacity-50"
           >
             {busy ? "해석 중…" : lastOk ? "AI에게 수정 요청" : "AI에게 묻기"}
           </button>

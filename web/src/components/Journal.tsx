@@ -87,7 +87,7 @@ export default function Journal({
           <button
             type="button"
             onClick={() => setAdding("blank")}
-            className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white"
+            className="rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-on-accent"
           >
             + 기록
           </button>
@@ -368,7 +368,7 @@ function NewTrade({
         type="button"
         onClick={submit}
         disabled={busy}
-        className="w-full rounded-xl bg-accent py-2.5 font-semibold text-white disabled:opacity-50"
+        className="w-full rounded-xl bg-accent py-2.5 font-semibold text-on-accent disabled:opacity-50"
       >
         저장
       </button>
@@ -602,7 +602,7 @@ function Detail({
               />
             </div>
             {side === "sell" && p.qty > 0 && <p className="text-[11px] text-faint">수량을 비우면 남은 {p.qty}주 전부 매도로 기록합니다.</p>}
-            <button type="button" onClick={addFill} className="w-full rounded-lg bg-accent py-2 text-sm font-semibold text-white">
+            <button type="button" onClick={addFill} className="w-full rounded-lg bg-accent py-2 text-sm font-semibold text-on-accent">
               {side === "buy" || p.qty === 0 ? "매수 기록" : "매도 기록"}
             </button>
           </div>

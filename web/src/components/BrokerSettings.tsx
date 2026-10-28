@@ -120,7 +120,7 @@ function KeyCard({ mode, state, onChange }: { mode: Mode; state: KeyState; onCha
         </span>
         {state.saved && !edit && (
           <div className="flex gap-1">
-            <button type="button" disabled={busy} onClick={test} className="rounded-lg bg-accent px-3 py-1 text-xs font-semibold text-white disabled:opacity-50">
+            <button type="button" disabled={busy} onClick={test} className="rounded-lg bg-accent px-3 py-1 text-xs font-semibold text-on-accent disabled:opacity-50">
               연결 시험
             </button>
             <button type="button" disabled={busy} onClick={() => setEdit(true)} className="rounded-lg border border-border px-3 py-1 text-xs">
@@ -160,7 +160,7 @@ function KeyCard({ mode, state, onChange }: { mode: Mode; state: KeyState; onCha
               type="button"
               disabled={busy || !appkey.trim() || !secret.trim()}
               onClick={save}
-              className="flex-1 rounded-xl bg-accent py-2 font-semibold text-white disabled:opacity-50"
+              className="flex-1 rounded-xl bg-accent py-2 font-semibold text-on-accent disabled:opacity-50"
             >
               {LABEL[mode]} 키 저장
             </button>

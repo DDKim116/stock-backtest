@@ -1323,6 +1323,75 @@ def broker_test(mode: str):
         raise HTTPException(502, str(e))
 
 
+# ---------------------------------------------------------------- 실시간 시세 (키움, 화면용)
+_live_cache: dict = {}
+_live_lock = threading.Lock()
+
+
+def _live(key: str, ttl: float, fn):
+    """같은 요청은 ttl 초 동안 저장해 둔 값을 준다 (여러 화면이 동시에 열려도 키움 호출은 한 번)."""
+    with _live_lock:
+        hit = _live_cache.get(key)
+        if hit and time.time() - hit[0] < ttl:
+            return hit[1]
+    v = fn()
+    with _live_lock:
+        _live_cache[key] = (time.time(), v)
+        if len(_live_cache) > 500:
+            for k in sorted(_live_cache, key=lambda k: _live_cache[k][0])[:250]:
+                _live_cache.pop(k, None)
+    return v
+
+
+def _live_mode() -> str:
+    from ..broker import kiwoom
+
+    v = kiwoom.view()
+    if v.get("real", {}).get("saved"):
+        return "real"
+    if v.get("mock", {}).get("saved"):
+        return "mock"
+    raise HTTPException(409, "키움 키가 없습니다 (설정 → 키움 연결)")
+
+
+def _live_call(fn):
+    from ..broker import kiwoom
+
+    try:
+        return fn()
+    except kiwoom.KiwoomError as e:
+        raise HTTPException(502, str(e))
+
+
+@app.get("/api/live/quote", dependencies=[Depends(auth)])
+def live_quote(codes: str):
+    from ..broker import kiwoom
+
+    cs = sorted({c.strip() for c in codes.split(",") if c.strip().isalnum()})[:50]
+    if not cs:
+        return {}
+    mode = _live_mode()
+    return _live_call(lambda: _live("q:" + ",".join(cs), 10, lambda: kiwoom.quotes_full(mode, cs)))
+
+
+@app.get("/api/live/index", dependencies=[Depends(auth)])
+def live_index():
+    from ..broker import kiwoom
+
+    mode = _live_mode()
+    return _live_call(lambda: _live("index", 15, lambda: kiwoom.index_quotes(mode)))
+
+
+@app.get("/api/live/minute", dependencies=[Depends(auth)])
+def live_minute(code: str, scope: int = 5):
+    from ..broker import kiwoom
+
+    if not code.isalnum():
+        raise HTTPException(422, "종목코드가 올바르지 않습니다")
+    mode = _live_mode()
+    return {"bars": _live_call(lambda: _live(f"m:{code}:{scope}", 20, lambda: kiwoom.minute_bars(mode, code, scope)))}
+
+
 # ---------------------------------------------------------------- 자동 매매 (키움 모의투자)
 
 def _auto():

@@ -16,7 +16,7 @@ const FILTERS: { key: ScanRow["kind"] | "all"; label: string }[] = [
 ];
 
 const KIND_STYLE: Record<ScanRow["kind"], string> = {
-  pending: "bg-accent text-white",
+  pending: "bg-accent text-on-accent",
   holding: "bg-accent-soft text-accent",
   closed: "bg-border text-muted",
   expired: "bg-border text-faint",

@@ -18,9 +18,19 @@ import NumInput from "./NumInput";
 import Notes from "./Notes";
 import PushSettings from "./PushSettings";
 import BrokerSettings from "./BrokerSettings";
+import Today from "./Today";
 
-type Tab = "run" | "explore" | "journal" | "paper" | "market" | "saved" | "more";
-const TAB_KEYS: Tab[] = ["run", "explore", "journal", "paper", "market", "saved", "more"];
+type Tab = "today" | "run" | "explore" | "journal" | "paper" | "market" | "saved" | "more";
+const TAB_KEYS: Tab[] = ["today", "run", "explore", "journal", "paper", "market", "saved", "more"];
+// 아래 메뉴 5개 (시안 A). 둘 이상 묶인 곳은 위에 작은 탭으로 고른다
+const GROUPS: { label: string; tabs: [Tab, string][]; icon: string }[] = [
+  { label: "오늘", tabs: [["today", "오늘"]], icon: "M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" },
+  { label: "검증", tabs: [["run", "검증"], ["explore", "탐색"]], icon: "M4 19h16M7 16V9M12 16V5M17 16v-4" },
+  { label: "매매", tabs: [["paper", "자동·모투"], ["journal", "실투"]], icon: "M4 7h13l-3-3M20 17H7l3 3" },
+  { label: "시장", tabs: [["market", "지수"]], icon: "M3 17l5-6 4 4 8-9" },
+  { label: "더보기", tabs: [["saved", "전략"], ["more", "설정"]], icon: "M5 12h.01M12 12h.01M19 12h.01" },
+];
+const groupOf = (t: Tab) => GROUPS.find((g) => g.tabs.some(([k]) => k === t)) ?? GROUPS[0];
 // 알림을 눌러 열면 주소 끝의 #paper 같은 탭으로
 function hashTab(): Tab | null {
   const h = window.location.hash.slice(1) as Tab;
@@ -77,7 +87,7 @@ function StrategyTag({ name }: { name?: string }) {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>("run");
+  const [tab, setTab] = useState<Tab>("today");
   const [notes, setNotes] = useState(false);
   const [newsCount, setNewsCount] = useState(0); // 모투 새 소식 (체결·미체결·청산)
   const clearNews = useCallback(() => setNewsCount(0), []);
@@ -263,7 +273,7 @@ export default function App() {
     <div className="mx-auto min-h-dvh max-w-3xl px-4 pb-28 pt-4">
       <header className="mb-4 flex items-center justify-between">
         <h1 className="text-lg font-bold">주식 검증기</h1>
-        {datasets.length > 0 && (
+        {datasets.length > 0 && ["run", "explore", "saved", "journal"].includes(tab) && (
           <select
             value={dataset}
             onChange={(e) => {
@@ -286,6 +296,34 @@ export default function App() {
 
       {needLogin && <Login onDone={loadDatasets} />}
       {!needLogin && <KrxBanner />}
+
+      {!needLogin && groupOf(tab).tabs.length > 1 && (
+        <div className="mb-4 flex gap-1 rounded-xl border border-border bg-card p-1" role="tablist">
+          {groupOf(tab).tabs.map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              role="tab"
+              aria-selected={tab === k}
+              onClick={() => setTab(k)}
+              className={`flex-1 rounded-lg py-2 text-sm ${tab === k ? "bg-accent-soft font-semibold text-accent" : "text-muted"}`}
+            >
+              {label}
+              {k === "paper" && newsCount > 0 && <span className="ml-1 text-xs text-critical">●</span>}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {!needLogin && tab === "today" && (
+        <Today
+          newsCount={newsCount}
+          onGo={(t) => {
+            setTab(t);
+            window.scrollTo({ top: 0 });
+          }}
+        />
+      )}
 
       {!needLogin && tab === "run" && (
         <>
@@ -488,41 +526,33 @@ export default function App() {
         </div>
       )}
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
-        <div className="mx-auto flex max-w-3xl">
-          {(
-            [
-              ["run", "검증"],
-              ["explore", "탐색"],
-              ["journal", "실투"],
-              ["paper", "모투"],
-              ["market", "지수"],
-              ["saved", "전략"],
-              ["more", "설정"],
-            ] as const
-          ).map(([k, label]) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => setTab(k)}
-              aria-current={tab === k ? "page" : undefined}
-              className={`relative flex-1 py-4 text-sm transition-colors ${tab === k ? "font-semibold text-accent" : "text-muted"}`}
-            >
-              {/* 선택된 탭 뒤 은은한 후광 */}
-              <span
-                aria-hidden
-                className={`pointer-events-none absolute inset-x-0.5 inset-y-1.5 rounded-full bg-[radial-gradient(closest-side,var(--glow)_0%,var(--glow)_35%,transparent_100%)] transition-opacity duration-300 ${tab === k ? "opacity-100" : "opacity-0"}`}
-              />
-              <span className="relative">
-                {label}
-                {k === "paper" && newsCount > 0 && (
-                  <span className="absolute -right-4 -top-2.5 min-w-4 rounded-full bg-critical px-1 text-[10px] font-semibold leading-4 text-white">
+      <nav aria-label="주 메뉴" className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
+        <div className="mx-auto grid max-w-3xl grid-cols-5">
+          {GROUPS.map((g) => {
+            const on = groupOf(tab) === g;
+            return (
+              <button
+                key={g.label}
+                type="button"
+                onClick={() => {
+                  if (!on) setTab(g.tabs[0][0]);
+                  window.scrollTo({ top: 0 });
+                }}
+                aria-current={on ? "page" : undefined}
+                className={`relative flex flex-col items-center gap-1 py-2.5 text-[11px] transition-colors ${on ? "font-semibold text-accent" : "text-muted"}`}
+              >
+                <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={on ? 2 : 1.7} strokeLinecap="round" strokeLinejoin="round">
+                  <path d={g.icon} />
+                </svg>
+                {g.label}
+                {g.label === "매매" && newsCount > 0 && (
+                  <span className="absolute right-[calc(50%-20px)] top-1.5 min-w-4 rounded-full bg-critical px-1 text-[10px] font-semibold leading-4 text-background">
                     {newsCount > 9 ? "9+" : newsCount}
                   </span>
                 )}
-              </span>
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
       </nav>
     </div>
@@ -549,7 +579,7 @@ function Login({ onDone }: { onDone: () => void }) {
       <h2 className="font-semibold">로그인</h2>
       <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="비밀번호" autoFocus />
       {err && <p className="text-sm text-critical">⚠ {err}</p>}
-      <button className="w-full rounded-xl bg-accent py-3 font-semibold text-white">들어가기</button>
+      <button className="w-full rounded-xl bg-accent py-3 font-semibold text-on-accent">들어가기</button>
     </form>
   );
 }
@@ -584,7 +614,7 @@ function Saved({ onLoad, onScan }: { onLoad: (s: Strategy) => void; onScan: (s: 
             </button>
             <button
               type="button"
-              className="shrink-0 rounded-lg bg-accent px-2.5 py-1.5 text-xs font-semibold text-white"
+              className="shrink-0 rounded-lg bg-accent px-2.5 py-1.5 text-xs font-semibold text-on-accent"
               onClick={() => onScan(s)}
             >
               오늘 신호
@@ -702,13 +732,52 @@ function Help() {
   );
 }
 
+function readTheme(): string {
+  try {
+    return (typeof window !== "undefined" && localStorage.getItem("sbt-theme")) || "dark";
+  } catch {
+    return "dark";
+  }
+}
+
 function Settings({ onSaved }: { onSaved: () => void }) {
   const [url, setUrl] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
+  const [theme, setTheme] = useState(readTheme);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- 저장된 주소를 입력칸에 채운다
   useEffect(() => setUrl(apiUrl()), []);
+  const pickTheme = (t: string) => {
+    setTheme(t);
+    try {
+      localStorage.setItem("sbt-theme", t);
+    } catch {}
+    const root = document.documentElement;
+    if (t === "system") root.removeAttribute("data-theme");
+    else root.setAttribute("data-theme", t);
+  };
   return (
     <div className="space-y-4">
+      <section className="space-y-3 rounded-xl border border-border bg-card p-4">
+        <h2 className="font-semibold">화면</h2>
+        <div className="flex gap-1 rounded-lg border border-border p-1" role="radiogroup" aria-label="화면 밝기">
+          {[
+            ["dark", "어둡게"],
+            ["light", "밝게"],
+            ["system", "기기 설정 따름"],
+          ].map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              role="radio"
+              aria-checked={theme === k}
+              onClick={() => pickTheme(k)}
+              className={`flex-1 rounded-md py-2 text-sm ${theme === k ? "bg-accent text-on-accent font-semibold" : "text-muted"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </section>
       <section className="space-y-3 rounded-xl border border-border bg-card p-4">
         <h2 className="font-semibold">분석 서버 주소</h2>
         <p className="text-sm text-muted">보통은 비워 두면 됩니다(이 화면을 연 주소의 서버를 사용). 화면을 다른 곳(예: Vercel)에 올린 경우에만 서버 주소를 넣으세요.</p>
@@ -716,7 +785,7 @@ function Settings({ onSaved }: { onSaved: () => void }) {
         <div className="flex gap-2">
           <button
             type="button"
-            className="flex-1 rounded-xl bg-accent py-2.5 font-semibold text-white"
+            className="flex-1 rounded-xl bg-accent py-2.5 font-semibold text-on-accent"
             onClick={async () => {
               setApiUrl(url);
               try {

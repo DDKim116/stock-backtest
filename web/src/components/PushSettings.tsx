@@ -142,7 +142,7 @@ export default function PushSettings() {
           {mine ? (
             <>
               <span className="rounded-full bg-accent/10 px-3 py-1 text-sm text-accent">이 기기 알림 켜짐</span>
-              <button type="button" disabled={busy} onClick={test} className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+              <button type="button" disabled={busy} onClick={test} className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50">
                 시험 알림
               </button>
               <button type="button" disabled={busy} onClick={disable} className="rounded-xl border border-border px-4 py-2 text-sm disabled:opacity-50">
@@ -150,7 +150,7 @@ export default function PushSettings() {
               </button>
             </>
           ) : (
-            <button type="button" disabled={busy} onClick={enable} className="w-full rounded-xl bg-accent py-2.5 font-semibold text-white disabled:opacity-50">
+            <button type="button" disabled={busy} onClick={enable} className="w-full rounded-xl bg-accent py-2.5 font-semibold text-on-accent disabled:opacity-50">
               이 기기에서 알림 켜기
             </button>
           )}

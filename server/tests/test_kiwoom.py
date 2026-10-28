@@ -57,3 +57,45 @@ def test_errors(kw):
     kiwoom.set_keys("real", "BADKEY12345", "SECRET123456789")
     with pytest.raises(kiwoom.KiwoomError, match="허용 IP"):
         kiwoom.test("real")
+
+
+def test_live_parsers(kw, monkeypatch):
+    calls = []
+
+    def fake_call(mode, path, api_id, body):
+        calls.append(api_id)
+        if api_id == "ka10095":
+            return {"atn_stk_infr": [{"stk_cd": "005930", "stk_nm": "삼성전자", "cur_prc": "-70000", "open_pric": "+71000",
+                                      "high_pric": "+71500", "low_pric": "-69800", "flu_rt": "-1.25", "trde_qty": "123"}]}
+        if api_id == "ka20001":
+            return {"cur_prc": "+756.92", "pred_pre": "+29.71", "flu_rt": "+4.09"}
+        if api_id == "ka10080":
+            return {"stk_min_pole_chart_qry": [
+                {"cntr_tm": "20261028091000", "cur_prc": "-70100", "open_pric": "70000", "high_pric": "70200", "low_pric": "69900", "trde_qty": "10"},
+                {"cntr_tm": "20261028090500", "cur_prc": "70000", "open_pric": "71000", "high_pric": "71000", "low_pric": "69800", "trde_qty": "20"},
+                {"cntr_tm": "20261027153000", "cur_prc": "71000", "open_pric": "71000", "high_pric": "71000", "low_pric": "71000", "trde_qty": "5"},
+            ]}
+        raise AssertionError(api_id)
+
+    monkeypatch.setattr(kiwoom, "call", fake_call)
+    q = kiwoom.quotes_full("mock", ["005930"])["005930"]
+    assert q["price"] == 70000 and q["open"] == 71000 and q["low"] == 69800 and q["change_pct"] == -1.25
+    assert kiwoom.quotes("mock", ["005930"]) == {"005930": 70000}
+    ix = kiwoom.index_quotes("mock")
+    assert ix["KOSDAQ"]["price"] == 756.92 and ix["KOSPI"]["change_pct"] == 4.09
+    bars = kiwoom.minute_bars("mock", "005930", 5)
+    assert [b["t"] for b in bars] == ["2026-10-28 09:05", "2026-10-28 09:10"]  # 가장 최근 날만, 오래된 순
+    assert bars[0]["o"] == 71000 and bars[1]["c"] == 70100
+    with pytest.raises(kiwoom.KiwoomError):
+        kiwoom.minute_bars("mock", "005930", 7)
+
+
+def test_throttle(monkeypatch):
+    t = [100.0]
+    slept = []
+    monkeypatch.setattr(kiwoom.time, "monotonic", lambda: t[0])
+    monkeypatch.setattr(kiwoom.time, "sleep", lambda s: slept.append(round(s, 2)))
+    kiwoom._last_call.clear()
+    kiwoom._throttle("kt00018")
+    kiwoom._throttle("kt00018")
+    assert slept == [0.4]  # 같은 순간 두 번째 호출은 0.4초 기다린다

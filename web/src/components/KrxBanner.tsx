@@ -128,7 +128,7 @@ export default function KrxBanner() {
                 setBusy(false);
               }
             }}
-            className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+            className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-50"
           >
             연장 완료
           </button>

@@ -107,7 +107,7 @@ export default function StartEditor({ spec, onApply }: { spec: Spec; onApply: (s
                   type="button"
                   disabled={busy}
                   onClick={applySentence}
-                  className="mt-1 w-full rounded-lg bg-accent py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  className="mt-1 w-full rounded-lg bg-accent py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
                 >
                   이 조건을 출발점으로
                 </button>
@@ -138,7 +138,7 @@ export default function StartEditor({ spec, onApply }: { spec: Spec; onApply: (s
             type="button"
             disabled={busy}
             onClick={() => apply(text)}
-            className="w-full rounded-lg bg-accent py-2 text-sm font-semibold text-white disabled:opacity-50"
+            className="w-full rounded-lg bg-accent py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
           >
             적용
           </button>

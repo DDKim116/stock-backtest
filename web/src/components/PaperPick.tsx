@@ -198,7 +198,7 @@ export default function PaperPick({
                 type="button"
                 disabled={busy || !name.trim() || !Number(capital) || !Number(perTrade)}
                 onClick={create}
-                className="flex-1 rounded-xl bg-accent py-2.5 font-semibold text-white disabled:opacity-50"
+                className="flex-1 rounded-xl bg-accent py-2.5 font-semibold text-on-accent disabled:opacity-50"
               >
                 {row ? "만들고 담기" : "만들기"}
               </button>

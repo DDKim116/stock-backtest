@@ -34,7 +34,7 @@ interface WatchView {
 }
 const EVENT: Record<string, string> = { buy: "매수가 도달", target: "목표 도달", stop: "손절가 도달", last: "마지막 날" };
 const won = (v: number | null | undefined) => (v == null ? "–" : `${Math.round(v).toLocaleString("ko-KR")}`);
-const md = (d: string) => `${+d.slice(5, 7)}/${+d.slice(8, 10)}`;
+const md = (d?: string | null) => (d ? `${+d.slice(5, 7)}/${+d.slice(8, 10)}` : "–");
 
 // 모투 탭: 고른 전략의 지정가 대기·보유 종목을 장중에 키움 시세로 지켜보고 알림 (주문은 하지 않음)
 export default function WatchCard({ onFlash }: { onFlash: (m: string) => void }) {
