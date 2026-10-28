@@ -94,6 +94,7 @@ interface LiveQuote {
   low: number | null;
   volume: number | null;
   value: number | null;
+  mktcap: number | null;
 }
 
 function shiftDate(d: string, days: number): string {
@@ -183,7 +184,7 @@ export default function TradeChart({
         .then((r) => {
           const q = r[trade.code];
           if (stop || !q || !q.open) return;
-          setLive({ t: todayKST(), o: q.open, h: q.high ?? q.price, l: q.low ?? q.price, c: q.price, v: q.volume ?? 0, a: q.value });
+          setLive({ t: todayKST(), o: q.open, h: q.high ?? q.price, l: q.low ?? q.price, c: q.price, v: q.volume ?? 0, a: q.value, m: q.mktcap });
           setLiveAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
           setLiveErr(null);
         })
@@ -440,6 +441,7 @@ export default function TradeChart({
       ["거래량", Math.round(pinned.v).toLocaleString("ko-KR")],
     ];
     if (pinned.a != null) rows.push(["거래대금", bigMoney(pinned.a, currency)]);
+    if (pinned.m != null) rows.push(["시가총액", bigMoney(pinned.m, currency)]);
     if (prev && i > 0 && bars[i - 1].v > 0) rows.push(["전일 대비 량", `${(pinned.v / bars[i - 1].v).toFixed(1)}배`]);
     for (const n of periods) {
       const v = sma(closes, n)[i];
@@ -500,8 +502,9 @@ export default function TradeChart({
               <span>종 {price(shown.c, currency)}</span>
             </div>
             <div className="flex flex-wrap gap-x-3">
-              <span>량 {Math.round(shown.v).toLocaleString("ko-KR")}</span>
-              {shown.a != null && <span>대금 {bigMoney(shown.a, currency)}</span>}
+              <span>거래량 {Math.round(shown.v).toLocaleString("ko-KR")}</span>
+              {shown.a != null && <span>거래대금 {bigMoney(shown.a, currency)}</span>}
+              {shown.m != null && <span>시총 {bigMoney(shown.m, currency)}</span>}
               {info?.vsBuy != null && (
                 <span>
                   매수가 대비 <span className={retClass(info.vsBuy)}>{pct(info.vsBuy, 2, true)}</span>

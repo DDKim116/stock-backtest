@@ -66,7 +66,8 @@ def test_live_parsers(kw, monkeypatch):
         calls.append(api_id)
         if api_id == "ka10095":
             return {"atn_stk_infr": [{"stk_cd": "005930", "stk_nm": "삼성전자", "cur_prc": "-70000", "open_pric": "+71000",
-                                      "high_pric": "+71500", "low_pric": "-69800", "flu_rt": "-1.25", "trde_qty": "123"}]}
+                                      "high_pric": "+71500", "low_pric": "-69800", "flu_rt": "-1.25", "trde_qty": "123",
+                                      "trde_prica": "8610", "mac": "4180000"}]}
         if api_id == "ka20001":
             return {"cur_prc": "+756.92", "pred_pre": "+29.71", "flu_rt": "+4.09"}
         if api_id == "ka10080":
@@ -80,6 +81,7 @@ def test_live_parsers(kw, monkeypatch):
     monkeypatch.setattr(kiwoom, "call", fake_call)
     q = kiwoom.quotes_full("mock", ["005930"])["005930"]
     assert q["price"] == 70000 and q["open"] == 71000 and q["low"] == 69800 and q["change_pct"] == -1.25
+    assert q["value"] == 8_610_000_000 and q["mktcap"] == 418_000_000_000_000  # 백만원·억원 → 원
     assert kiwoom.quotes("mock", ["005930"]) == {"005930": 70000}
     ix = kiwoom.index_quotes("mock")
     assert ix["KOSDAQ"]["price"] == 756.92 and ix["KOSPI"]["change_pct"] == 4.09

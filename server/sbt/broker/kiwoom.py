@@ -195,7 +195,9 @@ def quotes_full(mode: str, codes: list[str]) -> dict[str, dict]:
             a = lambda key: abs(num(r.get(key)) or 0) or None  # noqa: E731
             out[str(r.get("stk_cd", "")).replace("_AL", "").replace("_NX", "")[-6:]] = {
                 "price": abs(v), "open": a("open_pric"), "high": a("high_pric"), "low": a("low_pric"),
-                "change_pct": num(r.get("flu_rt")), "volume": a("trde_qty"), "value": a("trde_prica"),
+                "change_pct": num(r.get("flu_rt")), "volume": a("trde_qty"),
+                "value": (a("trde_prica") or 0) * 1e6 or None,  # 백만원 → 원
+                "mktcap": (a("mac") or 0) * 1e8 or None,  # 억원 → 원
                 "name": r.get("stk_nm", ""), "time": r.get("cntr_tm"), "date": r.get("dt"),
             }
     return out

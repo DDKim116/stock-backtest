@@ -143,6 +143,7 @@ export interface Bar {
   c: number;
   v: number;
   a?: number | null; // 거래대금
+  m?: number | null; // 시가총액
   x?: number | null; // 그 시장의 지수 종가
 }
 

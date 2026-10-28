@@ -377,6 +377,7 @@ def chart(code: str, dataset: str = config.DEFAULT_DATASET, start: str | None = 
             {"t": str(p.dates[i]), "o": _f(c["open"][i]), "h": _f(c["high"][i]), "l": _f(c["low"][i]),
              "c": _f(c["close"][i]), "v": _f(c["volume"][i]),
              "a": _f(c["value"][i]) if "value" in c else None,
+             "m": _f(c["mktcap"][i]) if "mktcap" in c else None,
              "x": _f(ix[i]) if ix is not None else None}
             for i in rows
         ],
