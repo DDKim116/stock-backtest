@@ -97,7 +97,12 @@ class Watch:
             elif it["kind"] == "pending" and p and it["limit"]:
                 it["gap"] = (p / it["limit"] - 1) * 100  # 지정가까지 남은 %
             it["events"] = [x.split(":")[-1] for x in st["sent"] if x.startswith(k + ":")]
-        return {"settings": self.settings(), "items": items, "updated": self.updated, "mode": self._mode()}
+        specs = {}  # 종목을 누르면 그 전략 규칙으로 차트를 그린다
+        for sid in {it["sid"] for it in items}:
+            strat = self.store.get(sid)
+            if strat:
+                specs[str(sid)] = self.parse_text(strat["text"]).model_dump(mode="json")
+        return {"settings": self.settings(), "items": items, "updated": self.updated, "mode": self._mode(), "specs": specs}
 
     # ------------------------------------------------------------ 주기 실행
     def tick(self, now: dt.datetime) -> None:

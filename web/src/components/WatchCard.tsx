@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { pct, retClass } from "@/lib/format";
-import type { Strategy } from "@/lib/types";
+import type { Spec, Strategy, Trade } from "@/lib/types";
+import { useBackClose } from "@/lib/useBackClose";
+import TradeChart from "./TradeChart";
 
 interface Item {
   sid: number;
@@ -16,6 +18,7 @@ interface Item {
   left: number | null;
   entry: number | null;
   held: number | null;
+  fill_date?: string | null;
   hold: number;
   price: number | null;
   gap?: number;
@@ -31,10 +34,22 @@ interface WatchView {
   updated: string | null;
   mode?: string | null;
   error?: string;
+  specs?: Record<string, Spec>;
 }
 const EVENT: Record<string, string> = { buy: "매수가 도달", target: "목표 도달", stop: "손절가 도달", last: "마지막 날" };
 const won = (v: number | null | undefined) => (v == null ? "–" : `${Math.round(v).toLocaleString("ko-KR")}`);
 const md = (d?: string | null) => (d ? `${+d.slice(5, 7)}/${+d.slice(8, 10)}` : "–");
+
+// 차트에 넘길 거래: 신호일·지정가(중간값)·산 것으로 계산한 날과 값
+function asTrade(i: Item): Trade {
+  const outcome = i.kind === "holding" ? "진행중" : "주문 대기";
+  return {
+    code: i.code, name: i.name, market: "", signal_date: i.signal_date, signal_close: null, limit: i.limit,
+    fill_date: i.kind === "holding" ? (i.fill_date ?? null) : null, fill_price: i.kind === "holding" ? i.entry : null,
+    outcome, outcome_opt: outcome, uncertain: false, exit_date: null, exit_price: null, days: null,
+    ret: null, ret_opt: null, mfe: null, mae: null,
+  };
+}
 
 // 모투 탭: 고른 전략의 지정가 대기·보유 종목을 장중에 키움 시세로 지켜보고 알림 (주문은 하지 않음)
 export default function WatchCard({ onFlash }: { onFlash: (m: string) => void }) {
@@ -42,6 +57,15 @@ export default function WatchCard({ onFlash }: { onFlash: (m: string) => void })
   const [strategies, setStrategies] = useState<Strategy[] | null>(null);
   const [edit, setEdit] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [chart, setChart] = useState<{ trade: Trade; spec: Spec } | null>(null);
+  const closeChart = useCallback(() => setChart(null), []);
+  const back = useBackClose(!!chart, closeChart);
+  const open = (i: Item) => {
+    const spec = v?.specs?.[String(i.sid)];
+    if (!spec) return;
+    back.push();
+    setChart({ trade: asTrade(i), spec });
+  };
 
   const load = useCallback(async () => {
     try {
@@ -94,10 +118,10 @@ export default function WatchCard({ onFlash }: { onFlash: (m: string) => void })
           <div className="font-medium">지정가 대기 {pending.length}</div>
           <ul className="divide-y divide-border rounded-lg border border-border">
             {pending.map((i) => (
-              <li key={`${i.sid}-${i.code}-${i.signal_date}`} className="px-3 py-2">
+              <li key={`${i.sid}-${i.code}-${i.signal_date}`} onClick={() => open(i)} className="cursor-pointer px-3 py-2">
                 <div className="flex justify-between gap-2">
                   <span className="truncate">
-                    {i.name} <span className="text-xs text-faint">{i.code}</span>
+                    {i.name} <span className="text-xs text-faint">{i.code}</span> <span className="text-xs text-accent">차트</span>
                   </span>
                   <span className="tabular text-xs">{i.gap != null ? `지정가까지 ${i.gap > 0 ? "-" : ""}${Math.abs(i.gap).toFixed(1)}%` : ""}</span>
                 </div>
@@ -116,10 +140,10 @@ export default function WatchCard({ onFlash }: { onFlash: (m: string) => void })
           <div className="font-medium">산 것으로 계산 {holding.length}</div>
           <ul className="divide-y divide-border rounded-lg border border-border">
             {holding.map((i) => (
-              <li key={`${i.sid}-${i.code}-${i.signal_date}`} className="px-3 py-2">
+              <li key={`${i.sid}-${i.code}-${i.signal_date}`} onClick={() => open(i)} className="cursor-pointer px-3 py-2">
                 <div className="flex justify-between gap-2">
                   <span className="truncate">
-                    {i.name} <span className="text-xs text-faint">{i.code}</span>
+                    {i.name} <span className="text-xs text-faint">{i.code}</span> <span className="text-xs text-accent">차트</span>
                   </span>
                   <span className={`tabular ${retClass(i.ret ?? null)}`}>{pct(i.ret ?? null, 2, true)}</span>
                 </div>
@@ -165,6 +189,7 @@ export default function WatchCard({ onFlash }: { onFlash: (m: string) => void })
           ))}
         </ul>
       )}
+      {chart && <TradeChart trade={chart.trade} spec={chart.spec} dataset="kr" currency="KRW" onClose={back.close} />}
     </section>
   );
 }
