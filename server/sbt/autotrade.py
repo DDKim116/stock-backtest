@@ -309,9 +309,11 @@ class Auto:
         return n
 
     # ------------------------------------------------------------ 매수 후보
-    def make_plans(self, now: dt.datetime, force: bool = False) -> list[dict]:
+    def make_plans(self, now: dt.datetime, force: bool = False, only: set[int] | None = None) -> list[dict]:
+        """다음 거래일 매수 후보. only 를 주면 그 전략만 (전략을 막 추가했을 때)."""
         s = self.settings()
-        strats = [x for x in s["strategies"] if x.get("enabled", True) and self.store.get(x["id"])]
+        strats = [x for x in s["strategies"] if x.get("enabled", True) and self.store.get(x["id"])
+                  and (only is None or x["id"] in only)]
         if not strats:
             raise ValueError("자동 매매에 쓸 전략을 고르세요")
         runner = self.get_runner("kr")
@@ -328,17 +330,21 @@ class Auto:
             strat = self.store.get(x["id"])
             spec = self.parse_text(strat["text"])
             r_ = self.rules(x["id"])
-            rows = [r for r in runner.scan(spec, 1)["rows"] if r["signal_date"] == as_of]
-            rows = [r for r in rows if r["code"] not in taken and r.get("close")]
             if r_["entry"] == "limit":
-                rows = [r for r in rows if r.get("limit")]
+                # 지정가는 유효기간 동안 주문이 살아 있다: 며칠 전 신호라도 아직 안 닿았으면(남은 날 > 0) 후보
+                rows = [r for r in runner.scan(spec)["rows"] if r.get("kind") == "pending" and (r.get("left") or 0) > 0
+                        and r.get("limit")]
+            else:
+                rows = [r for r in runner.scan(spec, 1)["rows"] if r["signal_date"] == as_of]
+            rows = [r for r in rows if r["code"] not in taken and r.get("close")
+                    and not self._q("SELECT id FROM at_plans WHERE code = ? AND signal_date = ?", (r["code"], r["signal_date"]))]
             rows.sort(key=lambda r: (r.get("value") is None, r.get("value") or 0))
             rows = rows[: int(x["daily_max"])]
-            valid_until = t
-            for _ in range(max(1, r_["valid_days"]) - 1 if r_["entry"] == "limit" else 0):
-                valid_until = next_trading_day(valid_until)
             n = 0
             for k, r in enumerate(rows, 1):
+                valid_until = t
+                for _ in range(int(r.get("left") or 1) - 1 if r_["entry"] == "limit" else 0):
+                    valid_until = next_trading_day(valid_until)
                 close = float(r["close"])
                 if r_["entry"] == "limit":
                     limit = self.kw.round_tick(float(r["limit"]), up=False)
@@ -351,16 +357,23 @@ class Auto:
                 self._x("""INSERT INTO at_plans (trade_date, code, name, signal_date, rank, value, close, limit_price,
                            qty, status, msg, created_at, updated_at, strategy_id, valid_until, entry_kind)
                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                        (t.isoformat(), r["code"], r["name"], as_of, k, r.get("value"), close, limit, qty, st, msg,
+                        (t.isoformat(), r["code"], r["name"], r["signal_date"], k, r.get("value"), close, limit, qty, st, msg,
                          self._ts(now), self._ts(now), x["id"], valid_until.isoformat(), r_["entry"]))
                 taken.add(r["code"])
                 out.append({**r, "strategy": strat["name"]})
                 n += 1
             per[strat["name"]] = n
-            self.log(now, f"{t.month}/{t.day} 매수 후보 {n}종목 ({strat['name']}, 신호일 {as_of})")
+            self.log(now, f"{t.month}/{t.day} 매수 후보 {n}종목 ({strat['name']}, 데이터 {as_of})")
         n = len(out)
-        self._set_state(planned_asof=as_of, last_plan={"trade_date": t.isoformat(), "signal_date": as_of, "count": n,
-                                                       "per": per})
+        if only is None:
+            self._set_state(planned_asof=as_of, last_plan={"trade_date": t.isoformat(), "signal_date": as_of, "count": n,
+                                                           "per": per})
+        else:  # 추가한 전략 몫만 더한다
+            lp = self._state().get("last_plan") or {}
+            if lp.get("trade_date") == t.isoformat():
+                self._set_state(last_plan={**lp, "count": lp.get("count", 0) + n, "per": {**lp.get("per", {}), **per}})
+            else:
+                self._set_state(last_plan={"trade_date": t.isoformat(), "signal_date": as_of, "count": n, "per": per})
         md = f"{t.month}/{t.day}"
         if n:
             names = ", ".join(r["name"] for r in out[:4]) + (f" 외 {n - 4}" if n > 4 else "")

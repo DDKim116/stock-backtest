@@ -1440,12 +1440,20 @@ def auto_view():
 def auto_strategy_put(sid: int, body: AutoStrategyIn):
     """전략 추가(없으면) 또는 설정 변경. 계좌 돈은 모든 전략이 같이 쓴다."""
     a = _auto()
+    now = _kst_now().replace(tzinfo=None)
+    was = {x["id"]: x.get("enabled", True) for x in a.settings()["strategies"]}
     try:
-        a.set_strategy(sid, **body.model_dump())
+        x = a.set_strategy(sid, **body.model_dump())
     except ValueError as e:
         raise HTTPException(422, str(e))
-    a.log(_kst_now().replace(tzinfo=None), f"전략 설정 #{sid}: " +
-          ", ".join(f"{k}={v}" for k, v in body.model_dump().items() if v is not None))
+    a.log(now, f"전략 설정 #{sid}: " + ", ".join(f"{k}={v}" for k, v in body.model_dump().items() if v is not None))
+    # 새로 넣었거나 다시 켠 전략은 다음 데이터를 기다리지 않고 바로 후보를 만든다 (승인 마감 전일 때만)
+    if x.get("enabled", True) and not was.get(sid, False) and a.settings()["enabled"]:
+        try:
+            with a.lock:
+                a.make_plans(now, only={sid})
+        except Exception as e:  # noqa: BLE001
+            a.log(now, f"⚠ 후보 만들기 실패: {e}")
     return auto_view()
 
 

@@ -91,7 +91,7 @@ class FakeRunner:
     def panel(self):
         return SimpleNamespace(dates=np.array(self.days, dtype="datetime64[D]"))
 
-    def scan(self, spec, days):
+    def scan(self, spec, days=None):
         d = self.days[-1]
         src = self.lrows if spec.entry.type == "limit" else self.rows
         return {"rows": src.get(d, [])}
@@ -295,8 +295,10 @@ def test_two_strategies_shared_cash(env):
     a.set_settings(mode="auto")
     runner.rows["2026-10-23"] = [{"code": "000001", "name": "가", "signal_date": "2026-10-23", "close": 10_000, "value": 1e9}]
     runner.lrows["2026-10-23"] = [
-        {"code": "000001", "name": "가", "signal_date": "2026-10-23", "close": 11_000, "limit": 10_000, "value": 1e9},
-        {"code": "000021", "name": "중", "signal_date": "2026-10-23", "close": 23_000, "limit": 20_037, "value": 3e9},
+        {"code": "000001", "name": "가", "signal_date": "2026-10-23", "close": 11_000, "limit": 10_000, "value": 1e9,
+         "kind": "pending", "left": 3},
+        {"code": "000021", "name": "중", "signal_date": "2026-10-23", "close": 23_000, "limit": 20_037, "value": 3e9,
+         "kind": "pending", "left": 3},
     ]
     a.tick(T(23, 20, 15))
     plans = {p["code"]: p for p in a.plans("2026-10-26")}
@@ -340,7 +342,7 @@ def test_limit_plan_waits_for_cash(env):
     a.set_strategy(mid, per_trade=3_000_000)
     a.set_settings(mode="auto")
     runner.lrows["2026-10-23"] = [{"code": "000021", "name": "중", "signal_date": "2026-10-23", "close": 23_000,
-                                   "limit": 20_000, "value": 3e9}]
+                                   "limit": 20_000, "value": 3e9, "kind": "pending", "left": 3}]
     a.tick(T(23, 20, 15))
     kw.cash = lambda mode: {"orderable": 1_000_000}
     a.tick(T(26, 8, 50))
@@ -348,3 +350,30 @@ def test_limit_plan_waits_for_cash(env):
     assert p["status"] == "approved" and "내일 다시" in p["msg"] and not kw.find(side="buy")
     a.approve(p["id"], False, T(27, 8, 0))  # 둘째 날에도 뺄 수 있다
     assert a._q("SELECT status FROM at_plans")[0]["status"] == "rejected"
+
+
+def test_limit_picks_older_pending_and_added_later(env):
+    """중간값: 며칠 전 신호도 아직 안 닿았으면 후보. 전략을 늦게 추가해도 바로 후보를 만든다."""
+    a, kw, runner, sent = env
+    runner.rows["2026-10-23"] = [{"code": "000001", "name": "가", "signal_date": "2026-10-23", "close": 10_000, "value": 1e9}]
+    a.tick(T(23, 20, 15))  # v2b 만 있는 상태에서 후보를 이미 만듦
+    mid = a.store.save("중간값 매수 · 시험", MID)["id"]
+    runner.lrows["2026-10-23"] = [
+        {"code": "000041", "name": "사흘전", "signal_date": "2026-10-20", "close": 30_000, "limit": 27_000, "value": 2e9,
+         "kind": "pending", "left": 1},
+        {"code": "000042", "name": "닿음", "signal_date": "2026-10-21", "close": 30_000, "limit": 27_000, "value": 1e9,
+         "kind": "holding", "left": None},
+        {"code": "000043", "name": "끝남", "signal_date": "2026-10-16", "close": 30_000, "limit": 27_000, "value": 1e9,
+         "kind": "expired", "left": 0},
+    ]
+    a.set_strategy(mid)
+    a.tick(T(23, 20, 20))  # 데이터가 같으면 다시 만들지 않는다 → API 가 only 로 부른다
+    assert [p["code"] for p in a.plans("2026-10-26")] == ["000001"]
+    a.make_plans(T(23, 20, 21), only={mid})
+    ps = {p["code"]: p for p in a.plans("2026-10-26")}
+    assert set(ps) == {"000001", "000041"}
+    assert ps["000041"]["signal_date"] == "2026-10-20" and ps["000041"]["valid_until"] == "2026-10-26"  # 남은 1일
+    lp = a.view()["last_plan"]
+    assert lp["count"] == 2 and lp["per"]["중간값 매수 · 시험"] == 1
+    a.make_plans(T(23, 20, 22), only={mid})  # 같은 신호는 두 번 넣지 않는다
+    assert len(a.plans("2026-10-26")) == 2
