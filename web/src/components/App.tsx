@@ -273,7 +273,7 @@ export default function App() {
   const current = datasets.find((d) => d.name === dataset);
 
   return (
-    <div className="mx-auto min-h-dvh max-w-3xl px-4 pb-28 pt-4 fold:max-w-6xl fold:pb-10 fold:pl-24 fold:pr-4 lg:pl-28 lg:pr-6">
+    <div className="mx-auto min-h-dvh max-w-3xl px-4 pb-28 pt-4 fold:max-w-6xl fold:pb-10 fold:pl-[5.25rem] fold:pr-4 lg:pl-24 lg:pr-6">
       <header className="mb-4 flex items-center justify-between">
         <h1 className="text-lg font-bold">주식 검증기</h1>
         {datasets.length > 0 && ["run", "explore", "saved", "journal"].includes(tab) && (
@@ -550,7 +550,7 @@ export default function App() {
       {/* 폰: 아래 메뉴 / 폴드 펼침·태블릿(넓은 화면): 왼쪽 세로 메뉴 */}
       <nav
         aria-label="주 메뉴"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur fold:inset-y-0 fold:right-auto fold:w-20 fold:border-r fold:border-t-0 fold:pb-0"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur fold:inset-y-0 fold:right-auto fold:w-16 fold:border-r fold:border-t-0 fold:pb-0"
       >
         <div className="mx-auto grid max-w-3xl grid-cols-5 fold:mt-16 fold:grid-cols-1 fold:gap-2">
           {GROUPS.map((g) => {

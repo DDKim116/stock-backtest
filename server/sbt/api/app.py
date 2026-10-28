@@ -409,6 +409,30 @@ def krx_renewed():
     return {"remind_from": krx_status.set_renewed()}
 
 
+_IX_BARS: dict[str, tuple] = {}
+
+
+@app.get("/api/indices/bars", dependencies=[Depends(auth)])
+def get_index_bars(key: str):
+    """지수 일봉 (시장 탭 차트)."""
+    from ..data import indices
+
+    if key not in indices.INDICES:
+        raise HTTPException(404, "지수가 없습니다")
+    if not indices.ohlc_path(key).exists() and key not in _IX_BARS:
+        _IX_BARS[key] = (0, [])  # 처음 한 번만 받아 본다 (실패해도 종가로 그린다)
+        try:
+            indices.update_ohlc(log=lambda *a: None, keys=[key])
+        except Exception:  # noqa: BLE001
+            pass
+    p, o = indices.path(key), indices.ohlc_path(key)
+    stamp = (p.stat().st_mtime if p.exists() else 0, o.stat().st_mtime if o.exists() else 0)
+    cur = _IX_BARS.get(key)
+    if not cur or cur[0] != stamp:
+        _IX_BARS[key] = cur = (stamp, indices.bars(key))
+    return {"key": key, "name": indices.INDICES[key]["name"], "bars": cur[1], "ohlc": o.exists()}
+
+
 @app.get("/api/indices", dependencies=[Depends(auth)])
 def get_indices(group: str = "kr"):
     from ..data import indices

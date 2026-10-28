@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { pct, retClass } from "@/lib/format";
+import IndexChart from "./IndexChart";
 
 interface MonthRet {
   m: number;
@@ -78,6 +79,7 @@ export default function Market() {
   const [only, setOnly] = useState<string | null>(null); // null = 나란히
   const [year, setYear] = useState<number | null>(null);
   const [heatKey, setHeatKey] = useState<string | null>(null);
+  const [chartKey, setChartKey] = useState<string | null>(null); // 일봉 차트에 보일 지수 (요약 상자를 눌러 바꾼다)
 
   useEffect(() => {
     if (data[group]) return;
@@ -105,6 +107,7 @@ export default function Market() {
   for (const x of shown) for (const y of x.years ?? []) if (y.ret != null) maxAbs = Math.max(maxAbs, Math.abs(y.ret));
 
   const heatIdx = avail.find((x) => x.key === heatKey) ?? avail[0];
+  const chartIdx = shown.find((x) => x.key === chartKey) ?? shown[0];
 
   return (
     <div className="space-y-4">
@@ -120,6 +123,7 @@ export default function Market() {
                 setOnly(null);
                 setYear(null);
                 setHeatKey(null);
+                setChartKey(null);
               }}
               className={`rounded-md px-3 py-1 ${group === g.key ? "bg-accent text-on-accent" : "text-muted"}`}
             >
@@ -169,45 +173,60 @@ export default function Market() {
 
           {/* 요약 */}
           <div className={`grid gap-2 ${shown.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
-            {shown.map((x) => (
-              <div key={x.key} className="tabular space-y-1 rounded-xl border border-border bg-card p-3 text-xs">
-                <div className="flex items-center gap-1.5 text-sm font-semibold">
-                  <Swatch i={colorOf(x.key)} />
-                  {x.name}
-                </div>
-                <div className="text-muted">
-                  {x.last} · <span className="text-foreground">{num(x.last_close)}</span>
-                </div>
-                {x.stats && (
-                  <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
-                    <dt className="text-muted">연평균</dt>
-                    <dd className={`text-right ${retClass(x.stats.avg)}`}>{pct(x.stats.avg, 1, true)}</dd>
-                    <dt className="text-muted">연복리</dt>
-                    <dd className={`text-right ${retClass(x.stats.cagr)}`}>{pct(x.stats.cagr, 1, true)}</dd>
-                    <dt className="text-muted">상승한 해</dt>
-                    <dd className="text-right">
-                      {x.stats.up}/{x.stats.n}
-                    </dd>
-                    <dt className="text-muted">최고</dt>
-                    <dd className="text-right">
-                      {x.stats.best}{" "}
-                      <span className={retClass(1)}>{pct(byYear(x, x.stats.best)?.ret, 1, true)}</span>
-                    </dd>
-                    <dt className="text-muted">최저</dt>
-                    <dd className="text-right">
-                      {x.stats.worst}{" "}
-                      <span className={retClass(-1)}>{pct(byYear(x, x.stats.worst)?.ret, 1, true)}</span>
-                    </dd>
-                  </dl>
-                )}
-                {x.stats && (
-                  <div className="text-[11px] text-faint">
-                    {x.stats.from}~{x.stats.to}년 기준 (올해 제외)
+            {shown.map((x) => {
+              const on = chartIdx?.key === x.key;
+              const c = SERIES[colorOf(x.key)];
+              return (
+                <button
+                  key={x.key}
+                  type="button"
+                  onClick={() => setChartKey(x.key)}
+                  aria-pressed={on}
+                  className="tabular space-y-1 rounded-xl border border-border bg-card p-3 text-left text-xs transition-shadow"
+                  style={
+                    on ? { borderColor: c, boxShadow: `0 0 0 1px ${c}, 0 0 18px -2px color-mix(in oklab, ${c} 60%, transparent)` } : undefined
+                  }
+                >
+                  <div className="flex items-center gap-1.5 text-sm font-semibold">
+                    <Swatch i={colorOf(x.key)} />
+                    {x.name}
                   </div>
-                )}
-              </div>
-            ))}
+                  <div className="text-muted">
+                    {x.last} · <span className="text-foreground">{num(x.last_close)}</span>
+                  </div>
+                  {x.stats && (
+                    <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+                      <dt className="text-muted">연평균</dt>
+                      <dd className={`text-right ${retClass(x.stats.avg)}`}>{pct(x.stats.avg, 1, true)}</dd>
+                      <dt className="text-muted">연복리</dt>
+                      <dd className={`text-right ${retClass(x.stats.cagr)}`}>{pct(x.stats.cagr, 1, true)}</dd>
+                      <dt className="text-muted">상승한 해</dt>
+                      <dd className="text-right">
+                        {x.stats.up}/{x.stats.n}
+                      </dd>
+                      <dt className="text-muted">최고</dt>
+                      <dd className="text-right">
+                        {x.stats.best}{" "}
+                        <span className={retClass(1)}>{pct(byYear(x, x.stats.best)?.ret, 1, true)}</span>
+                      </dd>
+                      <dt className="text-muted">최저</dt>
+                      <dd className="text-right">
+                        {x.stats.worst}{" "}
+                        <span className={retClass(-1)}>{pct(byYear(x, x.stats.worst)?.ret, 1, true)}</span>
+                      </dd>
+                    </dl>
+                  )}
+                  {x.stats && (
+                    <div className="text-[11px] text-faint">
+                      {x.stats.from}~{x.stats.to}년 기준 (올해 제외)
+                    </div>
+                  )}
+                </button>
+              );
+            })}
           </div>
+
+          {chartIdx && <IndexChart ixKey={chartIdx.key} name={chartIdx.name} color={SERIES[colorOf(chartIdx.key)]} />}
 
           {/* 연도별 */}
           <section className="rounded-xl border border-border bg-card p-3">

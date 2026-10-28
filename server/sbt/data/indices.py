@@ -168,6 +168,10 @@ def update(log=print) -> None:
         log(f"한국 지수: {e}")
     except Exception as e:  # noqa: BLE001
         log(f"한국 지수 갱신 실패: {e}")
+    try:
+        update_ohlc(log)
+    except Exception as e:  # noqa: BLE001
+        log(f"지수 일봉 갱신 실패: {e}")
 
 
 # ---------------------------------------------------------------- 종목 데이터에 붙이기 (조건식의 '지수')
@@ -236,6 +240,59 @@ def update_kr_evening(day: dt.date | None = None, log=print) -> None:
         if len(new):
             _save(key, pd.concat([s, new]))
             log(f"{key} 지수: {', '.join(d.strftime('%m-%d') for d in new.index)} 임시값 추가")
+
+
+# ---------------------------------------------------------------- 일봉 (차트용 시가·고가·저가)
+YAHOO = {"KOSPI": "^KS11", "KOSDAQ": "^KQ11", "SP500": "^GSPC", "NASDAQ": "^IXIC"}
+
+
+def ohlc_path(key: str) -> Path:
+    return index_dir() / f"{key}_ohlc.csv"
+
+
+def update_ohlc(log=print, keys=None) -> None:
+    """차트용 일봉을 야후에서 받는다 (한 번에 전체, 가볍다). 종가 분석은 계속 KRX 종가 파일을 쓴다."""
+    import yfinance as yf
+
+    for key in keys or YAHOO:
+        start = KR_START.isoformat() if INDICES[key]["group"] == "kr" else US_START
+        df = yf.download(YAHOO[key], start=start, auto_adjust=False, progress=False, threads=False)
+        if df is None or df.empty:
+            log(f"{INDICES[key]['name']} 일봉: 받지 못함")
+            continue
+        if isinstance(df.columns, pd.MultiIndex):  # 열이 (Open, 티커) 로 오는 경우
+            df.columns = df.columns.get_level_values(0)
+        df.index = pd.to_datetime(df.index).tz_localize(None).normalize()
+        out = df[["Open", "High", "Low", "Close"]].dropna()
+        out = out[(out > 0).all(axis=1)]
+        index_dir().mkdir(parents=True, exist_ok=True)
+        pd.DataFrame({"date": out.index.strftime("%Y-%m-%d"), "open": out["Open"].round(2).values,
+                      "high": out["High"].round(2).values, "low": out["Low"].round(2).values,
+                      "close": out["Close"].round(2).values}).to_csv(ohlc_path(key), index=False)
+        log(f"{INDICES[key]['name']} 일봉: {len(out):,}일")
+
+
+def bars(key: str) -> list[dict]:
+    """차트용 일봉. 종가는 분석과 같은 파일(KRX 등) 값을 쓰고, 시가·고가·저가는 야후 일봉에서.
+    야후에 없는 날은 종가만으로 (시가=고가=저가=종가)."""
+    close = load(key)
+    if close is None:
+        return []
+    p = ohlc_path(key)
+    o = pd.read_csv(p, parse_dates=["date"]).drop_duplicates("date", keep="last").set_index("date") if p.exists() else None
+    df = pd.DataFrame({"c": close})
+    if o is not None:
+        df = df.join(o[["open", "high", "low"]], how="left")
+        # 야후 값과 종가가 크게 다르면(다른 날 값 등) 쓰지 않는다
+        bad = (df["open"] / df["c"] - 1).abs() > 0.15
+        df.loc[bad, ["open", "high", "low"]] = None
+    else:
+        df["open"] = df["high"] = df["low"] = None
+    df["open"] = df["open"].fillna(df["c"])
+    df["high"] = df[["high", "open", "c"]].max(axis=1)
+    df["low"] = df[["low", "open", "c"]].min(axis=1)
+    return [{"t": d.strftime("%Y-%m-%d"), "o": round(float(r.open), 2), "h": round(float(r.high), 2),
+             "l": round(float(r.low), 2), "c": round(float(r.c), 2)} for d, r in df.iterrows()]
 
 
 # ---------------------------------------------------------------- 분석

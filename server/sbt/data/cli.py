@@ -131,6 +131,7 @@ def main(argv: list[str] | None = None) -> None:
         root = config.dataset_dir("kr")
         try:
             indices.update_kr_evening()
+            indices.update_ohlc(keys=["KOSPI", "KOSDAQ"])
         except Exception as e:  # noqa: BLE001 — 지수 실패해도 종목 갱신은 진행
             print(f"지수 저녁 갱신 실패: {e}")
         if yahoo_kr.update_today(root):

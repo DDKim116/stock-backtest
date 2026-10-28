@@ -98,3 +98,15 @@ def test_attach_index_and_dsl(tmp_path, monkeypatch):
     m = dsl.evaluate("지수 > 이전(지수, 2)", panel)
     assert m[2] and not m[10]  # 코스피는 오르고 코스닥은 내림
     assert indices.mtime("kr") > 0
+
+
+def test_bars_merge_close_and_ohlc(tmp_path, monkeypatch):
+    monkeypatch.setattr(indices.config, "DATA_DIR", tmp_path)
+    days = pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"])
+    indices._save("KOSPI", pd.Series([100.0, 102.0, 101.0], index=days))  # KRX 종가
+    pd.DataFrame({"date": ["2024-01-02", "2024-01-03"], "open": [99.0, 150.0], "high": [101.0, 160.0],
+                  "low": [98.0, 149.0], "close": [100.1, 155.0]}).to_csv(indices.ohlc_path("KOSPI"), index=False)
+    b = indices.bars("KOSPI")
+    assert b[0] == {"t": "2024-01-02", "o": 99.0, "h": 101.0, "l": 98.0, "c": 100.0}  # 종가는 KRX 값
+    assert b[1] == {"t": "2024-01-03", "o": 102.0, "h": 102.0, "l": 102.0, "c": 102.0}  # 크게 다른 야후 값은 버림
+    assert b[2]["o"] == b[2]["c"] == 101.0  # 야후에 없는 날은 종가만
