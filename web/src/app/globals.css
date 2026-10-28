@@ -81,6 +81,11 @@
   --glow: rgba(240, 166, 58, 0.28);
 }
 
+/* 폴드 펼침(브라우저 폭 약 600~760px)부터 왼쪽 메뉴·두 단 */
+@theme {
+  --breakpoint-fold: 37.5rem;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

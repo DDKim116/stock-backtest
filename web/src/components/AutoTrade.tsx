@@ -159,7 +159,7 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
       )}
 
       {/* 전략별 카드: 폴드 펼침(넓은 화면)에서는 나란히 */}
-      <div className="grid items-start gap-3 md:grid-cols-2">
+      <div className="grid items-start gap-3 fold:grid-cols-2">
         {v.strategies.map((x) => (
           <StrategyCard
             key={x.id}
@@ -192,7 +192,7 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
         <button
           type="button"
           onClick={() => setAdding(true)}
-          className="w-full rounded-xl border border-dashed border-border py-3 text-sm text-muted md:w-auto md:px-5"
+          className="w-full rounded-xl border border-dashed border-border py-3 text-sm text-muted fold:w-auto fold:px-5"
         >
           + 전략 추가
         </button>

@@ -273,7 +273,7 @@ export default function App() {
   const current = datasets.find((d) => d.name === dataset);
 
   return (
-    <div className="mx-auto min-h-dvh max-w-3xl px-4 pb-28 pt-4 md:max-w-6xl md:pb-10 md:pl-28 md:pr-6">
+    <div className="mx-auto min-h-dvh max-w-3xl px-4 pb-28 pt-4 fold:max-w-6xl fold:pb-10 fold:pl-24 fold:pr-4 lg:pl-28 lg:pr-6">
       <header className="mb-4 flex items-center justify-between">
         <h1 className="text-lg font-bold">주식 검증기</h1>
         {datasets.length > 0 && ["run", "explore", "saved", "journal"].includes(tab) && (
@@ -309,13 +309,13 @@ export default function App() {
               role="tab"
               aria-selected={tab === k}
               onClick={() => setTab(k)}
-              className={`flex flex-1 flex-col items-center justify-center gap-x-1.5 rounded-lg px-1 py-2 text-sm md:flex-row ${tab === k ? "bg-accent-soft font-semibold text-accent" : "text-muted"}`}
+              className={`flex flex-1 flex-col items-center justify-center gap-x-1.5 rounded-lg px-1 py-2 text-sm fold:flex-row ${tab === k ? "bg-accent-soft font-semibold text-accent" : "text-muted"}`}
             >
               <span>
                 {label}
                 {k === "paper" && newsCount > 0 && <span className="ml-1 text-xs text-critical">●</span>}
               </span>
-              {sub && <span className="text-[10px] font-normal md:text-xs">{sub}</span>}
+              {sub && <span className="text-[10px] font-normal fold:text-xs">{sub}</span>}
             </button>
           ))}
         </div>
@@ -542,7 +542,7 @@ export default function App() {
       {notes && <Notes onClose={() => setNotes(false)} />}
 
       {toast && (
-        <div className="fixed inset-x-0 bottom-24 z-40 md:bottom-8 mx-auto w-fit rounded-full bg-foreground px-4 py-2 text-sm text-background">
+        <div className="fixed inset-x-0 bottom-24 z-40 fold:bottom-8 mx-auto w-fit rounded-full bg-foreground px-4 py-2 text-sm text-background">
           {toast}
         </div>
       )}
@@ -550,9 +550,9 @@ export default function App() {
       {/* 폰: 아래 메뉴 / 폴드 펼침·태블릿(넓은 화면): 왼쪽 세로 메뉴 */}
       <nav
         aria-label="주 메뉴"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:inset-y-0 md:right-auto md:w-20 md:border-r md:border-t-0 md:pb-0"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur fold:inset-y-0 fold:right-auto fold:w-20 fold:border-r fold:border-t-0 fold:pb-0"
       >
-        <div className="mx-auto grid max-w-3xl grid-cols-5 md:mt-16 md:grid-cols-1 md:gap-2">
+        <div className="mx-auto grid max-w-3xl grid-cols-5 fold:mt-16 fold:grid-cols-1 fold:gap-2">
           {GROUPS.map((g) => {
             const on = groupOf(tab) === g;
             return (

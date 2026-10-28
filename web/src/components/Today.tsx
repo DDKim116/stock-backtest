@@ -133,7 +133,7 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "auto" | "paper
   };
   const per = auto?.strategies.map((x) => [x, waiting.filter((p) => p.strategy_id === x.id).length] as const).filter(([, n]) => n > 0);
   const banner = waiting.length > 0 && auto?.plan_date && (
-    <button type="button" onClick={() => onGo("auto")} className="flex w-full items-center justify-between gap-3 rounded-xl bg-accent px-4 py-3 text-left text-on-accent">
+    <button type="button" onClick={() => onGo("auto")} className="flex w-full items-center justify-between gap-3 rounded-xl bg-accent px-4 py-3 text-left text-on-accent fold:flex-col fold:items-start lg:flex-row lg:items-center">
       <span>
         <span className="block font-semibold">{md(auto.plan_date)} 매수 후보 {waiting.length}종목 승인 대기</span>
         <span className="text-xs">
@@ -168,9 +168,9 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "auto" | "paper
 
       {err && <p className="text-sm text-critical">⚠ {err}</p>}
 
-      <div className="md:hidden">{banner}</div>
+      <div className="fold:hidden">{banner}</div>
 
-      <div className="space-y-3 md:grid md:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] md:items-start md:gap-4 md:space-y-0">
+      <div className="space-y-3 fold:grid fold:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] fold:items-start fold:gap-4 fold:space-y-0">
       <div className="space-y-3">
       <section className="space-y-2.5 rounded-xl border border-border bg-card p-4">
         <div className="flex items-baseline justify-between text-xs text-muted">
@@ -187,7 +187,7 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "auto" | "paper
               <span>전략 없음</span>
             )}
           </span>
-          {at && <span className="tabular">{at} 기준</span>}
+          {at && <span className="tabular shrink-0 whitespace-nowrap">{at} 기준</span>}
         </div>
         <div className="grid grid-cols-3 gap-2">
           <div>
@@ -254,8 +254,8 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "auto" | "paper
 
       </div>
       <div className="space-y-3">
-      <div className="hidden md:block">{banner}</div>
-      <section className="grid grid-cols-2 gap-2 md:grid-cols-1">
+      <div className="hidden fold:block">{banner}</div>
+      <section className="grid grid-cols-2 gap-2 fold:grid-cols-1">
         <div className="rounded-xl border border-border bg-card p-3">
           <div className="text-[11px] text-muted">다음 일정</div>
           <div className="tabular text-lg font-semibold text-accent">{nextT}</div>
