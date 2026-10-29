@@ -60,6 +60,8 @@ def main(argv: list[str] | None = None) -> None:
     rk.add_argument("--capital", default="50000000,100000000", help="자본(원), 쉼표로 여러 개")
     ar = sub.add_parser("auto-report")
     ar.add_argument("--dataset", default="kr")
+    tc = sub.add_parser("trend-check")
+    tc.add_argument("--dataset", default="kr")
     tt = sub.add_parser("trend-test")
     tt.add_argument("--dataset", default="kr")
     br = sub.add_parser("bear-test")
@@ -136,6 +138,9 @@ def main(argv: list[str] | None = None) -> None:
     elif a.cmd == "auto-report":
         from .. import autoreport
         autoreport.run(a.dataset)
+    elif a.cmd == "trend-check":
+        from .. import research7
+        research7.run_check(a.dataset)
     elif a.cmd == "trend-test":
         from .. import research7
         research7.run(a.dataset)

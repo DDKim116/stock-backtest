@@ -78,6 +78,7 @@ class Leg:
         ok = t.fill_row >= 0
         self.name, self.per, self.daily = name, per, daily
         self.code = p.codes[t.sig[ok]].astype(str)
+        self.nm = p.names[t.sig[ok]].astype(str)
         self.fill = p.dates[t.fill_row[ok]]
         self.done = t.outcome_c[ok] != event.OPEN
         er = t.exit_row_c[ok]
@@ -87,8 +88,9 @@ class Leg:
         self.value = v[t.sig[ok]] if v is not None else np.zeros(ok.sum())
 
 
-def portfolio(legs: list[Leg], capital: float = CAPITAL) -> dict:
-    """돈을 같이 쓰는 계좌 (실현 손익 기준). 매도 대금은 다음 거래일부터 다시 쓴다."""
+def portfolio(legs: list[Leg], capital: float = CAPITAL, cap_ret: float | None = None) -> dict:
+    """돈을 같이 쓰는 계좌 (실현 손익 기준). 매도 대금은 다음 거래일부터 다시 쓴다.
+    cap_ret: 거래 1건 수익률 상한(%) — 몇 건의 엄청난 수익(데이터 오류 포함)에 결과가 기대는지 보려고."""
     rows = []
     for i, g in enumerate(legs):
         for k in range(len(g.fill)):
@@ -102,6 +104,7 @@ def portfolio(legs: list[Leg], capital: float = CAPITAL) -> dict:
     taken = [0] * len(legs)
     skipped = 0
     stuck = 0.0
+    bought: list[tuple[int, int]] = []
     for d, i, _, k in rows:
         keep = []
         for e, back, cost, code, li in open_:
@@ -123,7 +126,9 @@ def portfolio(legs: list[Leg], capital: float = CAPITAL) -> dict:
         taken[i] += 1
         held.add(g.code[k])
         if g.done[k]:
-            open_.append((g.exit[k], g.per * (1 + g.ret[k] / 100), g.per, g.code[k], i))
+            r = g.ret[k] if cap_ret is None else min(g.ret[k], cap_ret)
+            open_.append((g.exit[k], g.per * (1 + r / 100), g.per, g.code[k], i))
+            bought.append((i, k))
         else:
             stuck += g.per  # 끝나지 않은 거래는 원금으로 묶어 둔다
     for e, back, cost, code, li in open_:
@@ -143,7 +148,7 @@ def portfolio(legs: list[Leg], capital: float = CAPITAL) -> dict:
     oos_y = by_year[by_year.index >= cut.year]
     return {"final": final, "cagr": ((final / capital) ** (1 / years) - 1) * 100, "mdd": mdd,
             "by_year": by_year, "taken": taken, "skipped": skipped,
-            "pnl_leg": [float(by_leg.get(i, 0.0)) for i in range(len(legs))],
+            "pnl_leg": [float(by_leg.get(i, 0.0)) for i in range(len(legs))], "bought": bought,
             "is_avg": float(is_y.mean()) if len(is_y) else None, "oos_avg": float(oos_y.mean()) if len(oos_y) else None}
 
 
@@ -235,6 +240,77 @@ def run(dataset: str = "kr", log=print) -> Path:
     out = config.DATA_DIR / "research"
     out.mkdir(parents=True, exist_ok=True)
     path = out / f"trend-{dt.datetime.now().strftime('%Y%m%d-%H%M')}.txt"
+    path.write_text(report)
+    log("")
+    log(report)
+    return path
+
+
+def run_check(dataset: str = "kr", log=print) -> Path:
+    """trend-test 결과 점검: 중간값이 손해인지, 신고가 수익이 몇 건의 대박(또는 데이터 오류)에 기대는지."""
+    t0 = time.time()
+    panel = Panel.load(config.dataset_dir(dataset) / "prices.parquet")
+    if not indices_attach(panel, dataset):
+        raise SystemExit("지수 데이터가 없습니다.")
+    breadth.attach(panel)
+    runner = Runner(panel, {"name": dataset, "markets": ["KOSPI", "KOSDAQ"], "currency": "KRW"})
+    log("v2b…")
+    v2b = Leg("v2b", runner, _family_spec(V2B, ["코스피", "코스닥"]), 5_000_000, 10)
+    mid = None
+    try:
+        from .api.store import Store
+
+        mid_s = next((x for x in Store(config.DATA_DIR / "app.sqlite3").list() if "중간값" in x["name"]), None)
+        if mid_s:
+            log("중간값…")
+            mid = Leg("중간값", runner, parse_text(mid_s["text"]), 3_000_000, 5)
+    except Exception:  # noqa: BLE001
+        mid = None
+    trends = {}
+    for name, market, exit_ in VARIANTS:
+        if name[0] in "ACFG":
+            log(f"신고가 {name}…")
+            trends[name] = Leg("신고가", runner, _family_spec(TREND.format(market=market, exit=exit_), ["코스피", "코스닥"]),
+                               5_000_000, 3)
+    L = [f"trend-test 점검 · {dt.date.today()} · 자본 5천만 · 돈 같이 쓰기 · 실현 손익 기준", ""]
+
+    def row(label, legs, cap=None):
+        r = portfolio(legs, cap_ret=cap)
+        legs_s = " · ".join(f"{g.name} {n:,}건 {p / 1e4:+,.0f}만" for g, n, p in zip(legs, r["taken"], r["pnl_leg"]))
+        L.append(f"  {label:<34} 최종 {r['final'] / 1e8:,.2f}억 · 연 {r['cagr']:+.1f}% · 낙폭 {r['mdd']:.1f}% · {legs_s}")
+        return r
+
+    L.append("A. 구성별 (수익률 그대로)")
+    row("v2b만", [v2b])
+    if mid:
+        row("v2b + 중간값 (지금 구성)", [v2b, mid])
+        row("중간값만 (300만×5)", [mid])
+    for name, g in trends.items():
+        row(f"v2b + 신고가 {name[:1]}", [v2b, g])
+    L += ["", "B. 거래 1건 수익률을 +100% 로 자르면 (몇 건의 대박에 기대는지)"]
+    row("v2b만", [v2b], 100)
+    for name, g in trends.items():
+        row(f"v2b + 신고가 {name[:1]}", [v2b, g], 100)
+    L += ["", "C. 신고가가 실제로 산 거래 중 수익 큰 10건 (데이터 오류 의심은 직접 차트로 확인)"]
+    for name, g in trends.items():
+        r = portfolio([v2b, g])
+        mine = [k for i, k in r["bought"] if i == 1]
+        top = sorted(mine, key=lambda k: -g.ret[k])[:10]
+        tot = sum(g.per * g.ret[k] / 100 for k in mine)
+        top_sum = sum(g.per * g.ret[k] / 100 for k in top)
+        L.append(f"  ■ 신고가 {name} · 산 {len(mine):,}건 손익 {tot / 1e4:+,.0f}만 중 상위 10건이 {top_sum / 1e4:+,.0f}만")
+        for k in top:
+            L.append(f"    {str(g.fill[k])} ~ {str(g.exit[k])[:10]} {g.nm[k][:12]:<12} {g.code[k]} {g.ret[k]:+,.1f}%")
+    if mid:
+        rets = mid.ret[mid.done]
+        L += ["", f"D. 중간값 전략 자체 (자금 제한 없이 모든 신호, 비용 차감): {len(rets):,}건 · 1건당 {rets.mean():+.2f}% · "
+                  f"수익 비율 {(rets > 0).mean() * 100:.0f}% · 2021~ "
+                  f"{mid.ret[mid.done & (mid.fill >= np.datetime64(CUT))].mean():+.2f}%"]
+    L.append(f"소요 {round((time.time() - t0) / 60, 1)}분")
+    report = "\n".join(L)
+    out = config.DATA_DIR / "research"
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / f"trend-check-{dt.datetime.now().strftime('%Y%m%d-%H%M')}.txt"
     path.write_text(report)
     log("")
     log(report)
