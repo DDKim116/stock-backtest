@@ -27,7 +27,10 @@ def run(dataset: str = "kr", log=print) -> str:
     for c in a.compare():
         x, e = c["actual"], c["expect"]
         L.append("")
-        L.append(f"■ {c['name']} · 1회 {c['per_trade'] / 1e4:,.0f}만")
+        x_ = next((y for y in s["strategies"] if y["id"] == c["strategy_id"]), {})
+        size = (f"계좌 {x_.get('pct', 10):g}% (1회 최대 {x_.get('max_per_trade', 0) / 1e4:,.0f}만)"
+                if x_.get("size_mode") == "pct" else f"1회 {c['per_trade'] / 1e4:,.0f}만")
+        L.append(f"■ {c['name']} · {size} · {'켜짐' if x_.get('enabled', True) else '꺼짐'}")
         if e:
             L.append(f"  기대(백테스트 {e['since'][:4]}~, {e['n']:,}건): 1건당 {e['avg']:+.2f}% · 수익 비율 {e['win']:.0f}%")
         if not x:
@@ -44,8 +47,9 @@ def run(dataset: str = "kr", log=print) -> str:
     L += ["", f"보유 {len(act)}종목: " + ", ".join(f"{p['name']}({p['entry_date'][5:]})" for p in act)]
     L += ["", "최근 청산 (최대 40건, 수수료·세금 전)"]
     names = {x["id"]: x["name"] for x in a.view()["strategies"]}
+    first = s["strategies"][0]["id"] if s["strategies"] else None  # 여러 전략 전에 산 것은 첫 전략
     for p in closed:
-        L.append(f"  {p['exit_date']} {names.get(p['strategy_id'], '?')[:8]:<8} {p['name'][:10]:<10} "
+        L.append(f"  {p['exit_date']} {names.get(p['strategy_id'] or first, '?')[:8]:<8} {p['name'][:10]:<10} "
                  f"{p['exit_reason']:<8} {p['ret']:+.2f}%")
     report = "\n".join(L)
     log(report)
