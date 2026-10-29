@@ -5,6 +5,7 @@
   python -m sbt.data.cli kr-update                 # 최근 며칠 갱신 + 빌드 (매일 자동 실행용)
   python -m sbt.data.cli research --save 5          # 여러 전략 유형을 한꺼번에 돌려 순위 (약 10~30분)
   python -m sbt.data.cli research2                 # 2차: 급락 반등 정밀 점검 + 신고가 시장 필터
+  python -m sbt.data.cli breadth-test               # v2b 시장 하락 조건: 지수 vs 상승비율·동일가중 비교
   python -m sbt.data.cli recommend --save          # 지수 조건을 붙인 추천 전략 검증 + 전략 탭에 저장
   python -m sbt.data.cli rank                      # 하루 신호가 많을 때 고르는 순서 비교 (급락 반등 v2b, 하루 5종목·1회 500만원)
   python -m sbt.data.cli kr-evening                # 오늘 국내 시세를 야후로 임시 갱신 (다음 날 아침 공식 값으로 교체)
@@ -53,6 +54,8 @@ def main(argv: list[str] | None = None) -> None:
     rk.add_argument("--per", type=float, default=5_000_000, help="1회 매수금(원)")
     rk.add_argument("--daily", type=int, default=5, help="하루 최대 종목 수")
     rk.add_argument("--capital", default="50000000,100000000", help="자본(원), 쉼표로 여러 개")
+    bt = sub.add_parser("breadth-test")
+    bt.add_argument("--dataset", default="kr")
     rc = sub.add_parser("recommend")
     rc.add_argument("--dataset", default="kr")
     rc.add_argument("--save", action="store_true", help="앱 '전략' 탭에 저장")
@@ -118,6 +121,9 @@ def main(argv: list[str] | None = None) -> None:
     elif a.cmd == "rank":
         from .. import research4
         research4.run(a.dataset, a.per, a.daily, tuple(float(x) for x in a.capital.split(",") if x.strip()))
+    elif a.cmd == "breadth-test":
+        from .. import research5
+        research5.run(a.dataset)
     elif a.cmd == "recommend":
         from .. import research3
         research3.run(a.dataset, a.save)
