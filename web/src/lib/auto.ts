@@ -79,7 +79,7 @@ export const won = (v: number | null | undefined) => (v == null ? "–" : `${Mat
 export const man = (v: number) => `${Math.round(v / 10000).toLocaleString("ko-KR")}만`;
 // 청산 손익(원, 수수료·세금 전) = 판 금액 - 판 수량 × 매수가
 export const pnlOf = (p: { sold_amount: number; sold_qty: number; entry_price: number }) =>
-  p.sold_qty ? p.sold_amount - p.sold_qty * p.entry_price : null;
+  p.sold_qty && p.sold_amount != null && Number.isFinite(p.sold_amount) ? p.sold_amount - p.sold_qty * p.entry_price : null;
 // +12.3만 / -4,560원 처럼 짧게
 export const wonShort = (v: number | null) => {
   if (v == null) return "–";

@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
 import threading
 from typing import Callable
 
@@ -37,10 +38,12 @@ DEFAULTS = {
     "mode": "approve",  # approve | auto
     "account": "mock",
     "buy_limit_pct": 5.0,
-    "strategies": None,  # [{id, enabled, per_trade, daily_max, rank, color}]
+    "strategies": None,
+    "migrated": 0,  # 1: 중간값 전략 색을 라임으로 바꿈  # [{id, enabled, per_trade, daily_max, rank, color}]
 }
 # 전략 색 (차트·목록에서 같은 색). 상승 빨강·하락 파랑·강조 호박색과 겹치지 않게
-COLORS = ["#A99CF5", "#3CC4B4", "#F08A5D", "#7EC8F2", "#E3B341"]
+COLORS = ["#A99CF5", "#3CC4B4", "#F08A5D", "#7EC8F2", "#E3B341", "#B5E655", "#FF7AB8"]
+LIME = "#B5E655"  # 중간값 전략 (차트의 중간값 선과 같은 색)
 NEW_STRATEGY = {"enabled": True, "per_trade": 3_000_000, "daily_max": 5, "rank": "value_asc"}
 RANK_LABEL = {"value_asc": "거래대금 작은 순"}
 MANUAL = ("직접 매도", "키움에서 직접 매도")  # 전략 규칙이 아닌 매도 (통계 따로)
@@ -133,6 +136,12 @@ class Auto:
                                if sid else [])
         for k, x in enumerate(s["strategies"]):
             x.setdefault("color", COLORS[k % len(COLORS)])
+        if s["migrated"] < 1:
+            for x in s["strategies"]:
+                if x["color"] == "#3CC4B4" and self._is_midpoint(x["id"]):
+                    x["color"] = LIME
+            s["migrated"] = 1
+            self._save(s)
         for k in ("strategy_id", "per_trade", "daily_max", "rank"):
             s.pop(k, None)
         return s
@@ -164,8 +173,15 @@ class Auto:
             self.set_strategy(s["strategies"][0]["id"], **legacy)
         return self.settings()
 
+    def _is_midpoint(self, sid: int) -> bool:
+        st = self.store.get(sid)
+        if not st:
+            return False
+        e = self.parse_text(st["text"]).entry
+        return e.type == "limit" and bool(re.fullmatch(r"\(?(시가\+종가|종가\+시가)\)?/2", e.price.replace(" ", "")))
+
     def set_strategy(self, sid: int, enabled: bool | None = None, per_trade: float | None = None,
-                     daily_max: int | None = None) -> dict:
+                     daily_max: int | None = None, color: str | None = None) -> dict:
         if not self.store.get(sid):
             raise ValueError("전략이 없습니다")
         spec = self.parse_text(self.store.get(sid)["text"])
@@ -175,9 +191,12 @@ class Auto:
         x = next((x for x in s["strategies"] if x["id"] == sid), None)
         if x is None:
             used = {y["color"] for y in s["strategies"]}
-            x = {"id": sid, **NEW_STRATEGY, "color": next((c for c in COLORS if c not in used), COLORS[0])}
+            first = LIME if self._is_midpoint(sid) and LIME not in used else None
+            x = {"id": sid, **NEW_STRATEGY, "color": first or next((c for c in COLORS if c not in used), COLORS[0])}
             s["strategies"].append(x)
-        for k, v in (("enabled", enabled), ("per_trade", per_trade), ("daily_max", daily_max)):
+        if color is not None and not re.fullmatch(r"#[0-9A-Fa-f]{6}", color):
+            raise ValueError("색은 #RRGGBB 형식")
+        for k, v in (("enabled", enabled), ("per_trade", per_trade), ("daily_max", daily_max), ("color", color)):
             if v is not None:
                 x[k] = v
         if x["per_trade"] < 100_000 or not 1 <= int(x["daily_max"]) <= 30:

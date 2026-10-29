@@ -377,3 +377,23 @@ def test_limit_picks_older_pending_and_added_later(env):
     assert lp["count"] == 2 and lp["per"]["중간값 매수 · 시험"] == 1
     a.make_plans(T(23, 20, 22), only={mid})  # 같은 신호는 두 번 넣지 않는다
     assert len(a.plans("2026-10-26")) == 2
+
+
+def test_midpoint_color_lime(env):
+    a, kw, runner, sent = env
+    mid = a.store.save("중간값 매수 · 시험", MID)["id"]
+    assert a.set_strategy(mid)["color"] == autotrade.LIME  # 새로 넣는 중간값 전략은 라임
+    assert a.set_strategy(mid, color="#FF7AB8")["color"] == "#FF7AB8"
+    with pytest.raises(ValueError):
+        a.set_strategy(mid, color="red")
+
+
+def test_midpoint_color_migrates(env):
+    a, kw, runner, sent = env
+    mid = a.store.save("중간값 매수 · 시험", MID)["id"]
+    s = a.store.get_setting("autotrade", {})
+    s["strategies"].append({"id": mid, "enabled": True, "per_trade": 3e6, "daily_max": 5, "rank": "value_asc",
+                            "color": "#3CC4B4"})
+    s["migrated"] = 0
+    a.store.set_setting("autotrade", s)
+    assert [x["color"] for x in a.settings()["strategies"]] == ["#A99CF5", autotrade.LIME]

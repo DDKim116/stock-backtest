@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { type Account, asTrade, pnlOf, wonShort, type AutoStrategy, type AutoView, entryLabel, man, md, type Plan, type Position, won } from "@/lib/auto";
 import { pct, retClass, today } from "@/lib/format";
@@ -22,7 +22,9 @@ const STATUS: Record<string, [string, string]> = {
   skipped: ["건너뜀", "text-faint"],
   failed: ["주문 실패", "text-critical"],
 };
-const INK = "#10131A"; // 전략 색 띠 위 글자
+const INK = "#10131A";
+// 전략 색 고르기 (서버 autotrade.COLORS 와 같음. 라임 = 중간값 선 색)
+const COLORS = ["#A99CF5", "#B5E655", "#3CC4B4", "#F08A5D", "#7EC8F2", "#E3B341", "#FF7AB8"]; // 전략 색 띠 위 글자
 
 type Run = (f: () => Promise<unknown>, ok?: string) => Promise<void>;
 
@@ -331,6 +333,7 @@ function StrategyCard({
   const now = today();
   const limitName = x.midpoint ? "중간값" : "지정가";
   const dates = [...new Set(plans.map((p) => p.trade_date))];
+  const waitingN = plans.filter((p) => p.status === "proposed").length;
   return (
     <section className="overflow-hidden rounded-xl border border-border bg-card">
       <div className="flex items-center justify-between gap-2 px-4 py-2.5" style={{ background: x.color, color: INK }}>
@@ -348,12 +351,26 @@ function StrategyCard({
         </p>
         {edit && <StrategySettings x={x} busy={busy} run={run} />}
 
-        {plans.length > 0 && (
-          <div className="space-y-1">
-            <div className="text-xs text-muted">
-              {dates.map(md).join(" · ")} 후보
-              {r.entry === "limit" && ` · 매일 아침 ${limitName}에 다시 주문 (최대 ${r.valid_days}일)`}
-            </div>
+        {/* ① 매수 후보 (아직 안 산 것: 점선 상자) */}
+        <div className="rounded-lg border border-dashed border-border px-3 py-2">
+          <SectionHead
+            color={x.color}
+            title="매수 후보"
+            right={
+              waitingN > 0 ? (
+                <span className="text-warning">승인 대기 {waitingN}</span>
+              ) : plans.length > 0 ? (
+                <span>{dates.map(md).join(" · ")}</span>
+              ) : null
+            }
+          />
+          {plans.length === 0 ? (
+            <p className="py-1.5 text-xs text-faint">지금 후보 없음 · 저녁에 새 데이터가 들어오면 다음 거래일 후보를 만듭니다</p>
+          ) : (
+            <>
+            {r.entry === "limit" && (
+              <p className="text-[11px] text-muted">매일 아침 {limitName}에 다시 주문 (최대 {r.valid_days}일)</p>
+            )}
             <ul className="divide-y divide-border">
               {plans.map((p) => {
                 const [label, cls] = STATUS[p.status] ?? [p.status, "text-muted"];
@@ -418,20 +435,21 @@ function StrategyCard({
                 );
               })}
             </ul>
-          </div>
-        )}
+            </>
+          )}
+        </div>
 
-        <div className="space-y-1 border-t border-border pt-2">
+        {/* ② 보유 종목 (산 것: 실선 상자) */}
+        <div className="rounded-lg border border-border bg-background/60 px-3 py-2">
+          <SectionHead color={x.color} title={`보유 종목 ${positions.length}`} solid />
           <div className="text-xs text-muted">
-            보유 {positions.length}
             {evalSum.cost > 0 && (
               <>
-                {" "}
-                · 평가 <span className={retClass(evalSum.pnl)}>{evalSum.pnl > 0 ? "+" : ""}{man(evalSum.pnl)}</span> (
-                <span className={retClass(evalSum.pnl)}>{pct((evalSum.pnl / evalSum.cost) * 100, 2, true)}</span>)
+                평가 <span className={retClass(evalSum.pnl)}>{wonShort(evalSum.pnl)}</span> (
+                <span className={retClass(evalSum.pnl)}>{pct((evalSum.pnl / evalSum.cost) * 100, 2, true)}</span>) ·{" "}
               </>
-            )}{" "}
-            · 청산 {x.stats.n}건
+            )}
+            청산 {x.stats.n}건
             {x.stats.n > 0 && (
               <>
                 {" "}
@@ -439,7 +457,9 @@ function StrategyCard({
               </>
             )}
           </div>
-          {positions.length > 0 && (
+          {positions.length === 0 ? (
+            <p className="py-1.5 text-xs text-faint">보유 종목이 없습니다</p>
+          ) : (
             <ul className="divide-y divide-border">
               {positions.map((p) => (
                 <li key={p.id} className="py-2">
@@ -487,6 +507,19 @@ function StrategyCard({
   );
 }
 
+// 카드 안 구역 제목: 전략 색 막대(후보는 빈 막대, 보유는 꽉 찬 막대) + 이름 + 오른쪽 상태
+function SectionHead({ color, title, right, solid }: { color: string; title: string; right?: ReactNode; solid?: boolean }) {
+  return (
+    <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold">
+      <span className="flex items-center gap-1.5">
+        <span className="inline-block h-3 w-1.5 rounded-sm" style={solid ? { background: color } : { border: `1.5px solid ${color}` }} />
+        {title}
+      </span>
+      {right && <span className="font-normal text-muted">{right}</span>}
+    </div>
+  );
+}
+
 function StrategySettings({ x, busy, run }: { x: AutoStrategy; busy: boolean; run: Run }) {
   const [per, setPer] = useState(String(x.per_trade));
   const [daily, setDaily] = useState(String(x.daily_max));
@@ -494,6 +527,21 @@ function StrategySettings({ x, busy, run }: { x: AutoStrategy; busy: boolean; ru
   const put = (b: object, ok: string) => run(() => api(`/api/auto/strategies/${x.id}`, { method: "PUT", body: b }), ok);
   return (
     <div className="space-y-2 rounded-lg border border-border p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted">색</span>
+        {COLORS.map((c) => (
+          <button
+            key={c}
+            type="button"
+            aria-label={`색 ${c}`}
+            aria-pressed={x.color === c}
+            disabled={busy}
+            onClick={() => put({ color: c }, "색을 바꿨습니다")}
+            className="h-6 w-6 rounded-md"
+            style={{ background: c, boxShadow: x.color === c ? `0 0 0 2px var(--card), 0 0 0 4px ${c}` : undefined }}
+          />
+        ))}
+      </div>
       <div className="grid grid-cols-2 gap-2">
         <label className="block">
           <span className="text-xs text-muted">1회 매수금 (원)</span>
