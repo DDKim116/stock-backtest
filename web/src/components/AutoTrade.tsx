@@ -6,6 +6,7 @@ import { type Account, asTrade, type AutoStrategy, type AutoView, entryLabel, ma
 import { pct, retClass, today } from "@/lib/format";
 import type { Spec, Strategy, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
+import { type LiveQuote, useLiveQuotes } from "@/lib/useLiveQuotes";
 import NumInput from "./NumInput";
 import TradeChart from "./TradeChart";
 
@@ -71,6 +72,12 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
       setBusy(false);
     }
   };
+
+  // 보유 종목 현재가 (키움 시세) → 종목별 지금 수익률
+  const quotes = useLiveQuotes(
+    (v?.positions ?? []).filter((p) => p.status !== "closed").map((p) => p.code),
+    !!v?.key_saved,
+  );
 
   if (err) return <p className="text-sm text-critical">⚠ 자동 매매: {err}</p>;
   if (!v) return null;
@@ -168,6 +175,7 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
             busy={busy}
             plans={v.plans.filter((p) => sid(p) === x.id)}
             positions={active.filter((p) => sid(p) === x.id)}
+            quotes={quotes}
             run={run}
             openChart={openChart}
           />
@@ -285,6 +293,7 @@ function StrategyCard({
   busy,
   plans,
   positions,
+  quotes,
   run,
   openChart,
 }: {
@@ -293,11 +302,22 @@ function StrategyCard({
   busy: boolean;
   plans: Plan[];
   positions: Position[];
+  quotes: Record<string, LiveQuote>;
   run: Run;
   openChart: (t: Trade, spec: Spec) => void;
 }) {
   const [edit, setEdit] = useState(false);
   const [sellId, setSellId] = useState<number | null>(null); // '지금 팔기' 두 번 눌러 확인
+  const retOf = (p: Position) => (quotes[p.code] ? (quotes[p.code].price / p.entry_price - 1) * 100 : null);
+  const evalSum = positions.reduce(
+    (a, p) => {
+      const q = quotes[p.code];
+      if (!q) return a;
+      const n = p.qty - (p.sold_qty ?? 0);
+      return { cost: a.cost + n * p.entry_price, pnl: a.pnl + n * (q.price - p.entry_price) };
+    },
+    { cost: 0, pnl: 0 },
+  );
   const r = x.rules;
   const now = today();
   const limitName = x.midpoint ? "중간값" : "지정가";
@@ -394,7 +414,15 @@ function StrategyCard({
 
         <div className="space-y-1 border-t border-border pt-2">
           <div className="text-xs text-muted">
-            보유 {positions.length} · 청산 {x.stats.n}건
+            보유 {positions.length}
+            {evalSum.cost > 0 && (
+              <>
+                {" "}
+                · 평가 <span className={retClass(evalSum.pnl)}>{evalSum.pnl > 0 ? "+" : ""}{man(evalSum.pnl)}</span> (
+                <span className={retClass(evalSum.pnl)}>{pct((evalSum.pnl / evalSum.cost) * 100, 2, true)}</span>)
+              </>
+            )}{" "}
+            · 청산 {x.stats.n}건
             {x.stats.n > 0 && (
               <>
                 {" "}
@@ -414,14 +442,16 @@ function StrategyCard({
                     >
                       {p.name} <span className="text-xs text-faint">{p.code}</span>
                     </button>
-                    <span className="shrink-0 text-xs text-muted">
-                      {p.status === "closing" ? `${p.exit_reason} 매도 중` : `${md(p.entry_date)} 매수`}
+                    <span className={`tabular shrink-0 text-sm font-semibold ${retClass(retOf(p))}`}>
+                      {quotes[p.code] ? pct(retOf(p), 2, true) : "–"}
                     </span>
                   </div>
                   <div className="flex items-end justify-between gap-2">
                     <div className="tabular text-xs text-muted">
-                      {(p.qty - (p.sold_qty ?? 0)).toLocaleString("ko-KR")}주 · {won(p.entry_price)} · 목표 {won(p.target_price || null)} · 손절{" "}
-                      {won(p.stop_price || null)}
+                      {(p.qty - (p.sold_qty ?? 0)).toLocaleString("ko-KR")}주 · {won(p.entry_price)} →{" "}
+                      <span className="text-foreground">{won(quotes[p.code]?.price)}</span> · 목표 {won(p.target_price || null)} · 손절{" "}
+                      {won(p.stop_price || null)} ·{" "}
+                      {p.status === "closing" ? `${p.exit_reason} 매도 중` : `${md(p.entry_date)} 매수`}
                     </div>
                     {p.status === "open" && (
                       <button

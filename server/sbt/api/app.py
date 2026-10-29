@@ -78,6 +78,9 @@ class _Loaded:
             meta = json.loads(meta_p.read_text()) if meta_p.exists() else {}
             panel = Panel.load(path)
             _ix.attach(panel, name)
+            from .. import breadth as _br
+
+            _br.attach(panel)  # 조건식의 상승비율·동일가중
             runner = Runner(panel, {"name": name, **DATASETS[name], "meta": meta})
             self.items[name] = (mtime, runner)
             return runner
@@ -155,6 +158,8 @@ def reference():
             {"name": "거래량", "desc": "당일 거래량(주)"}, {"name": "거래대금", "desc": "당일 거래대금(국내 원, 미국 달러). 예: 거래대금 >= 100억"},
             {"name": "시가총액", "desc": "당일 시가총액(원). 미국 데이터에는 없음"}, {"name": "등락률", "desc": "전일 종가 대비 당일 종가 변화율(%)"},
             {"name": "지수", "desc": "그 종목이 속한 시장 지수 (코스피·코스닥, 미국은 나스닥·S&P 500). 예: 지수 > 이평(지수, 60) (상승장), 지수 <= 이전(지수, 5) * 0.95 (5일간 5% 넘게 하락)"},
+            {"name": "상승비율", "desc": "그날 그 시장에서 오른 종목 비율(%). 지수와 달리 종목 수로 본 시장 분위기. 예: 상승비율 <= 20 (대부분 하락), 이평(상승비율, 5) <= 30"},
+            {"name": "동일가중", "desc": "그 시장 모든 종목을 같은 비중으로 친 지수. 예: 동일가중 <= 이전(동일가중, 5) * 0.95 (중소형주까지 5일간 5% 넘게 하락)"},
         ],
         "functions": [
             {"name": "필드(n)", "desc": "n 거래일 전 값", "example": "거래량(1)"},
@@ -407,6 +412,45 @@ def krx_renewed():
     from .. import krx_status
 
     return {"remind_from": krx_status.set_renewed()}
+
+
+_BREADTH: dict[tuple, dict] = {}
+
+
+@app.get("/api/breadth", dependencies=[Depends(auth)])
+def get_breadth(market: str = "KOSPI", dataset: str = "kr"):
+    """시장 폭: 날마다 상승비율·동일가중 지수, 같은 날 지수 종가."""
+    import numpy as np
+
+    from ..data import indices
+
+    runner = loaded.get(dataset)
+    b = getattr(runner.panel, "breadth", None) or {}
+    if market not in b:
+        raise HTTPException(404, f"{market} 종목 데이터가 없습니다")
+    key = (id(runner), market)
+    if key not in _BREADTH:
+        if len(_BREADTH) > 8:
+            _BREADTH.clear()
+        x = b[market]
+        ix_key = indices.MARKET_INDEX.get(dataset, {}).get(market)
+        ix = indices.load(ix_key) if ix_key else None
+        idx = None
+        if ix is not None:
+            sd = ix.index.to_numpy(dtype="datetime64[D]")
+            k = np.searchsorted(sd, x["dates"], side="right") - 1
+            ok = (k >= 0) & (x["dates"] == sd[np.maximum(k, 0)])
+            idx = [round(float(v), 2) if o else None for v, o in zip(ix.to_numpy()[np.maximum(k, 0)], ok)]
+        _BREADTH[key] = {
+            "market": market,
+            "index_name": indices.INDICES[ix_key]["name"] if ix_key else None,
+            "dates": [str(d) for d in x["dates"]],
+            "adv": [None if not np.isfinite(v) else round(float(v), 1) for v in x["adv"]],
+            "up": x["up"].tolist(), "n": x["n"].tolist(),
+            "ew": [round(float(v), 2) for v in x["ew"]],
+            "index": idx,
+        }
+    return _BREADTH[key]
 
 
 _CONC: dict[tuple, dict] = {}

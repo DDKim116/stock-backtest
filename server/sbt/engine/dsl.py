@@ -5,6 +5,7 @@
 
 - 필드: 시가 고가 저가 종가 거래량 거래대금 시가총액 등락률 지수 (영문: open high low close volume value mktcap change index)
   지수 = 그 종목이 속한 시장의 지수 종가 (코스피 종목→코스피, 코스닥→코스닥, 미국 나스닥→나스닥, 그 외→S&P 500)
+  상승비율 = 그날 그 종목 시장에서 오른 종목 비율(%), 동일가중 = 그 시장 동일가중 지수 (sbt.breadth)
 - 필드(n): n 거래일 전 값.  예) 거래량(1) = 전일 거래량
 - 함수: 이평/ma, 지수이평/ema, 최고/highest, 최저/lowest, 합계/sum, 표준편차/stdev,
         이전/ref, 수익률/ret, rsi, 절대값/abs, 최대/max, 최소/min,
@@ -43,6 +44,8 @@ for canon, aliases in {
     "mktcap": ["시가총액", "시총", "mktcap"],
     "change": ["등락률", "change", "chg"],
     "index": ["지수", "시장지수", "index", "idx"],
+    "breadth": ["상승비율", "시장상승비율", "breadth"],
+    "ew": ["동일가중", "동일가중지수", "ew"],
 }.items():
     for a in aliases:
         FIELDS[a.lower()] = canon
@@ -50,6 +53,7 @@ for canon, aliases in {
 FIELD_LABEL = {
     "open": "시가", "high": "고가", "low": "저가", "close": "종가", "volume": "거래량",
     "value": "거래대금", "mktcap": "시가총액", "change": "등락률", "index": "지수",
+    "breadth": "상승비율", "ew": "동일가중",
 }
 
 FUNC_ALIASES: dict[str, str] = {}

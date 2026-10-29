@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { pct, retClass } from "@/lib/format";
+import Breadth from "./Breadth";
 import Concentration from "./Concentration";
 import IndexChart from "./IndexChart";
 
@@ -323,6 +324,7 @@ export default function Market() {
         </>
       )}
 
+      {sum && group === "kr" && <Breadth />}
       {sum && group === "kr" && <Concentration />}
       {sum && group === "us" && (
         <p className="rounded-xl border border-border bg-card p-3 text-xs text-muted">

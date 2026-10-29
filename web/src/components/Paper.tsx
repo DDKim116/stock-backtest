@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { money, pct, price, retClass, today } from "@/lib/format";
 import type { PaperGroup, PaperNews, PaperTrade, PaperView, Spec, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
+import { useLiveQuotes } from "@/lib/useLiveQuotes";
 import PaperPick from "./PaperPick";
 import TradeChart from "./TradeChart";
 import NumInput from "./NumInput";
@@ -377,6 +378,11 @@ function Detail({
       .catch((e) => setErr((e as Error).message));
   }, [id]);
   useEffect(load, [load]);
+  // 국내 모투의 보유 종목은 키움 현재가로 지금 수익률 (키가 없으면 전날 종가 기준 그대로)
+  const live = useLiveQuotes(
+    (v?.trades ?? []).filter((t) => t.status === "holding").map((t) => t.code),
+    v?.book.dataset === "kr",
+  );
 
   const call = async (path: string, init: { method?: string; body?: unknown }) => {
     try {
@@ -534,10 +540,19 @@ function Detail({
                         <div className={`text-sm font-semibold ${retClass(t.ret)}`}>{pct(t.ret, 2, true)}</div>
                         {t.pnl != null && t.qty ? <div className={`text-xs ${retClass(t.pnl)}`}>{money(t.pnl, cur, true)}</div> : null}
                       </>
+                    ) : t.status === "holding" && live[t.code] && t.fill_price ? (
+                      <>
+                        <div className={`text-sm font-semibold ${retClass(live[t.code].price / t.fill_price - 1)}`}>
+                          {pct((live[t.code].price / t.fill_price - 1) * 100, 2, true)}
+                        </div>
+                        <div className="text-xs text-faint">
+                          {price(t.fill_price, cur)} → <span className="text-foreground">{price(live[t.code].price, cur)}</span>
+                        </div>
+                      </>
                     ) : t.status === "holding" ? (
                       <>
                         <div className={`text-sm font-semibold ${retClass(t.ret_now)}`}>{pct(t.ret_now, 2, true)}</div>
-                        <div className="text-xs text-faint">매수 {price(t.fill_price, cur)}</div>
+                        <div className="text-xs text-faint">매수 {price(t.fill_price, cur)} · 전날 종가 기준</div>
                       </>
                     ) : t.status === "pending" && t.limit != null ? (
                       <>
