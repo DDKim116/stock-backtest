@@ -45,6 +45,8 @@ DEFAULTS = {
 COLORS = ["#A99CF5", "#3CC4B4", "#F08A5D", "#7EC8F2", "#E3B341", "#B5E655", "#FF7AB8"]
 LIME = "#B5E655"  # 중간값 전략 (차트의 중간값 선과 같은 색)
 NEW_STRATEGY = {"enabled": True, "per_trade": 3_000_000, "daily_max": 5, "rank": "value_asc"}
+# 1회 금액: fixed = per_trade 원 고정, pct = 계좌(추정예탁자산)의 pct% (max_per_trade 원까지)
+SIZE_DEFAULTS = {"size_mode": "fixed", "pct": 10.0, "max_per_trade": 20_000_000}
 RANK_LABEL = {"value_asc": "거래대금 작은 순"}
 MANUAL = ("직접 매도", "키움에서 직접 매도")  # 전략 규칙이 아닌 매도 (통계 따로)
 RECONCILE_EVERY = 120  # 초: 키움 잔고와 맞춰 보는 간격
@@ -137,6 +139,8 @@ class Auto:
                                if sid else [])
         for k, x in enumerate(s["strategies"]):
             x.setdefault("color", COLORS[k % len(COLORS)])
+            for kk, vv in SIZE_DEFAULTS.items():
+                x.setdefault(kk, vv)
         if s["migrated"] < 1:
             for x in s["strategies"]:
                 if x["color"] == "#3CC4B4" and self._is_midpoint(x["id"]):
@@ -182,7 +186,8 @@ class Auto:
         return e.type == "limit" and bool(re.fullmatch(r"\(?(시가\+종가|종가\+시가)\)?/2", e.price.replace(" ", "")))
 
     def set_strategy(self, sid: int, enabled: bool | None = None, per_trade: float | None = None,
-                     daily_max: int | None = None, color: str | None = None) -> dict:
+                     daily_max: int | None = None, color: str | None = None, size_mode: str | None = None,
+                     pct: float | None = None, max_per_trade: float | None = None) -> dict:
         if not self.store.get(sid):
             raise ValueError("전략이 없습니다")
         spec = self.parse_text(self.store.get(sid)["text"])
@@ -197,13 +202,35 @@ class Auto:
             s["strategies"].append(x)
         if color is not None and not re.fullmatch(r"#[0-9A-Fa-f]{6}", color):
             raise ValueError("색은 #RRGGBB 형식")
-        for k, v in (("enabled", enabled), ("per_trade", per_trade), ("daily_max", daily_max), ("color", color)):
+        for k, v in (("enabled", enabled), ("per_trade", per_trade), ("daily_max", daily_max), ("color", color),
+                     ("size_mode", size_mode), ("pct", pct), ("max_per_trade", max_per_trade)):
             if v is not None:
                 x[k] = v
+        for k, v in SIZE_DEFAULTS.items():
+            x.setdefault(k, v)
         if x["per_trade"] < 100_000 or not 1 <= int(x["daily_max"]) <= 30:
             raise ValueError("1회 매수금은 10만원 이상, 하루 최대는 1~30종목")
+        if x["size_mode"] not in ("fixed", "pct"):
+            raise ValueError("1회 금액 방식은 fixed 또는 pct")
+        if not 1 <= float(x["pct"]) <= 50 or x["max_per_trade"] < 100_000:
+            raise ValueError("계좌 비율은 1~50%, 1회 최대 금액은 10만원 이상")
         self._save(s)
         return x
+
+    def amount(self, x: dict, equity: float | None) -> float:
+        """이 전략의 1회 매수 금액. 비율 방식인데 계좌 금액을 못 읽으면 고정 금액으로."""
+        if x.get("size_mode") == "pct" and equity:
+            return min(equity * float(x.get("pct", 10)) / 100, float(x.get("max_per_trade", 20_000_000)))
+        return float(x["per_trade"])
+
+    def _equity(self, s: dict, now: dt.datetime) -> float | None:
+        """계좌 금액 = 키움 추정예탁자산 (현금 + 보유 종목 평가)."""
+        try:
+            v = self.kw.balance(s["account"]).get("assets")
+            return float(v) if v else None
+        except Exception as e:  # noqa: BLE001
+            self.log(now, f"⚠ 계좌 금액을 못 읽어 고정 금액으로 계산: {e}")
+            return None
 
     def remove_strategy(self, sid: int) -> None:
         s = self.settings()
@@ -309,16 +336,17 @@ class Auto:
             act = None
             if n:
                 avg = sum(rets) / n
-                # 실현 손익으로 본 최대 낙폭 (1회 매수금 기준), 가장 긴 연속 손실
+                # 실현 손익(실제 매수 금액 기준, 비용 차감)으로 본 최대 낙폭, 가장 긴 연속 손실
+                cost = [(c["entry_price"] * (c["sold_qty"] or c["qty"])) or x["per_trade"] for c in mine]
                 eq, peak, mdd, streak, worst = 0.0, 0.0, 0.0, 0, 0
-                for c, r in zip(mine, rets):
-                    eq += x["per_trade"] * r / 100
+                for amt, r in zip(cost, rets):
+                    eq += amt * r / 100
                     peak = max(peak, eq)
                     mdd = min(mdd, eq - peak)
                     streak = streak + 1 if r <= 0 else 0
                     worst = max(worst, streak)
                 act = {"n": n, "avg": round(avg, 2), "win": round(sum(r > 0 for r in rets) / n * 100, 1),
-                       "pnl": round(sum(x["per_trade"] * r / 100 for r in rets)), "mdd": round(mdd), "lose_streak": worst,
+                       "pnl": round(sum(a * r / 100 for a, r in zip(cost, rets))), "mdd": round(mdd), "lose_streak": worst,
                        "first": mine[0]["exit_date"], "last": mine[-1]["exit_date"]}
             try:
                 exp = self.expectation(x["id"])
@@ -431,8 +459,10 @@ class Auto:
             p["code"] for p in self._q("""SELECT code FROM at_plans WHERE status IN ('proposed','approved','ordered','partial')
                                           AND COALESCE(valid_until, trade_date) >= ?""", (t.isoformat(),))}
         out, per = [], {}
+        equity = self._equity(s, now) if any(x.get("size_mode") == "pct" for x in strats) else None
         for x in strats:
             strat = self.store.get(x["id"])
+            amount = self.amount(x, equity)
             spec = self.parse_text(strat["text"])
             r_ = self.rules(x["id"])
             if r_["entry"] == "limit":
@@ -455,7 +485,7 @@ class Auto:
                     limit = self.kw.round_tick(float(r["limit"]), up=False)
                 else:
                     limit = self.kw.round_tick(close * (1 + s["buy_limit_pct"] / 100), up=False)
-                qty = int(x["per_trade"] // (limit if r_["entry"] == "limit" else close))
+                qty = int(amount // (limit if r_["entry"] == "limit" else close))
                 st, msg = (status, "") if qty >= 1 else ("skipped", "1주 가격이 1회 매수금보다 큼")
                 if self._q("SELECT id FROM at_plans WHERE trade_date = ? AND code = ?", (t.isoformat(), r["code"])):
                     continue

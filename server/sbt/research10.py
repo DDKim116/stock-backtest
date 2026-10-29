@@ -24,7 +24,7 @@ from .research7 import V2B, Leg
 
 CAPITAL = 50_000_000
 CUT = pd.Timestamp("2021-01-01")
-CONFIGS: list[tuple[str, float | None, float | None, int]] = [
+CONFIGS: list[tuple] = [  # (이름, 고정 금액, 비율, 하루 최대, 1회 상한)
     ("고정 300만 × 하루 15", 3_000_000, None, 15),
     ("고정 500만 × 하루 10 (지금)", 5_000_000, None, 10),
     ("고정 700만 × 하루 7", 7_000_000, None, 7),
@@ -33,10 +33,14 @@ CONFIGS: list[tuple[str, float | None, float | None, int]] = [
     ("비율 10% × 하루 10", None, 0.10, 10),
     ("비율 15% × 하루 7", None, 0.15, 7),
     ("비율 20% × 하루 5", None, 0.20, 5),
+    ("비율 10% × 10, 1회 최대 2천만 (추천)", None, 0.10, 10, 20_000_000),
+    ("비율 10% × 10, 1회 최대 3천만", None, 0.10, 10, 30_000_000),
+    ("비율 7% × 14, 1회 최대 2천만", None, 0.07, 14, 20_000_000),
 ]
 
 
-def simulate(g: Leg, days: np.ndarray, capital: float, per: float | None, pct: float | None, daily: int) -> dict:
+def simulate(g: Leg, days: np.ndarray, capital: float, per: float | None, pct: float | None, daily: int,
+             cap: float | None = None) -> dict:
     """하루씩 넘기며 사고판다. 평가는 실현 손익 기준(보유 종목은 매수금으로 친다)."""
     by_day: dict = {}
     for k in np.lexsort((np.nan_to_num(g.value, nan=np.inf), g.fill)):
@@ -65,6 +69,8 @@ def simulate(g: Leg, days: np.ndarray, capital: float, per: float | None, pct: f
             if n >= daily or g.code[k] in held:
                 continue
             amt = per if per is not None else equity * pct
+            if cap is not None:
+                amt = min(amt, cap)
             if cash < amt:
                 skipped += 1
                 continue
@@ -123,14 +129,14 @@ def run(dataset: str = "kr", log=print) -> Path:
     L = [f"v2b 크기 정하기 · {dt.date.today()} · 자본 5천만원 · 2010~ · 비용 차감 · 실현 손익 기준",
          "같은 날은 거래대금 작은 순 · 이미 가진 종목은 안 삼 · 판 돈은 다음 거래일부터", ""]
     res = []
-    for name, per, pct, daily in CONFIGS:
+    for name, per, pct, daily, *cap in CONFIGS:
         log(name + "…")
-        r = simulate(g, days, CAPITAL, per, pct, daily)
+        r = simulate(g, days, CAPITAL, per, pct, daily, cap[0] if cap else None)
         res.append((name, r))
-    L.append(f"  {'방식':<24} {'최종':>9} {'연 수익':>7} {'2021~':>7} {'최대 낙폭':>8} {'낙폭(원)':>9} "
+    L.append(f"  {'방식':<34} {'최종':>9} {'연 수익':>7} {'2021~':>7} {'최대 낙폭':>8} {'낙폭(원)':>9} "
              f"{'연속 손실':>14} {'노는 돈':>6}")
     for name, r in res:
-        L.append(f"  {name:<24} {r['final'] / 1e8:>7.2f}억 {r['cagr']:>+6.1f}% {r['oos_cagr'] or 0:>+6.1f}% "
+        L.append(f"  {name:<34} {r['final'] / 1e8:>7.2f}억 {r['cagr']:>+6.1f}% {r['oos_cagr'] or 0:>+6.1f}% "
                  f"{r['mdd']:>7.1f}% {r['mdd_won'] / 1e4:>7,.0f}만 {r['worst_n']:>3}번 {r['worst_sum'] / 1e4:>7,.0f}만 "
                  f"{r['idle']:>5.0f}%")
     L += ["", "해마다 수익률 (그해 초 계좌 대비)"]

@@ -1517,6 +1517,9 @@ class AutoStrategyIn(BaseModel):
     per_trade: float | None = None
     daily_max: int | None = None
     color: str | None = None
+    size_mode: str | None = None
+    pct: float | None = None
+    max_per_trade: float | None = None
 
 
 @app.get("/api/auto", dependencies=[Depends(auth)])

@@ -16,6 +16,9 @@ export interface AutoStrategy {
   enabled: boolean;
   per_trade: number;
   daily_max: number;
+  size_mode?: "fixed" | "pct";
+  pct?: number;
+  max_per_trade?: number;
   rules: AutoRules;
   midpoint: boolean;
   spec: Spec;
@@ -91,6 +94,12 @@ export const md = (d?: string | null) => (d ? `${+d.slice(5, 7)}/${+d.slice(8, 1
 
 export function stratOf(v: AutoView, id: number | null | undefined): AutoStrategy | undefined {
   return v.strategies.find((s) => s.id === id) ?? v.strategies[0];
+}
+
+// 1회 금액 설명: '500만' 또는 '계좌 10% (최대 2,000만)'
+export function sizeLabel(s: AutoStrategy): string {
+  if (s.size_mode === "pct") return `계좌 ${s.pct ?? 10}% (최대 ${man(s.max_per_trade ?? 20_000_000)})`;
+  return man(s.per_trade);
 }
 
 // '다음날 시가' / '중간값 지정가 5일' / '지정가 3일'

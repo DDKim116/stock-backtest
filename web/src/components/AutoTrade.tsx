@@ -2,7 +2,7 @@
 
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { type Account, asTrade, pnlOf, wonShort, type AutoStrategy, type AutoView, entryLabel, man, md, type Plan, type Position, won } from "@/lib/auto";
+import { type Account, asTrade, pnlOf, sizeLabel, wonShort, type AutoStrategy, type AutoView, entryLabel, man, md, type Plan, type Position, won } from "@/lib/auto";
 import { pct, retClass, today } from "@/lib/format";
 import type { Spec, Strategy, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
@@ -350,7 +350,7 @@ function StrategyCard({
       </div>
       <div className="space-y-3 px-3 pb-2 pt-3 text-sm">
         <p className="tabular text-xs text-muted">
-          {entryLabel(x)} · {man(x.per_trade)} × 하루 {x.daily_max} · +{r.target ?? "–"} / −{r.stop ?? "–"} · {r.hold}일
+          {entryLabel(x)} · {sizeLabel(x)} × 하루 {x.daily_max} · +{r.target ?? "–"} / −{r.stop ?? "–"} · {r.hold}일
         </p>
         {edit && <StrategySettings x={x} busy={busy} run={run} />}
 
@@ -526,6 +526,9 @@ export function SectionHead({ color, title, right, solid }: { color: string; tit
 function StrategySettings({ x, busy, run }: { x: AutoStrategy; busy: boolean; run: Run }) {
   const [per, setPer] = useState(String(x.per_trade));
   const [daily, setDaily] = useState(String(x.daily_max));
+  const [sizeMode, setSizeMode] = useState<"fixed" | "pct">(x.size_mode ?? "fixed");
+  const [pctV, setPctV] = useState(String(x.pct ?? 10));
+  const [cap, setCap] = useState(String(x.max_per_trade ?? 20_000_000));
   const [drop, setDrop] = useState(false);
   const put = (b: object, ok: string) => run(() => api(`/api/auto/strategies/${x.id}`, { method: "PUT", body: b }), ok);
   return (
@@ -545,21 +548,65 @@ function StrategySettings({ x, busy, run }: { x: AutoStrategy; busy: boolean; ru
           />
         ))}
       </div>
+      <div className="space-y-1">
+        <span className="text-xs text-muted">1회 매수 금액</span>
+        <div className="flex rounded-lg border border-border p-0.5 text-xs">
+          {(
+            [
+              ["fixed", "고정 금액"],
+              ["pct", "계좌 비율 (복리)"],
+            ] as const
+          ).map(([k, l]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setSizeMode(k)}
+              className={`flex-1 rounded-md py-1 ${sizeMode === k ? "bg-accent text-on-accent" : "text-muted"}`}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="grid grid-cols-2 gap-2">
-        <label className="block">
-          <span className="text-xs text-muted">1회 매수금 (원)</span>
-          <NumInput value={per} onChange={setPer} className="mt-1" />
-        </label>
+        {sizeMode === "fixed" ? (
+          <label className="block">
+            <span className="text-xs text-muted">1회 매수금 (원)</span>
+            <NumInput value={per} onChange={setPer} className="mt-1" />
+          </label>
+        ) : (
+          <>
+            <label className="block">
+              <span className="text-xs text-muted">계좌의 % 씩</span>
+              <NumInput value={pctV} onChange={setPctV} className="mt-1" />
+            </label>
+            <label className="block">
+              <span className="text-xs text-muted">1회 최대 (원)</span>
+              <NumInput value={cap} onChange={setCap} className="mt-1" />
+            </label>
+          </>
+        )}
         <label className="block">
           <span className="text-xs text-muted">하루 최대 종목</span>
           <NumInput value={daily} onChange={setDaily} className="mt-1" />
         </label>
       </div>
+      {sizeMode === "pct" && (
+        <p className="text-[11px] text-faint">
+          매수 후보를 만들 때(저녁) 키움 계좌의 추정자산 × {pctV || "?"}% 로 사고, {man(Number(cap) || 0)}을 넘지 않습니다. 계좌가 커지면 같이
+          커져요. 계좌를 못 읽으면 고정 금액({man(Number(per) || 0)})으로 삽니다.
+        </p>
+      )}
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
           disabled={busy}
-          onClick={() => put({ per_trade: Number(per), daily_max: Number(daily) }, "저장했습니다")}
+          onClick={() =>
+            put(
+              { per_trade: Number(per), daily_max: Number(daily), size_mode: sizeMode, pct: Number(pctV), max_per_trade: Number(cap) },
+              "저장했습니다",
+            )
+          }
           className="rounded-lg border border-accent px-3 py-1.5 text-xs font-semibold text-accent disabled:opacity-50"
         >
           저장

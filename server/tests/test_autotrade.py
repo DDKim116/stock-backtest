@@ -418,3 +418,19 @@ def test_compare_actual_vs_expect(env, monkeypatch):
     assert c["actual"]["avg"] == pytest.approx((20 * 10 - 12 * 7) / 32 - 0.23, abs=0.01)
     assert c["band"][0] < 2.5 < c["band"][1] and c["verdict"] == "inside"
     assert c["actual"]["lose_streak"] == 12
+
+
+def test_size_pct_of_account(env):
+    a, kw, runner, sent = env
+    sid = a.settings()["strategies"][0]["id"]
+    kw.balance = lambda mode: {"holdings": [], "assets": 120_000_000}  # 계좌 1.2억
+    a.set_strategy(sid, size_mode="pct", pct=10, max_per_trade=10_000_000)
+    runner.rows["2026-10-23"] = [{"code": "000001", "name": "가", "signal_date": "2026-10-23", "close": 10_000, "value": 1e9}]
+    a.tick(T(23, 20, 15))
+    assert a.plans("2026-10-26")[0]["qty"] == 1_000  # 10% = 1,200만 → 상한 1,000만 / 1만원
+    with pytest.raises(ValueError):
+        a.set_strategy(sid, pct=80)
+    # 계좌 금액을 못 읽으면 고정 금액(500만)으로
+    kw.balance = lambda mode: (_ for _ in ()).throw(RuntimeError("x"))
+    x = a.settings()["strategies"][0]
+    assert a.amount(x, a._equity(a.settings(), T(23, 20, 16))) == 5_000_000
