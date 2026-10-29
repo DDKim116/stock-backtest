@@ -345,14 +345,14 @@ function StrategyCard({
           </button>
         </span>
       </div>
-      <div className="space-y-2.5 px-1.5 pb-2 pt-3 text-sm">
-        <p className="tabular px-2.5 text-xs text-muted">
+      <div className="space-y-3 px-3 pb-2 pt-3 text-sm">
+        <p className="tabular text-xs text-muted">
           {entryLabel(x)} · {man(x.per_trade)} × 하루 {x.daily_max} · +{r.target ?? "–"} / −{r.stop ?? "–"} · {r.hold}일
         </p>
         {edit && <StrategySettings x={x} busy={busy} run={run} />}
 
-        {/* ① 매수 후보 (아직 안 산 것: 점선 상자) */}
-        <div className="rounded-lg border border-dashed border-border px-2.5 py-2">
+        {/* ① 매수 후보 (아직 안 산 것: 테두리만 있는 이름표) */}
+        <div className="border-t border-border pt-2.5">
           <SectionHead
             color={x.color}
             title="매수 후보"
@@ -439,8 +439,8 @@ function StrategyCard({
           )}
         </div>
 
-        {/* ② 보유 종목 (산 것: 실선 상자) */}
-        <div className="rounded-lg border border-border bg-background/60 px-2.5 py-2">
+        {/* ② 보유 종목 (산 것: 색을 채운 이름표) */}
+        <div className="border-t border-border pt-2.5">
           <SectionHead color={x.color} title={`보유 종목 ${positions.length}`} solid />
           <div className="text-xs text-muted">
             {evalSum.cost > 0 && (
@@ -505,15 +505,17 @@ function StrategyCard({
   );
 }
 
-// 카드 안 구역 제목: 전략 색 막대(후보는 빈 막대, 보유는 꽉 찬 막대) + 이름 + 오른쪽 상태
-function SectionHead({ color, title, right, solid }: { color: string; title: string; right?: ReactNode; solid?: boolean }) {
+// 카드 안 구역 제목: 매수 후보 = 전략 색 테두리 이름표, 보유 종목 = 전략 색을 채운 이름표
+export function SectionHead({ color, title, right, solid }: { color: string; title: string; right?: ReactNode; solid?: boolean }) {
   return (
-    <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold">
-      <span className="flex items-center gap-1.5">
-        <span className="inline-block h-3 w-1.5 rounded-sm" style={solid ? { background: color } : { border: `1.5px solid ${color}` }} />
+    <div className="mb-1.5 flex items-center justify-between gap-2 text-xs">
+      <span
+        className="rounded-md px-2 py-0.5 font-semibold"
+        style={solid ? { background: color, color: INK, border: `1.5px solid ${color}` } : { border: `1.5px solid ${color}` }}
+      >
         {title}
       </span>
-      {right && <span className="font-normal text-muted">{right}</span>}
+      {right && <span className="text-muted">{right}</span>}
     </div>
   );
 }

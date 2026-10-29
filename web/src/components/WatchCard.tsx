@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { pct, retClass } from "@/lib/format";
 import type { Spec, Strategy, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
+import { SectionHead } from "./AutoTrade";
 import TradeChart, { limitLabel } from "./TradeChart";
 
 interface Item {
@@ -100,22 +101,22 @@ export default function WatchCard({ onFlash }: { onFlash: (m: string) => void })
   const holding = v.items.filter((i) => i.kind === "holding");
 
   return (
-    <section className="space-y-3 rounded-xl border border-border bg-card px-1.5 py-3">
-      <div className="flex items-center justify-between gap-2 px-2.5">
+    <section className="space-y-3 rounded-xl border border-border bg-card px-3 py-3">
+      <div className="flex items-center justify-between gap-2">
         <h3 className="font-semibold">장중 실시간 감시</h3>
         <span className="text-xs text-muted">{v.updated ? `${v.updated} 시세` : "장중(09:00~15:20)에 갱신"}</span>
       </div>
-      <p className="px-2.5 text-xs text-muted">
+      <p className="text-xs text-muted">
         고른 전략의 지정가 대기·보유 종목을 키움 시세로 약 20초마다 확인해, 매수가·목표·손절에 닿으면 휴대폰으로 알립니다. 주문은 하지 않습니다.
       </p>
-      {v.mode === null && <p className="px-2.5 text-xs text-warning">설정 → 키움 연결에 키를 넣어야 시세를 받을 수 있습니다.</p>}
-      {v.error && <p className="px-2.5 text-xs text-critical">⚠ {v.error}</p>}
+      {v.mode === null && <p className="text-xs text-warning">설정 → 키움 연결에 키를 넣어야 시세를 받을 수 있습니다.</p>}
+      {v.error && <p className="text-xs text-critical">⚠ {v.error}</p>}
 
-      {ids.length === 0 && !edit && <p className="px-2.5 text-sm text-faint">감시할 전략을 고르세요.</p>}
+      {ids.length === 0 && !edit && <p className="text-sm text-faint">감시할 전략을 고르세요.</p>}
 
       {pending.length > 0 && (
-        <div className="rounded-lg border border-dashed border-border px-2.5 py-2 text-sm">
-          <div className="mb-1 text-xs font-semibold">지정가 대기 {pending.length}</div>
+        <div className="border-t border-border pt-2.5 text-sm">
+          <SectionHead color="var(--accent)" title={`지정가 대기 ${pending.length}`} />
           <ul className="divide-y divide-border">
             {pending.map((i) => (
               <li key={`${i.sid}-${i.code}-${i.signal_date}`} onClick={() => open(i)} className="cursor-pointer py-2">
@@ -140,8 +141,8 @@ export default function WatchCard({ onFlash }: { onFlash: (m: string) => void })
       )}
 
       {holding.length > 0 && (
-        <div className="rounded-lg border border-border bg-background/60 px-2.5 py-2 text-sm">
-          <div className="mb-1 text-xs font-semibold">산 것으로 계산 {holding.length}</div>
+        <div className="border-t border-border pt-2.5 text-sm">
+          <SectionHead color="var(--accent)" title={`산 것으로 계산 ${holding.length}`} solid />
           <ul className="divide-y divide-border">
             {holding.map((i) => (
               <li key={`${i.sid}-${i.code}-${i.signal_date}`} onClick={() => open(i)} className="cursor-pointer py-2">
@@ -169,7 +170,7 @@ export default function WatchCard({ onFlash }: { onFlash: (m: string) => void })
           </ul>
         </div>
       )}
-      {ids.length > 0 && v.items.length === 0 && !v.error && <p className="px-2.5 text-sm text-faint">지금 지켜볼 종목이 없습니다 (신호가 나면 생깁니다).</p>}
+      {ids.length > 0 && v.items.length === 0 && !v.error && <p className="text-sm text-faint">지금 지켜볼 종목이 없습니다 (신호가 나면 생깁니다).</p>}
 
       <button
         type="button"
@@ -177,7 +178,7 @@ export default function WatchCard({ onFlash }: { onFlash: (m: string) => void })
           if (!strategies) setStrategies(await api<Strategy[]>("/api/strategies").catch(() => []));
           setEdit((x) => !x);
         }}
-        className="ml-2.5 rounded-lg border border-border px-3 py-1.5 text-xs"
+        className="rounded-lg border border-border px-3 py-1.5 text-xs"
       >
         감시할 전략 {edit ? "닫기" : "고르기"}
       </button>
