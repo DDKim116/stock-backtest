@@ -345,14 +345,14 @@ function StrategyCard({
           </button>
         </span>
       </div>
-      <div className="space-y-3 p-4 text-sm">
-        <p className="tabular text-xs text-muted">
+      <div className="space-y-2.5 px-1.5 pb-2 pt-3 text-sm">
+        <p className="tabular px-2.5 text-xs text-muted">
           {entryLabel(x)} · {man(x.per_trade)} × 하루 {x.daily_max} · +{r.target ?? "–"} / −{r.stop ?? "–"} · {r.hold}일
         </p>
         {edit && <StrategySettings x={x} busy={busy} run={run} />}
 
         {/* ① 매수 후보 (아직 안 산 것: 점선 상자) */}
-        <div className="rounded-lg border border-dashed border-border px-3 py-2">
+        <div className="rounded-lg border border-dashed border-border px-2.5 py-2">
           <SectionHead
             color={x.color}
             title="매수 후보"
@@ -440,7 +440,7 @@ function StrategyCard({
         </div>
 
         {/* ② 보유 종목 (산 것: 실선 상자) */}
-        <div className="rounded-lg border border-border bg-background/60 px-3 py-2">
+        <div className="rounded-lg border border-border bg-background/60 px-2.5 py-2">
           <SectionHead color={x.color} title={`보유 종목 ${positions.length}`} solid />
           <div className="text-xs text-muted">
             {evalSum.cost > 0 && (
@@ -463,25 +463,18 @@ function StrategyCard({
             <ul className="divide-y divide-border">
               {positions.map((p) => (
                 <li key={p.id} className="py-2">
-                  <div className="flex justify-between gap-2">
+                  {/* 1줄: 종목 · 지금 수익률 · 지금 팔기 / 2줄: 수량·가격 (넓게) */}
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
                       onClick={() => openChart(asTrade({ code: p.code, name: p.name, signal_date: p.signal_date, limit: p.limit_price }, p), x.spec)}
-                      className="min-w-0 truncate text-left"
+                      className="min-w-0 flex-1 truncate text-left"
                     >
                       {p.name} <span className="text-xs text-faint">{p.code}</span>
                     </button>
                     <span className={`tabular shrink-0 text-sm font-semibold ${retClass(retOf(p))}`}>
                       {quotes[p.code] ? pct(retOf(p), 2, true) : "–"}
                     </span>
-                  </div>
-                  <div className="flex items-end justify-between gap-2">
-                    <div className="tabular text-xs text-muted">
-                      {(p.qty - (p.sold_qty ?? 0)).toLocaleString("ko-KR")}주 · {won(p.entry_price)} →{" "}
-                      <span className="text-foreground">{won(quotes[p.code]?.price)}</span> · 목표 {won(p.target_price || null)} · 손절{" "}
-                      {won(p.stop_price || null)} ·{" "}
-                      {p.status === "closing" ? `${p.exit_reason} 매도 중` : `${md(p.entry_date)} 매수`}
-                    </div>
                     {p.status === "open" && (
                       <button
                         type="button"
@@ -491,11 +484,16 @@ function StrategyCard({
                           setSellId(null);
                           run(() => api(`/api/auto/positions/${p.id}/sell`, { method: "POST" }), `${p.name} 시장가 매도 주문을 냈습니다`);
                         }}
-                        className={`shrink-0 rounded-lg px-2.5 py-1 text-xs ${sellId === p.id ? "bg-critical text-white" : "border border-border"}`}
+                        className={`shrink-0 rounded-lg px-2 py-0.5 text-xs ${sellId === p.id ? "bg-critical text-white" : "border border-border"}`}
                       >
                         {sellId === p.id ? "정말 팔기" : "지금 팔기"}
                       </button>
                     )}
+                  </div>
+                  <div className="tabular mt-0.5 text-xs text-muted">
+                    {(p.qty - (p.sold_qty ?? 0)).toLocaleString("ko-KR")}주 · {won(p.entry_price)} →{" "}
+                    <span className="text-foreground">{won(quotes[p.code]?.price)}</span> · 목표 {won(p.target_price || null)} · 손절{" "}
+                    {won(p.stop_price || null)} · {p.status === "closing" ? `${p.exit_reason} 매도 중` : `${md(p.entry_date)} 매수`}
                   </div>
                 </li>
               ))}
