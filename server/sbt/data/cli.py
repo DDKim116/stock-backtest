@@ -5,6 +5,7 @@
   python -m sbt.data.cli kr-update                 # 최근 며칠 갱신 + 빌드 (매일 자동 실행용)
   python -m sbt.data.cli research --save 5          # 여러 전략 유형을 한꺼번에 돌려 순위 (약 10~30분)
   python -m sbt.data.cli research2                 # 2차: 급락 반등 정밀 점검 + 신고가 시장 필터
+  python -m sbt.data.cli auto-report                # 키움 모의투자 자동 매매 성적표 (기대치 vs 실제)
   python -m sbt.data.cli trend-test                 # 신고가 추세 다듬기 + v2b·중간값과 5천만 계좌로 합쳐 굴리기
   python -m sbt.data.cli bear-test                  # 하락장 전략 후보 비교 (약세장 해 따로)
   python -m sbt.data.cli bull-test                  # 상승장 전략 후보 비교 (강세장 해 따로)
@@ -57,6 +58,8 @@ def main(argv: list[str] | None = None) -> None:
     rk.add_argument("--per", type=float, default=5_000_000, help="1회 매수금(원)")
     rk.add_argument("--daily", type=int, default=5, help="하루 최대 종목 수")
     rk.add_argument("--capital", default="50000000,100000000", help="자본(원), 쉼표로 여러 개")
+    ar = sub.add_parser("auto-report")
+    ar.add_argument("--dataset", default="kr")
     tt = sub.add_parser("trend-test")
     tt.add_argument("--dataset", default="kr")
     br = sub.add_parser("bear-test")
@@ -130,6 +133,9 @@ def main(argv: list[str] | None = None) -> None:
     elif a.cmd == "rank":
         from .. import research4
         research4.run(a.dataset, a.per, a.daily, tuple(float(x) for x in a.capital.split(",") if x.strip()))
+    elif a.cmd == "auto-report":
+        from .. import autoreport
+        autoreport.run(a.dataset)
     elif a.cmd == "trend-test":
         from .. import research7
         research7.run(a.dataset)

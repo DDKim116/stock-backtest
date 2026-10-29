@@ -7,6 +7,7 @@ import { pct, retClass, today } from "@/lib/format";
 import type { Spec, Strategy, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
 import { type LiveQuote, useLiveQuotes } from "@/lib/useLiveQuotes";
+import AutoCompare from "./AutoCompare";
 import NumInput from "./NumInput";
 import TradeChart from "./TradeChart";
 
@@ -209,6 +210,8 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
           + 전략 추가
         </button>
       )}
+
+      <AutoCompare />
 
       {/* 청산 (모든 전략) */}
       {closed.length > 0 && (

@@ -75,6 +75,7 @@ class Auto:
         self.store, self.kw, self.get_runner, self.notify, self.parse_text = store, kw, get_runner, notify, parse_text
         self.print = log_print
         self.lock = threading.Lock()
+        self._expect: dict = {}
         self._last_rec: dt.datetime | None = None
         self._miss: dict[int, int] = {}  # 포지션 id → 잔고가 모자란 것을 본 횟수 (두 번 연속이면 직접 매도로 본다)
         db = store.db
@@ -257,6 +258,91 @@ class Auto:
     def _upd(self, table: str, rid: int, now: dt.datetime, **kw) -> None:
         sets = ", ".join(f"{k} = ?" for k in kw)
         self._x(f"UPDATE {table} SET {sets}, updated_at = ? WHERE id = ?", (*kw.values(), self._ts(now), rid))
+
+    # ------------------------------------------------------------ 기대치 vs 실제
+    COST_PCT = 0.23  # 매수·매도 수수료 0.015% 씩 + 거래세 0.20% (백테스트와 같은 가정)
+
+    def expectation(self, sid: int, since: str = "2021-01-01") -> dict | None:
+        """전략의 백테스트 기대치 (since 이후 신호, 비용 차감, 거래 1건당). 데이터가 바뀔 때만 다시 계산."""
+        st = self.store.get(sid)
+        if not st:
+            return None
+        runner = self.get_runner("kr")
+        key = (sid, st["text"], str(runner.panel.dates.max()), since)
+        if key in self._expect:
+            return self._expect[key]
+        import numpy as np
+
+        from .engine import event
+        from .research2 import _signals, _sim
+
+        spec = self.parse_text(st["text"])
+        t = _sim(runner, spec, _signals(runner, spec))
+        p = runner.panel
+        m = (t.fill_row >= 0) & (t.outcome_c != event.OPEN) & (p.dates[t.sig] >= np.datetime64(since, "D"))
+        r = t.ret_c[m]
+        r = r[np.isfinite(r)]
+        out = None
+        if len(r) >= 20:
+            out = {"n": int(len(r)), "avg": round(float(r.mean()), 2), "std": round(float(r.std()), 2),
+                   "win": round(float((r > 0).mean() * 100), 1), "since": since}
+        self._expect = {k: v for k, v in self._expect.items() if k[0] != sid}
+        self._expect[key] = out
+        return out
+
+    def compare(self) -> list[dict]:
+        """전략마다 모의투자 실제(전략대로 청산한 것만) vs 백테스트 기대치, 그리고 지금 건수에서의 정상 범위."""
+        import math
+
+        out = []
+        s = self.settings()
+        first = s["strategies"][0]["id"] if s["strategies"] else None
+        closed = self._q("""SELECT strategy_id, ret, exit_reason, exit_date, qty, sold_qty, sold_amount, entry_price
+                            FROM at_positions WHERE status = 'closed' AND ret IS NOT NULL ORDER BY exit_date, id""")
+        for x in s["strategies"]:
+            st = self.store.get(x["id"])
+            if not st:
+                continue
+            mine = [c for c in closed if (c["strategy_id"] or first) == x["id"] and c["exit_reason"] not in MANUAL]
+            rets = [c["ret"] - self.COST_PCT for c in mine]  # 실제는 수수료·세금 전이라 백테스트처럼 빼서 비교
+            n = len(rets)
+            act = None
+            if n:
+                avg = sum(rets) / n
+                # 실현 손익으로 본 최대 낙폭 (1회 매수금 기준), 가장 긴 연속 손실
+                eq, peak, mdd, streak, worst = 0.0, 0.0, 0.0, 0, 0
+                for c, r in zip(mine, rets):
+                    eq += x["per_trade"] * r / 100
+                    peak = max(peak, eq)
+                    mdd = min(mdd, eq - peak)
+                    streak = streak + 1 if r <= 0 else 0
+                    worst = max(worst, streak)
+                act = {"n": n, "avg": round(avg, 2), "win": round(sum(r > 0 for r in rets) / n * 100, 1),
+                       "pnl": round(sum(x["per_trade"] * r / 100 for r in rets)), "mdd": round(mdd), "lose_streak": worst,
+                       "first": mine[0]["exit_date"], "last": mine[-1]["exit_date"]}
+            try:
+                exp = self.expectation(x["id"])
+            except Exception as e:  # noqa: BLE001 — 데이터가 없으면 기대치 없이
+                exp = None
+                self.log(dt.datetime.now(), f"기대치 계산 실패 ({st['name']}): {e}")
+            verdict, band, wband = None, None, None
+            if exp and act:
+                se = exp["std"] / math.sqrt(n)
+                band = [round(exp["avg"] - 2 * se, 2), round(exp["avg"] + 2 * se, 2)]
+                p = exp["win"] / 100
+                ws = math.sqrt(p * (1 - p) / n) * 100
+                wband = [round(max(0, exp["win"] - 2 * ws), 1), round(min(100, exp["win"] + 2 * ws), 1)]
+                if n < 30:
+                    verdict = "early"
+                elif act["avg"] > band[1]:
+                    verdict = "above"
+                elif act["avg"] < band[0]:
+                    verdict = "below"
+                else:
+                    verdict = "inside"
+            out.append({"strategy_id": x["id"], "name": st["name"], "color": x["color"], "per_trade": x["per_trade"],
+                        "actual": act, "expect": exp, "band": band, "win_band": wband, "verdict": verdict})
+        return out
 
     # ------------------------------------------------------------ 화면용
     def view(self, today: str | None = None) -> dict:

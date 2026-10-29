@@ -1524,6 +1524,12 @@ def auto_view():
     return _auto().view(_kst_now().date().isoformat())
 
 
+@app.get("/api/auto/compare", dependencies=[Depends(auth)])
+def auto_compare():
+    """전략마다 모의투자 실제 vs 백테스트 기대치."""
+    return {"items": _auto().compare(), "cost_pct": _auto().COST_PCT}
+
+
 @app.put("/api/auto/strategies/{sid}", dependencies=[Depends(auth)])
 def auto_strategy_put(sid: int, body: AutoStrategyIn):
     """전략 추가(없으면) 또는 설정 변경. 계좌 돈은 모든 전략이 같이 쓴다."""

@@ -397,3 +397,24 @@ def test_midpoint_color_migrates(env):
     s["migrated"] = 0
     a.store.set_setting("autotrade", s)
     assert [x["color"] for x in a.settings()["strategies"]] == ["#A99CF5", autotrade.LIME]
+
+
+def test_compare_actual_vs_expect(env, monkeypatch):
+    a, kw, runner, sent = env
+    sid = a.settings()["strategies"][0]["id"]
+    rets = [10.0] * 20 + [-7.0] * 12  # 32건, 평균 +3.62% (비용 전)
+    for k, r in enumerate(rets):
+        a._x("""INSERT INTO at_positions (plan_id, code, name, qty, entry_date, entry_price, target_price, stop_price,
+                status, created_at, updated_at, strategy_id, ret, exit_reason, exit_date, sold_qty, sold_amount)
+                VALUES (NULL, ?, ?, 100, '2026-10-01', 10000, 11000, 9300, 'closed', 'x', 'x', ?, ?, ?, ?, 100, ?)""",
+             (f"{k:06d}", "n", sid, r, "목표" if r > 0 else "손절", f"2026-{10 + k // 28}-{1 + k % 28:02d}", 10000 * 100 * (1 + r / 100)))
+    a._x("""INSERT INTO at_positions (plan_id, code, name, qty, entry_date, entry_price, target_price, stop_price,
+            status, created_at, updated_at, strategy_id, ret, exit_reason, exit_date, sold_qty, sold_amount)
+            VALUES (NULL, '999999', 'm', 1, '2026-10-01', 1, 1, 1, 'closed', 'x', 'x', ?, 50.0, '직접 매도', '2026-10-02', 1, 1)""",
+         (sid,))
+    monkeypatch.setattr(a, "expectation", lambda s: {"n": 1000, "avg": 2.5, "std": 6.0, "win": 60.0, "since": "2021-01-01"})
+    c = a.compare()[0]
+    assert c["actual"]["n"] == 32 and c["actual"]["win"] == pytest.approx(62.5)  # 직접 매도는 뺀다
+    assert c["actual"]["avg"] == pytest.approx((20 * 10 - 12 * 7) / 32 - 0.23, abs=0.01)
+    assert c["band"][0] < 2.5 < c["band"][1] and c["verdict"] == "inside"
+    assert c["actual"]["lose_streak"] == 12
