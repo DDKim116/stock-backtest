@@ -154,8 +154,8 @@ def _years(kind: str) -> list[int]:
     out = []
     for y, g in s.groupby(s.index.year):
         prev = s[s.index.year < y]
-        if not len(prev):
-            continue  # 첫해는 기준 종가가 없음
+        if not len(prev) or y == s.index[-1].year:
+            continue  # 첫해는 기준 종가가 없고, 올해는 아직 안 끝남
         ret = g.iloc[-1] / prev.iloc[-1] - 1
         dd = (g / g.cummax() - 1).min()
         if (kind == "bear" and (ret <= -0.10 or dd <= -0.20)) or (kind == "bull" and ret >= 0.15):
@@ -179,7 +179,8 @@ def run(dataset: str = "kr", kind: str = "bear", log=print) -> Path:
     L = [f"{title} 전략 비교 · {dt.date.today()} · 국내 2010~ · 과거 ~{CUT} / 검증 {CUT}~ · 비용 차감, 거래 1건당 평균",
          "날 단위: 상승기 = 신호일 지수가 60일선 위, 하락기 = 아래",
          f"약세장 해(코스피 연간 -10% 이하 또는 고점 대비 -20% 넘게 하락): {', '.join(map(str, bears)) or '없음'}",
-         f"강세장 해(코스피 연간 +15% 이상): {', '.join(map(str, bulls)) or '없음'}"]
+         f"강세장 해(코스피 연간 +15% 이상): {', '.join(map(str, bulls)) or '없음'}",
+         "(올해는 아직 안 끝나 해 구분에서 뺌. 2020처럼 폭락 뒤 급반등한 해는 양쪽에 다 들어갈 수 있음)"]
     for name, idea, text in (BEAR if kind == "bear" else BULL):
         log(f"{name}…")
         spec = _family_spec(text, ["코스피", "코스닥"])
