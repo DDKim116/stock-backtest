@@ -258,3 +258,20 @@ def test_trail_sweep_and_text():
     assert len(v) == 4
     assert {(s.exit.trail_pct, s.exit.exit_signal) for _, s in v} == {
         (8, "종가 < 이평(종가, 20)"), (8, "종가 < 이평(종가, 50)"), (12, "종가 < 이평(종가, 20)"), (12, "종가 < 이평(종가, 50)")}
+
+
+def test_stop_level_price():
+    # 신호일: 시가 100, 저가 95, 종가 120 (+20%). 중간값 110 에 지정가. 손절선 = 신호일 저가 95
+    rows = [(100, 100, 100, 100, 10), (100, 121, 95, 120, 10), (112, 113, 108, 109, 10),
+            (108, 109, 96, 100, 10), (100, 101, 94, 95, 10), (95, 96, 94, 95, 10)]
+    p = make_panel({"000010": rows})
+    sp = spec(signal="등락률 >= 15", entry={"type": "limit", "price": "(시가 + 종가) / 2", "valid_days": 3},
+              exit={"target_pct": 2.5, "stop_pct": None, "max_days": 3})
+    r = Runner(p, {"name": "test"})
+    sig = np.flatnonzero(dsl.evaluate(sp.signal, p))
+    t = event.simulate(p, sig, sp, r._limit(sp), stop_level=p.cols["low"])
+    assert t.fill_price[0] == 110
+    assert t.outcome_c[0] == event.STOP and t.exit_price_c[0] == 95  # 셋째 날 저가 94 → 95 에 손절
+    # 같은 조건, 손절선 없이: 기간 만료(종가)
+    t2 = event.simulate(p, sig, sp, r._limit(sp))
+    assert t2.outcome_c[0] == event.TIMEOUT

@@ -6,6 +6,7 @@
   python -m sbt.data.cli research --save 5          # 여러 전략 유형을 한꺼번에 돌려 순위 (약 10~30분)
   python -m sbt.data.cli research2                 # 2차: 급락 반등 정밀 점검 + 신고가 시장 필터
   python -m sbt.data.cli auto-report                # 키움 모의투자 자동 매매 성적표 (기대치 vs 실제)
+  python -m sbt.data.cli bunt-test                  # 중간값 번트: 목표 +2.5%, 손절 = 장대양봉 저가, 갭상승 3%↑ 제외
   python -m sbt.data.cli mid-test                   # 중간값 전략 살리기 (목표·손절·시장 조건·지정가 바꿔 비교)
   python -m sbt.data.cli trend-test                 # 신고가 추세 다듬기 + v2b·중간값과 5천만 계좌로 합쳐 굴리기
   python -m sbt.data.cli bear-test                  # 하락장 전략 후보 비교 (약세장 해 따로)
@@ -61,6 +62,8 @@ def main(argv: list[str] | None = None) -> None:
     rk.add_argument("--capital", default="50000000,100000000", help="자본(원), 쉼표로 여러 개")
     ar = sub.add_parser("auto-report")
     ar.add_argument("--dataset", default="kr")
+    bu = sub.add_parser("bunt-test")
+    bu.add_argument("--dataset", default="kr")
     mt = sub.add_parser("mid-test")
     mt.add_argument("--dataset", default="kr")
     tc = sub.add_parser("trend-check")
@@ -141,6 +144,9 @@ def main(argv: list[str] | None = None) -> None:
     elif a.cmd == "auto-report":
         from .. import autoreport
         autoreport.run(a.dataset)
+    elif a.cmd == "bunt-test":
+        from .. import research9
+        research9.run(a.dataset)
     elif a.cmd == "mid-test":
         from .. import research8
         research8.run(a.dataset)

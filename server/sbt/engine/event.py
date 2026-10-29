@@ -82,19 +82,21 @@ def _gather(arr: np.ndarray, idx: np.ndarray, valid: np.ndarray) -> np.ndarray:
 
 
 def simulate(panel: Panel, sig: np.ndarray, spec: Spec, limit_price: np.ndarray | None,
-             fx: np.ndarray | None = None, exit_cond: np.ndarray | None = None) -> Trades:
+             fx: np.ndarray | None = None, exit_cond: np.ndarray | None = None,
+             stop_level: np.ndarray | None = None) -> Trades:
     """sig: 신호 행 인덱스 배열. limit_price: 행 전체에 대한 지정가 배열 (limit 방식일 때).
-    exit_cond: 행 전체에 대한 청산 조건(bool). 그날 장 마감에 참이면 다음 날 시가에 판다."""
+    exit_cond: 행 전체에 대한 청산 조건(bool). 그날 장 마감에 참이면 다음 날 시가에 판다.
+    stop_level: 행 전체에 대한 손절 '가격' 배열 (신호일 값을 쓴다, 예: 신호일 저가). 손절 %와 같이 주면 높은 쪽."""
     step = max(1000, MAX_CELLS // (int(spec.exit.max_days) + 1))
     if len(sig) > step:
-        parts = [_simulate(panel, sig[i:i + step], spec, limit_price, fx, exit_cond)
+        parts = [_simulate(panel, sig[i:i + step], spec, limit_price, fx, exit_cond, stop_level)
                  for i in range(0, len(sig), step)]
         return Trades(**{f: np.concatenate([getattr(t, f) for t in parts]) for f in Trades.__dataclass_fields__})
-    return _simulate(panel, sig, spec, limit_price, fx, exit_cond)
+    return _simulate(panel, sig, spec, limit_price, fx, exit_cond, stop_level)
 
 
 def _simulate(panel: Panel, sig: np.ndarray, spec: Spec, limit_price: np.ndarray | None,
-              fx: np.ndarray | None, exit_cond: np.ndarray | None) -> Trades:
+              fx: np.ndarray | None, exit_cond: np.ndarray | None, stop_level: np.ndarray | None = None) -> Trades:
     o, h, lo, c = (panel.cols[k] for k in ("open", "high", "low", "close"))
     gend = panel.gend
     n = len(sig)
@@ -148,6 +150,9 @@ def _simulate(panel: Panel, sig: np.ndarray, spec: Spec, limit_price: np.ndarray
     fp = fill_price[:, None]
     tgt = fp * (1 + x.target_pct / 100.0) if x.target_pct is not None else None
     stp = fp * (1 - x.stop_pct / 100.0) if x.stop_pct is not None else None
+    if stop_level is not None:  # 가격으로 정한 손절선 (신호일 값)
+        lvl = stop_level[sig].astype(np.float64)[:, None]
+        stp = lvl if stp is None else np.maximum(stp, lvl)
     kind = fill_kind
 
     # 손절선(날마다): 고정 손절과 추적손절 중 높은 쪽
