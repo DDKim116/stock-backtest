@@ -9,6 +9,7 @@ import {
   LineSeries,
   LineStyle,
   type IChartApi,
+  type LogicalRange,
   type SeriesMarker,
   type Time,
 } from "lightweight-charts";
@@ -164,6 +165,13 @@ export default function TradeChart({
   const showBB = isDay && ind.bb;
   const showRSI = isDay && ind.rsi;
   const chartRef = useRef<IChartApi | null>(null);
+  // 사용자가 끌거나 확대한 보기. 실시간 봉 갱신으로 차트를 다시 그려도 그대로 둔다 (종목·봉 단위·기간이 바뀌면 처음 보기로)
+  const viewKey = `${trade.code}|${mode}|${span}`;
+  const keepView = useRef<{ key: string; range: LogicalRange } | null>(null);
+  const viewKeyRef = useRef(viewKey);
+  useEffect(() => {
+    viewKeyRef.current = viewKey;
+  }, [viewKey]);
 
   useEffect(() => {
     const end = trade.exit_date ?? trade.fill_date ?? trade.signal_date;
@@ -244,7 +252,7 @@ export default function TradeChart({
       },
       grid: { vertLines: { visible: false }, horzLines: { color: grid } },
       rightPriceScale: { borderVisible: false },
-      timeScale: { borderVisible: false, timeVisible: !isDay, secondsVisible: false },
+      timeScale: { borderVisible: false, timeVisible: !isDay, secondsVisible: false, rightOffset: 6 },
       localization: { locale: "ko-KR" },
     });
     const candles = chart.addSeries(CandlestickSeries, {
@@ -394,7 +402,20 @@ export default function TradeChart({
       setPinned(byTime.get(String(p.time)) ?? null);
       if (p.point && box.current) setPinLeft(p.point.x > box.current.clientWidth / 2);
     });
+    // 손으로 움직인 보기만 기억 (코드가 정한 보기는 range 효과에서 다시 정함)
+    let touched = false;
+    const mark = () => {
+      touched = true;
+    };
+    box.current.addEventListener("pointerdown", mark);
+    box.current.addEventListener("wheel", mark, { passive: true });
+    const el = box.current;
+    chart.timeScale().subscribeVisibleLogicalRangeChange((r) => {
+      if (touched && r) keepView.current = { key: viewKeyRef.current, range: r };
+    });
     return () => {
+      el.removeEventListener("pointerdown", mark);
+      el.removeEventListener("wheel", mark);
       chartRef.current = null;
       chart.remove();
     };
@@ -405,6 +426,12 @@ export default function TradeChart({
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart || !bars) return;
+    const kept = keepView.current;
+    if (kept && kept.key === viewKey) {
+      chart.timeScale().setVisibleLogicalRange(kept.range);
+      return;
+    }
+    keepView.current = null;
     if (!isDay) {
       chart.timeScale().fitContent();
       return;
@@ -412,8 +439,10 @@ export default function TradeChart({
     const idx = Math.max(0, bars.findIndex((b) => b.t >= trade.signal_date));
     const exitIdx = bars.findIndex((b) => b.t >= (trade.exit_date ?? trade.signal_date));
     const right = Math.min(bars.length - 1, Math.max(idx, exitIdx) + Math.max(10, Math.round(span * 0.12)));
-    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, right - span), to: right + 1 });
-  }, [bars, trade, span, ind, isDay]);
+    // 마지막 봉까지 보일 때는 오른쪽에 빈칸을 두어 매수가·목표·손절 표시에 봉이 가리지 않게
+    const pad = right === bars.length - 1 ? Math.max(6, Math.round(span * 0.08)) : 1;
+    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, right - span), to: right + pad });
+  }, [bars, trade, span, ind, isDay, viewKey]);
 
   const shown = hover ?? pinned ?? bars?.find((b) => b.t === trade.signal_date) ?? null;
 

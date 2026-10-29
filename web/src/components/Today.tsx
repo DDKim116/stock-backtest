@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { pct, retClass } from "@/lib/format";
-import { type AutoView, type Position as Pos, stratOf } from "@/lib/auto";
+import { type AutoView, pnlOf, type Position as Pos, stratOf, wonShort } from "@/lib/auto";
 import type { Spec, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
 import TradeChart from "./TradeChart";
@@ -310,7 +310,10 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "auto" | "paper
                     <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: color(p) }} />
                     {p.name} <span className="text-xs text-faint">{p.exit_reason} · {p.exit_date && md(p.exit_date)}</span>
                   </span>
-                  <span className={`tabular ${retClass(p.ret)}`}>{pct(p.ret, 2, true)}</span>
+                  <span className="tabular shrink-0 text-right">
+                    <span className={retClass(p.ret)}>{pct(p.ret, 2, true)}</span>{" "}
+                    <span className={`text-xs ${retClass(pnlOf(p))}`}>{wonShort(pnlOf(p))}</span>
+                  </span>
                 </button>
               ))}
             </div>

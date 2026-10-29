@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { type Account, asTrade, type AutoStrategy, type AutoView, entryLabel, man, md, type Plan, type Position, won } from "@/lib/auto";
+import { type Account, asTrade, pnlOf, wonShort, type AutoStrategy, type AutoView, entryLabel, man, md, type Plan, type Position, won } from "@/lib/auto";
 import { pct, retClass, today } from "@/lib/format";
 import type { Spec, Strategy, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
@@ -85,7 +85,9 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
   const first = v.strategies[0]?.id;
   const sid = (x: { strategy_id: number | null }) => x.strategy_id ?? first;
   const active = v.positions.filter((p) => p.status !== "closed");
-  const closed = v.positions.filter((p) => p.status === "closed").slice(0, 12);
+  const closedAll = v.positions.filter((p) => p.status === "closed");
+  const closed = closedAll.slice(0, 12);
+  const closedPnl = closedAll.reduce((a, p) => a + (pnlOf(p) ?? 0), 0);
   const waiting = v.plans.filter((p) => p.status === "proposed");
   const used = (id: number) =>
     active.filter((p) => sid(p) === id).reduce((a, p) => a + p.entry_price * (p.qty - (p.sold_qty ?? 0)), 0);
@@ -215,6 +217,10 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
               · 수익 {v.stats.win}건 · 평균 <span className={retClass(v.stats.avg)}>{pct(v.stats.avg, 2, true)}</span> (수수료·세금 전)
             </span>
           </div>
+          <div className="text-xs text-muted">
+            청산 손익 합계{" "}
+            <span className={`tabular font-semibold ${retClass(closedPnl)}`}>{wonShort(closedPnl)}</span> (직접 매도 포함 {closedAll.length}건, 수수료·세금 전)
+          </div>
           {v.stats_manual.n > 0 && (
             <div className="text-xs text-muted">
               직접 매도 {v.stats_manual.n}건 · 평균 <span className={retClass(v.stats_manual.avg)}>{pct(v.stats_manual.avg, 2, true)}</span> (백테스트 비교에서는 뺌)
@@ -235,7 +241,10 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
                     <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: color(sid(p)) }} />
                     {p.name} <span className="text-xs text-faint">{p.exit_reason} · {p.exit_date && md(p.exit_date)}</span>
                   </button>
-                  <span className={`tabular ${retClass(p.ret)}`}>{pct(p.ret, 2, true)}</span>
+                  <span className="tabular shrink-0 text-right">
+                    <span className={retClass(p.ret)}>{pct(p.ret, 2, true)}</span>
+                    <span className={`block text-xs ${retClass(pnlOf(p))}`}>{wonShort(pnlOf(p))}</span>
+                  </span>
                 </li>
               );
             })}

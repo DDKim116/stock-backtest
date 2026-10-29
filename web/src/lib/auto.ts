@@ -44,6 +44,7 @@ export interface Position {
   name: string;
   qty: number;
   sold_qty: number;
+  sold_amount: number;
   entry_date: string;
   entry_price: number;
   target_price: number;
@@ -76,6 +77,16 @@ export interface Account {
 
 export const won = (v: number | null | undefined) => (v == null ? "–" : `${Math.round(v).toLocaleString("ko-KR")}원`);
 export const man = (v: number) => `${Math.round(v / 10000).toLocaleString("ko-KR")}만`;
+// 청산 손익(원, 수수료·세금 전) = 판 금액 - 판 수량 × 매수가
+export const pnlOf = (p: { sold_amount: number; sold_qty: number; entry_price: number }) =>
+  p.sold_qty ? p.sold_amount - p.sold_qty * p.entry_price : null;
+// +12.3만 / -4,560원 처럼 짧게
+export const wonShort = (v: number | null) => {
+  if (v == null) return "–";
+  const sign = v > 0 ? "+" : v < 0 ? "-" : "";
+  const a = Math.abs(v);
+  return a >= 10_000 ? `${sign}${(a / 10_000).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}만` : `${sign}${Math.round(a).toLocaleString("ko-KR")}원`;
+};
 export const md = (d?: string | null) => (d ? `${+d.slice(5, 7)}/${+d.slice(8, 10)}` : "–");
 
 export function stratOf(v: AutoView, id: number | null | undefined): AutoStrategy | undefined {
