@@ -76,11 +76,18 @@ def run(dataset: str = "kr", log=print) -> Path:
         one(f"목표 {tg} / 저가 손절 / 갭 제외", make(target=tg))
     for hd in (3, 10):
         one(f"번트, 보유 {hd}일", make(target=2.5, hold=hd))
-    for label, spec, s, out, dist, _ in rows:
+    # % 손절로 막기 (저가 대신). 출루율이 손절 때문에 얼마나 떨어지는지가 관건
+    for tg in (2.5, 3.0):
+        for sp in (3, 4, 5, 6, 7):
+            one(f"목표 {tg} / 손절 {sp}% / 갭 제외", make(target=tg, stop=sp), low_stop=False)
+    one("목표 2.5 / 손절 5% 또는 저가 중 가까운 쪽", make(target=2.5, stop=5))
+    for label, spec, s, out, dist, low_stop in rows:
         n = max(1, sum(out.values()))
         L.append(ctx.line(label, s))
         L.append(f"  {'':<22} 목표 {out['tgt'] / n * 100:.0f}% · 손절 {out['stop'] / n * 100:.0f}% · 기간 만료 "
-                 f"{out['time'] / n * 100:.0f}%" + (f" · 매수가→손절선 거리 중간값 {dist:.1f}%" if dist else ""))
+                 f"{out['time'] / n * 100:.0f}%" + (f" · 매수가→손절선 거리 중간값 {dist:.1f}%" if dist and low_stop and spec.exit.stop_pct is None else "")
+                 + (f" · 본전 승률 약 {_breakeven(spec.exit.target_pct, spec.exit.stop_pct):.0f}%"
+                    if spec.exit.target_pct and spec.exit.stop_pct and not low_stop else ""))
     # 번트 연도별
     b = next(r for r in rows if r[0].startswith("번트 (목표 2.5"))
     sig = np.sort(_signals(runner, b[1]))
@@ -112,6 +119,12 @@ def run(dataset: str = "kr", log=print) -> Path:
     log("")
     log(report)
     return path
+
+
+def _breakeven(target: float, stop: float, cost: float = 0.23) -> float:
+    """목표 도달(+target-비용)과 손절(-stop-비용)만 있다고 볼 때 본전이 되는 목표 도달 비율(%)."""
+    win, lose = target - cost, stop + cost
+    return lose / (win + lose) * 100
 
 
 def _leg(runner, spec, stop_level) -> Leg:
