@@ -434,3 +434,14 @@ def test_size_pct_of_account(env):
     kw.balance = lambda mode: (_ for _ in ()).throw(RuntimeError("x"))
     x = a.settings()["strategies"][0]
     assert a.amount(x, a._equity(a.settings(), T(23, 20, 16))) == 5_000_000
+
+
+def test_disable_strategy_expires_pending(env):
+    a, kw, runner, sent = env
+    sid = a.settings()["strategies"][0]["id"]
+    runner.rows["2026-10-23"] = [{"code": "000001", "name": "가", "signal_date": "2026-10-23", "close": 10_000, "value": 1e9}]
+    a.tick(T(23, 20, 15))
+    assert a.plans("2026-10-26")[0]["status"] == "proposed"
+    a.set_strategy(sid, enabled=False)
+    p = a.plans("2026-10-26")[0]
+    assert p["status"] == "expired" and p["msg"] == "전략을 끔"

@@ -215,6 +215,9 @@ class Auto:
         if not 1 <= float(x["pct"]) <= 50 or x["max_per_trade"] < 100_000:
             raise ValueError("계좌 비율은 1~50%, 1회 최대 금액은 10만원 이상")
         self._save(s)
+        if enabled is False:  # 끈 전략의 아직 주문 안 한 후보는 정리 (이미 산 종목은 규칙대로 계속 판다)
+            self._x("""UPDATE at_plans SET status = 'expired', msg = '전략을 끔'
+                       WHERE strategy_id = ? AND status IN ('proposed', 'approved')""", (sid,))
         return x
 
     def amount(self, x: dict, equity: float | None) -> float:
