@@ -6,6 +6,7 @@
   python -m sbt.data.cli research --save 5          # 여러 전략 유형을 한꺼번에 돌려 순위 (약 10~30분)
   python -m sbt.data.cli research2                 # 2차: 급락 반등 정밀 점검 + 신고가 시장 필터
   python -m sbt.data.cli bear-test                  # 하락장 전략 후보 비교 (약세장 해 따로)
+  python -m sbt.data.cli bull-test                  # 상승장 전략 후보 비교 (강세장 해 따로)
   python -m sbt.data.cli breadth-test               # v2b 시장 하락 조건: 지수 vs 상승비율·동일가중 비교
   python -m sbt.data.cli recommend --save          # 지수 조건을 붙인 추천 전략 검증 + 전략 탭에 저장
   python -m sbt.data.cli rank                      # 하루 신호가 많을 때 고르는 순서 비교 (급락 반등 v2b, 하루 5종목·1회 500만원)
@@ -57,6 +58,8 @@ def main(argv: list[str] | None = None) -> None:
     rk.add_argument("--capital", default="50000000,100000000", help="자본(원), 쉼표로 여러 개")
     br = sub.add_parser("bear-test")
     br.add_argument("--dataset", default="kr")
+    bl = sub.add_parser("bull-test")
+    bl.add_argument("--dataset", default="kr")
     bt = sub.add_parser("breadth-test")
     bt.add_argument("--dataset", default="kr")
     rc = sub.add_parser("recommend")
@@ -124,9 +127,9 @@ def main(argv: list[str] | None = None) -> None:
     elif a.cmd == "rank":
         from .. import research4
         research4.run(a.dataset, a.per, a.daily, tuple(float(x) for x in a.capital.split(",") if x.strip()))
-    elif a.cmd == "bear-test":
+    elif a.cmd in ("bear-test", "bull-test"):
         from .. import research6
-        research6.run(a.dataset)
+        research6.run(a.dataset, "bear" if a.cmd == "bear-test" else "bull")
     elif a.cmd == "breadth-test":
         from .. import research5
         research5.run(a.dataset)
