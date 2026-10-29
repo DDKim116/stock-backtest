@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { pct, retClass } from "@/lib/format";
+import Concentration from "./Concentration";
 import IndexChart from "./IndexChart";
 
 interface MonthRet {
@@ -320,6 +321,13 @@ export default function Market() {
             </section>
           )}
         </>
+      )}
+
+      {sum && group === "kr" && <Concentration />}
+      {sum && group === "us" && (
+        <p className="rounded-xl border border-border bg-card p-3 text-xs text-muted">
+          시총 상위 종목 비중은 지금 한국만 됩니다. 미국 데이터에는 과거 시가총액(발행주식수)이 없어서, 정확히 하려면 다른 데이터가 필요합니다.
+        </p>
       )}
     </div>
   );

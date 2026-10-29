@@ -409,6 +409,25 @@ def krx_renewed():
     return {"remind_from": krx_status.set_renewed()}
 
 
+_CONC: dict[tuple, dict] = {}
+
+
+@app.get("/api/concentration", dependencies=[Depends(auth)])
+def get_concentration(market: str = "KOSPI", dataset: str = "kr"):
+    """시총 상위 종목 비중 (월말 기준 흐름, 연말 상위 10)."""
+    from .. import concentration
+
+    if market not in ("KOSPI", "KOSDAQ"):
+        raise HTTPException(422, "KOSPI 또는 KOSDAQ")
+    runner = loaded.get(dataset)
+    key = (id(runner), market)
+    if key not in _CONC:
+        if len(_CONC) > 8:
+            _CONC.clear()
+        _CONC[key] = concentration.analyze(runner.panel, market)
+    return _CONC[key]
+
+
 _IX_BARS: dict[str, tuple] = {}
 
 
