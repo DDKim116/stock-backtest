@@ -280,7 +280,7 @@ export default function App() {
         <h1 className="flex items-center gap-2 text-lg font-bold">
           {/* eslint-disable-next-line @next/next/no-img-element -- 정적 내보내기라 next/image 최적화를 못 씀 */}
           <img src="/icon-192.png" alt="" width={24} height={24} className="rounded-md" />
-          규칙대로
+          Autobull
         </h1>
         {datasets.length > 0 && ["run", "explore", "saved", "journal"].includes(tab) && (
           <select

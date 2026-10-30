@@ -1293,7 +1293,7 @@ def push_set_prefs(body: PushPrefsIn):
 def push_test():
     if not store.get_setting("push_subs", []):
         raise HTTPException(409, "알림을 켠 기기가 없습니다. 먼저 '이 기기에서 알림 켜기'를 누르세요.")
-    r = push.send(store, "규칙대로", "시험 알림입니다. 이렇게 신호와 모투 소식이 옵니다.", tab="more", tag="test")
+    r = push.send(store, "Autobull", "시험 알림입니다. 이렇게 신호와 모투 소식이 옵니다.", tab="more", tag="test")
     if not r["sent"]:
         raise HTTPException(502, "보내지 못했습니다: " + "; ".join(r["errors"] or ["기기 구독이 끝났습니다. 알림을 다시 켜 주세요."]))
     return r

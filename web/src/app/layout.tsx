@@ -2,10 +2,10 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "규칙대로",
+  title: "Autobull",
   description: "규칙대로 사고 규칙대로 판다 · 국내·미국 주식 검증과 자동 매매",
-  appleWebApp: { capable: true, title: "규칙대로", statusBarStyle: "default" },
-  icons: { icon: "/icon.svg", apple: "/apple-icon.png" },
+  appleWebApp: { capable: true, title: "Autobull", statusBarStyle: "default" },
+  icons: { icon: "/favicon.png", apple: "/apple-icon.png" },
 };
 
 export const viewport: Viewport = {
