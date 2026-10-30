@@ -104,8 +104,8 @@ rsi(3) <= 10
 ]
 
 
-def kospi_frame(panel: Panel) -> pd.DataFrame:
-    """코스피 보통주 행: 날짜·종목·일간 수익률·전날 시총·전달 말 순위."""
+def kospi_frame(panel: Panel, markets: tuple[str, ...] = ("KOSPI",)) -> pd.DataFrame:
+    """코스피(또는 markets) 보통주 행: 날짜·종목·일간 수익률·전날 시총·전달 말 순위(markets 안에서)."""
     p = panel
     close, cap = p.cols["close"], p.cols["mktcap"]
     prev = np.r_[np.nan, close[:-1]]
@@ -113,7 +113,7 @@ def kospi_frame(panel: Panel) -> pd.DataFrame:
     first = p.pos == 0
     prev[first] = np.nan
     prev_cap[first] = np.nan
-    m = (p.markets == "KOSPI") & ~p.is_preferred & ~p.is_spac & np.isfinite(cap) & (cap > 0)
+    m = np.isin(p.markets, markets) & ~p.is_preferred & ~p.is_spac & np.isfinite(cap) & (cap > 0)
     idx = np.flatnonzero(m)
     df = pd.DataFrame({"row": idx, "date": pd.DatetimeIndex(p.dates[idx]), "code": p.codes[idx].astype(str),
                        "ret": np.clip(close[idx] / prev[idx] - 1, -0.4, 0.4), "w": prev_cap[idx], "cap": cap[idx]})
