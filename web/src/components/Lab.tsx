@@ -169,6 +169,28 @@ function ReportView({ item, reports, onClose }: { item: Item; reports: Report[];
   const [text, setText] = useState<Record<string, string>>({});
   const [err, setErr] = useState<string | null>(null);
   const [wrap, setWrap] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // 결과 글 전체를 클립보드로 (Claude 에게 붙여 넣기 좋게 제목·결론도 위에)
+  const copy = async () => {
+    const body = text[name];
+    if (body == null) return;
+    const all = `[${item.title}] ${name}\n${body}`;
+    try {
+      await navigator.clipboard.writeText(all);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = all;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
 
   useEffect(() => {
     if (!name || text[name] != null) return;
@@ -190,6 +212,14 @@ function ReportView({ item, reports, onClose }: { item: Item; reports: Report[];
             ))}
           </select>
         )}
+        <button
+          type="button"
+          onClick={copy}
+          disabled={text[name] == null}
+          className={`rounded-lg border px-2.5 py-1.5 text-xs disabled:opacity-40 ${copied ? "border-good text-good" : "border-accent text-accent"}`}
+        >
+          {copied ? "복사됨" : "복사"}
+        </button>
         <button
           type="button"
           onClick={() => setWrap((w) => !w)}
