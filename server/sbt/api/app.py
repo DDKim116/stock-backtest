@@ -472,6 +472,40 @@ def get_concentration(market: str = "KOSPI", dataset: str = "kr"):
     return _CONC[key]
 
 
+# ---------------------------------------------------------------- 연구
+class LabRunIn(BaseModel):
+    cmd: str
+
+
+@app.get("/api/lab", dependencies=[Depends(auth)])
+def get_lab():
+    """연구 목록 (질문·결론·최근 결과)과 지금 돌고 있는 연구."""
+    from .. import lab
+
+    return lab.view()
+
+
+@app.get("/api/lab/report/{name}", dependencies=[Depends(auth)])
+def get_lab_report(name: str):
+    from .. import lab
+
+    text = lab.read(name)
+    if text is None:
+        raise HTTPException(404, "결과 파일이 없습니다")
+    return {"name": name, "text": text}
+
+
+@app.post("/api/lab/run", dependencies=[Depends(auth)])
+def run_lab(body: LabRunIn):
+    """서버 명령으로 연구를 다시 돌린다 (한 번에 하나)."""
+    from .. import lab
+
+    try:
+        return lab.start(body.cmd)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+
 _IX_BARS: dict[str, tuple] = {}
 
 
@@ -1259,7 +1293,7 @@ def push_set_prefs(body: PushPrefsIn):
 def push_test():
     if not store.get_setting("push_subs", []):
         raise HTTPException(409, "알림을 켠 기기가 없습니다. 먼저 '이 기기에서 알림 켜기'를 누르세요.")
-    r = push.send(store, "주식 검증기", "시험 알림입니다. 이렇게 신호와 모투 소식이 옵니다.", tab="more", tag="test")
+    r = push.send(store, "규칙대로", "시험 알림입니다. 이렇게 신호와 모투 소식이 옵니다.", tab="more", tag="test")
     if not r["sent"]:
         raise HTTPException(502, "보내지 못했습니다: " + "; ".join(r["errors"] or ["기기 구독이 끝났습니다. 알림을 다시 켜 주세요."]))
     return r

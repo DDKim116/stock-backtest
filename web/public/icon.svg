@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1b2a44"/>
+      <stop offset="1" stop-color="#0b0f16"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#e08a1e"/>
+      <stop offset="1" stop-color="#ffc062"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <!-- 규칙선: 일정한 간격의 눈금 (자) -->
+  <g stroke="#ffffff" stroke-opacity="0.24" stroke-width="6" stroke-linecap="round">
+    <line x1="120" y1="372" x2="392" y2="372"/>
+    <line x1="120" y1="352" x2="120" y2="372"/>
+    <line x1="188" y1="358" x2="188" y2="372"/>
+    <line x1="256" y1="352" x2="256" y2="372"/>
+    <line x1="324" y1="358" x2="324" y2="372"/>
+    <line x1="392" y1="352" x2="392" y2="372"/>
+  </g>
+  <!-- 오르는 봉 세 개 -->
+  <g fill="url(#gold)" stroke="#ffc062" stroke-width="8" stroke-linecap="round">
+    <line x1="170" y1="248" x2="170" y2="340"/>
+    <rect x="148" y="268" width="44" height="56" rx="8" stroke="none"/>
+    <line x1="256" y1="196" x2="256" y2="318"/>
+    <rect x="234" y="214" width="44" height="82" rx="8" stroke="none"/>
+    <line x1="342" y1="132" x2="342" y2="290"/>
+    <rect x="320" y="150" width="44" height="112" rx="8" stroke="none"/>
+  </g>
+  <!-- 꾸준히 오르는 선 -->
+  <path d="M124 300 L210 246 L296 196 L392 128" fill="none" stroke="#b5e655" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="392" cy="128" r="15" fill="#b5e655"/>
+</svg>

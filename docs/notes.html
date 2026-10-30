@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>주식 검증기 제작 노트</title>
+<title>규칙대로 제작 노트</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
@@ -189,7 +189,7 @@ footer { font-size: 0.8rem; color: var(--faint); border-top: 1px solid var(--lin
 
 <header>
   <span class="eyebrow">개인 투자 도구 · 제작 노트</span>
-  <h1>주식 검증기 제작 노트</h1>
+  <h1>규칙대로 제작 노트</h1>
   <p class="lede">조건식 하나로 2010년부터의 전 종목에서 "이 방법이 실제로 통했나"를 확인하고, 오늘 신호를 받아 모의 매매와 키움 모의투자 자동 매매까지 이어 가는 개인용 웹앱입니다. 지금까지 무엇을, 어떻게 만들었는지 정리했습니다.</p>
   <div class="facts">
     <span>기간 <b>2026-10-01 ~ 10-26</b></span>
@@ -347,6 +347,7 @@ footer { font-size: 0.8rem; color: var(--faint); border-top: 1px solid var(--lin
     <div class="d"><span class="date">10-26</span><ul><li>장중 실시간 감시: 고른 전략의 지정가 대기·보유 종목이 매수가·목표·손절에 닿으면 알림 (중간값 매수 전략용)</li></ul></div>
     <div class="d"><span class="date">10-27</span><ul><li>자동 매매 첫 주문: v2b 9종목 시가 체결 (키움 모의투자)</li><li>'지금 팔기' 버튼, 키움 앱에서 직접 판 것 알아채기(잔고 대조), 직접 매도는 통계 따로</li><li>신호 없는 날 '매수 후보 없음' 표시</li></ul></div>
     <div class="d"><span class="date">10-28</span><ul><li>새 화면: 시안 A(어두운 트레이딩 데스크) · IBM Plex Sans KR · 숫자 JetBrains Mono</li><li>메뉴 5개(오늘·검증·매매·시장·더보기)와 '오늘' 홈 화면</li><li>차트: 오늘 봉 실시간(20초), 1·5·15·30분봉</li><li>키움 잔고 조회 유량 변경(초당 3회) 대비 호출 간격 제한</li><li>자동 매매 여러 전략: 중간값 매수 추가 가능, 계좌 돈은 같이 쓰기, 전략별 색·1회 금액·하루 최대</li><li>중간값 지정가는 유효기간 동안 매일 아침 다시 주문 (며칠 전 신호라도 아직 안 닿았으면 후보, 전략을 추가하면 바로 후보 계산)</li><li>매매 탭: 키움 자동(실제 주문) · 앱 모의(계산만) · 실투</li><li>차트의 중간값 선을 라임색으로, 폴드 펼침 화면은 왼쪽 메뉴·두 단</li><li>시장 탭: 코스피·코스닥(미국 지수도) 일봉 차트, 요약 상자를 눌러 바꾸기</li><li>시장 탭: 시총 상위 1·5·10·30 종목 비중 흐름(코스피·코스닥, 2010~), 연말 상위 10</li><li>시장 폭: 상승비율·동일가중 지수(차트, 조건식에서도 사용)</li><li>키움 자동·앱 모의 보유 종목에 키움 현재가 기준 지금 수익률</li><li>기대치 vs 실제: 전략마다 모의투자 성적을 백테스트 기대치·정상 범위와 비교, 서버 명령 auto-report</li><li>자동 매매 1회 금액: 고정 또는 계좌 비율(복리, 1회 최대 금액 상한). 연구: 중간값 전략은 50가지 넘게 바꿔도 손해 → 끔, v2b는 계좌 10%·1회 최대 2천만 추천</li></ul></div>
+    <div class="d"><span class="date">10-30</span><ul><li>앱 이름을 '규칙대로'로, 새 아이콘(오르는 봉 + 꾸준한 선 + 자)</li><li>연구 탭(시장과 더보기 사이): 지금까지 돌린 시뮬레이션의 질문·결론·결과 파일, 지난 결과 골라 보기, 앱에서 다시 돌리기(한 번에 하나)</li><li>미국 연구: VOO 매일 적립·QQQ·무한매수법(us-test), QLD 매일 1만원(qld-test), QLD 5천원 + 비중 25% 상한(qld-rule) → QLD 5천 + 12월 리밸런싱</li><li>auto-report 결과도 파일로 저장(연구 탭에서 보기)</li></ul></div>
   </div>
 </section>
 

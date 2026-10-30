@@ -10,7 +10,7 @@ self.addEventListener("push", (e) => {
     d = { body: e.data ? e.data.text() : "" };
   }
   e.waitUntil(
-    self.registration.showNotification(d.title || "주식 검증기", {
+    self.registration.showNotification(d.title || "규칙대로", {
       body: d.body || "",
       icon: "/icon-192.png",
       tag: d.tag || undefined,

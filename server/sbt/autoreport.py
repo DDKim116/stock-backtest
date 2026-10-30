@@ -52,5 +52,8 @@ def run(dataset: str = "kr", log=print) -> str:
         L.append(f"  {p['exit_date']} {names.get(p['strategy_id'] or first, '?')[:8]:<8} {p['name'][:10]:<10} "
                  f"{p['exit_reason']:<8} {p['ret']:+.2f}%")
     report = "\n".join(L)
+    out = config.DATA_DIR / "research"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / f"auto-report-{dt.datetime.now().strftime('%Y%m%d-%H%M')}.txt").write_text(report)
     log(report)
     return report

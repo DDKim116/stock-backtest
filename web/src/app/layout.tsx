@@ -2,10 +2,10 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "주식 검증기",
-  description: "국내·미국 주식 일봉 백테스트",
-  appleWebApp: { capable: true, title: "주식 검증기", statusBarStyle: "default" },
-  icons: { icon: "/icon-192.png", apple: "/icon-192.png" },
+  title: "규칙대로",
+  description: "규칙대로 사고 규칙대로 판다 · 국내·미국 주식 검증과 자동 매매",
+  appleWebApp: { capable: true, title: "규칙대로", statusBarStyle: "default" },
+  icons: { icon: "/icon.svg", apple: "/apple-icon.png" },
 };
 
 export const viewport: Viewport = {
