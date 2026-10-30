@@ -6,6 +6,7 @@
   python -m sbt.data.cli research --save 5          # 여러 전략 유형을 한꺼번에 돌려 순위 (약 10~30분)
   python -m sbt.data.cli research2                 # 2차: 급락 반등 정밀 점검 + 신고가 시장 필터
   python -m sbt.data.cli auto-report                # 키움 모의투자 자동 매매 성적표 (기대치 vs 실제)
+  python -m sbt.data.cli qld-test                   # 미국: QLD(나스닥100 2배) 매일 1만원 적립, 시작 해마다 vs QQQ
   python -m sbt.data.cli us-test                    # 미국: VOO 매일 적립 · SPY/QQQ 월적립 · 무한매수법(TQQQ) 검증
   python -m sbt.data.cli size-test                  # v2b 1회 금액: 고정 vs 계좌 비율 (연 수익·낙폭·연속 손실·노는 돈)
   python -m sbt.data.cli bunt-test                  # 중간값 번트: 목표 +2.5%, 손절 = 장대양봉 저가, 갭상승 3%↑ 제외
@@ -65,6 +66,7 @@ def main(argv: list[str] | None = None) -> None:
     ar = sub.add_parser("auto-report")
     ar.add_argument("--dataset", default="kr")
     sub.add_parser("us-test")
+    sub.add_parser("qld-test")
     sz = sub.add_parser("size-test")
     sz.add_argument("--dataset", default="kr")
     bu = sub.add_parser("bunt-test")
@@ -152,6 +154,9 @@ def main(argv: list[str] | None = None) -> None:
     elif a.cmd == "us-test":
         from .. import research11
         research11.run()
+    elif a.cmd == "qld-test":
+        from .. import research12
+        research12.run()
     elif a.cmd == "size-test":
         from .. import research10
         research10.run(a.dataset)

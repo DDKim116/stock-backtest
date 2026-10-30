@@ -112,7 +112,8 @@ def dca(price: pd.Series, fx: pd.Series | None, start, end, amount_krw: float, e
     v = pd.Series(vals, index=p.index)
     peak = v.cummax()
     return {"paid": paid, "value": float(v.iloc[-1]), "ret": (v.iloc[-1] / paid - 1) * 100, "worst": worst * 100,
-            "mdd": float((v / peak - 1).min() * 100), "irr": _irr(p.index, buys, amount_krw, float(v.iloc[-1]))}
+            "mdd": float((v / peak - 1).min() * 100), "irr": _irr(p.index, buys, amount_krw, float(v.iloc[-1])),
+            "v": v}
 
 
 def _irr(days, buys, amt, final) -> float | None:
