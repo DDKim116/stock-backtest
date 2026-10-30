@@ -20,6 +20,9 @@ NAME_RE = re.compile(r"^([a-z0-9-]+?)-(\d{8}-\d{4})\.txt$")
 # 새 연구를 만들면 여기에 한 줄 추가. 결론은 결과를 같이 보고 정한 것.
 CATALOG: list[dict] = [
     # ---- 미장
+    {"cmd": "qld-dip", "prefix": "qld-dip", "area": "미장", "title": "QLD 폭락 때 더 사기",
+     "question": "QLD가 내 평단보다 떨어지면 1만·2만원으로 늘려 사면 회복 때 더 벌까? 그 돈을 VOO에 넣는 것보다 나을까?",
+     "conclusion": "결과를 보고 정해요.", "minutes": 1},
     {"cmd": "qld-rule", "prefix": "qld-rule", "area": "미장", "title": "QLD 5천원 + 비중 25% 상한",
      "question": "QLD를 조금 섞을 때 비중이 커지지 않게 막는 규칙은 무엇이 좋을까?",
      "conclusion": "새 돈만 VOO로 돌리기는 효과가 거의 없음. 1년에 한 번 25% 넘는 만큼 팔아 VOO로 옮기기가 거품 붕괴 때 "
@@ -33,6 +36,9 @@ CATALOG: list[dict] = [
      "conclusion": "VOO 매일 적립은 2010~2016 어느 해에 시작해도 10년 뒤 +91~171%. 월적립에서 QQQ가 S&P500을 매번 이김. "
                    "TQQQ·무한매수법은 낙폭이 −54~−100%로 크고 대부분 QQQ 보유보다 못함.", "minutes": 1},
     # ---- 국장
+    {"cmd": "box-test", "prefix": "box", "area": "국장", "title": "박스피 점검: 상위 100 vs 나머지",
+     "question": "최근 상승은 대형주만 오른 건가? 다시 박스피에 갇히면 어떤 전략이 통할까?",
+     "conclusion": "결과를 보고 정해요.", "minutes": 8},
     {"cmd": "auto-report", "prefix": "auto-report", "area": "국장", "title": "키움 모의투자 성적표",
      "question": "모의투자 실제 성적이 백테스트 기대치 범위 안에 있나?",
      "conclusion": "2주쯤마다 돌려 보기. 정상 범위 안이면 규칙대로 계속.", "minutes": 1},

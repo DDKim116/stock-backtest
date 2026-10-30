@@ -5,9 +5,11 @@
   python -m sbt.data.cli kr-update                 # 최근 며칠 갱신 + 빌드 (매일 자동 실행용)
   python -m sbt.data.cli research --save 5          # 여러 전략 유형을 한꺼번에 돌려 순위 (약 10~30분)
   python -m sbt.data.cli research2                 # 2차: 급락 반등 정밀 점검 + 신고가 시장 필터
+  python -m sbt.data.cli box-test                   # 박스피 점검: 코스피 시총 상위 100 vs 나머지, 박스장에서 통하는 전략
   python -m sbt.data.cli auto-report                # 키움 모의투자 자동 매매 성적표 (기대치 vs 실제)
   python -m sbt.data.cli qld-test                   # 미국: QLD(나스닥100 2배) 매일 1만원 적립, 시작 해마다 vs QQQ
   python -m sbt.data.cli qld-rule                   # 미국: QLD 5천원 + 비중 25% 상한 규칙 (VOO 1.5만 + QQQ 1만과 함께)
+  python -m sbt.data.cli qld-dip                    # 미국: QLD 가 평단보다 싸면 1만·2만으로 더 사기 vs 그 돈을 VOO 로
   python -m sbt.data.cli us-test                    # 미국: VOO 매일 적립 · SPY/QQQ 월적립 · 무한매수법(TQQQ) 검증
   python -m sbt.data.cli size-test                  # v2b 1회 금액: 고정 vs 계좌 비율 (연 수익·낙폭·연속 손실·노는 돈)
   python -m sbt.data.cli bunt-test                  # 중간값 번트: 목표 +2.5%, 손절 = 장대양봉 저가, 갭상승 3%↑ 제외
@@ -69,6 +71,9 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("us-test")
     sub.add_parser("qld-test")
     sub.add_parser("qld-rule")
+    sub.add_parser("qld-dip")
+    bx = sub.add_parser("box-test")
+    bx.add_argument("--dataset", default="kr")
     sz = sub.add_parser("size-test")
     sz.add_argument("--dataset", default="kr")
     bu = sub.add_parser("bunt-test")
@@ -162,6 +167,12 @@ def main(argv: list[str] | None = None) -> None:
     elif a.cmd == "qld-rule":
         from .. import research13
         research13.run()
+    elif a.cmd == "box-test":
+        from .. import research14
+        research14.run(a.dataset)
+    elif a.cmd == "qld-dip":
+        from .. import research13
+        research13.run_dip()
     elif a.cmd == "size-test":
         from .. import research10
         research10.run(a.dataset)
