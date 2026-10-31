@@ -8,6 +8,7 @@
   python -m sbt.data.cli dart-collect               # DART 재무(매출·영업이익·순이익) 2015~ 받기 (키는 앱 설정에서)
   python -m sbt.data.cli growth-test                # 매출 꾸준히 느는 코스피 상위 100 회사: 주가와의 관계, 언제 사고 팔지
   python -m sbt.data.cli profit-test                # 영업이익 증익·가속·흑자전환 공시 뒤 주가 (상위 100 / 101~300위)
+  python -m sbt.data.cli accel-plan                 # 실적 가속 중형주 계좌 다듬기 + v2b 와 같은 계좌 vs 따로
   python -m sbt.data.cli bull-plan                  # 대상승장 계좌: 코스피 200일선 · 주도주 + 종목 정리 규칙 · 섞기
   python -m sbt.data.cli leader-test                # v2b 대형주 빼기 · 대형주 신고가 더하기 · 주도주 계좌(코스피 상위 100 모멘텀)
   python -m sbt.data.cli box-test                   # 박스피 점검: 코스피 시총 상위 100 vs 나머지, 박스장에서 통하는 전략
@@ -83,6 +84,8 @@ def main(argv: list[str] | None = None) -> None:
     gt.add_argument("--dataset", default="kr")
     pt = sub.add_parser("profit-test")
     pt.add_argument("--dataset", default="kr")
+    ap = sub.add_parser("accel-plan")
+    ap.add_argument("--dataset", default="kr")
     bp = sub.add_parser("bull-plan")
     bp.add_argument("--dataset", default="kr")
     ld = sub.add_parser("leader-test")
@@ -191,6 +194,9 @@ def main(argv: list[str] | None = None) -> None:
     elif a.cmd == "profit-test":
         from .. import research18
         research18.run(a.dataset)
+    elif a.cmd == "accel-plan":
+        from .. import research19
+        research19.run(a.dataset)
     elif a.cmd == "bull-plan":
         from .. import research16
         research16.run(a.dataset)
