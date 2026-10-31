@@ -5,6 +5,8 @@
   python -m sbt.data.cli kr-update                 # 최근 며칠 갱신 + 빌드 (매일 자동 실행용)
   python -m sbt.data.cli research --save 5          # 여러 전략 유형을 한꺼번에 돌려 순위 (약 10~30분)
   python -m sbt.data.cli research2                 # 2차: 급락 반등 정밀 점검 + 신고가 시장 필터
+  python -m sbt.data.cli dart-collect               # DART 재무(매출·영업이익·순이익) 2015~ 받기 (키는 앱 설정에서)
+  python -m sbt.data.cli growth-test                # 매출 꾸준히 느는 코스피 상위 100 회사: 주가와의 관계, 언제 사고 팔지
   python -m sbt.data.cli bull-plan                  # 대상승장 계좌: 코스피 200일선 · 주도주 + 종목 정리 규칙 · 섞기
   python -m sbt.data.cli leader-test                # v2b 대형주 빼기 · 대형주 신고가 더하기 · 주도주 계좌(코스피 상위 100 모멘텀)
   python -m sbt.data.cli box-test                   # 박스피 점검: 코스피 시총 상위 100 vs 나머지, 박스장에서 통하는 전략
@@ -74,6 +76,10 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("qld-test")
     sub.add_parser("qld-rule")
     sub.add_parser("qld-dip")
+    dc = sub.add_parser("dart-collect")
+    dc.add_argument("--start", type=int, default=2015)
+    gt = sub.add_parser("growth-test")
+    gt.add_argument("--dataset", default="kr")
     bp = sub.add_parser("bull-plan")
     bp.add_argument("--dataset", default="kr")
     ld = sub.add_parser("leader-test")
@@ -173,6 +179,12 @@ def main(argv: list[str] | None = None) -> None:
     elif a.cmd == "qld-rule":
         from .. import research13
         research13.run()
+    elif a.cmd == "dart-collect":
+        from . import dart
+        dart.run_collect(a.start)
+    elif a.cmd == "growth-test":
+        from .. import research17
+        research17.run(a.dataset)
     elif a.cmd == "bull-plan":
         from .. import research16
         research16.run(a.dataset)

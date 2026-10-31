@@ -1408,6 +1408,47 @@ def _broker_view() -> dict:
     return {"ip": kiwoom.server_ip(), "kiwoom": kiwoom.view()}
 
 
+# ---------------------------------------------------------------- DART 재무 자료 (키 저장·확인)
+class DartKeyIn(BaseModel):
+    key: str
+
+
+@app.get("/api/dart", dependencies=[Depends(auth)])
+def dart_info():
+    from ..data import dart
+
+    return dart.view()
+
+
+@app.put("/api/dart", dependencies=[Depends(auth)])
+def dart_set_key(body: DartKeyIn):
+    from ..data import dart
+
+    try:
+        dart.set_key(body.key)
+    except dart.DartError as e:
+        raise HTTPException(422, str(e))
+    return dart.view()
+
+
+@app.delete("/api/dart", dependencies=[Depends(auth)])
+def dart_clear_key():
+    from ..data import dart
+
+    dart.clear_key()
+    return dart.view()
+
+
+@app.post("/api/dart/test", dependencies=[Depends(auth)])
+def dart_test():
+    from ..data import dart
+
+    try:
+        return {"ok": True, "message": dart.test()}
+    except Exception as e:  # 키 오류·연결 오류 모두 화면에 그대로
+        return {"ok": False, "message": str(e)}
+
+
 @app.get("/api/broker", dependencies=[Depends(auth)])
 def broker_info():
     return _broker_view()
