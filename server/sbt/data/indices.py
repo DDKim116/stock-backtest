@@ -52,6 +52,20 @@ def _save(key: str, s: pd.Series) -> None:
 
 
 # ---------------------------------------------------------------- 미국 (야후)
+def yahoo_close(ticker: str, start: str = US_START) -> pd.Series:
+    """야후 일별 종가 (날짜 인덱스)."""
+    import yfinance as yf
+
+    df = yf.download(ticker, start=start, auto_adjust=False, progress=False, threads=False)
+    if df is None or df.empty:
+        return pd.Series(dtype=float)
+    close = df["Close"]
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]
+    close.index = pd.to_datetime(close.index).tz_localize(None).normalize()
+    return close.dropna()
+
+
 def update_us(log=print) -> None:
     import yfinance as yf
 
@@ -172,6 +186,12 @@ def update(log=print) -> None:
         update_ohlc(log)
     except Exception as e:  # noqa: BLE001
         log(f"지수 일봉 갱신 실패: {e}")
+    try:
+        from .. import pulse
+
+        pulse.update_fear(log)
+    except Exception as e:  # noqa: BLE001
+        log(f"공포 지수 갱신 실패: {e}")
 
 
 # ---------------------------------------------------------------- 종목 데이터에 붙이기 (조건식의 '지수')

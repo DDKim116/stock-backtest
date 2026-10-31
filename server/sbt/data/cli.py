@@ -154,6 +154,8 @@ def main(argv: list[str] | None = None) -> None:
             indices.update_kr(config.KRX_API_KEY)
         except Exception as e:  # noqa: BLE001 — 지수는 실패해도 종목 갱신에는 영향 없음
             print(f"한국 지수: {e}")
+        from .. import pulse
+        pulse.update_fear()  # VIX·VKOSPI (실패해도 넘어감)
     elif a.cmd == "kr-build":
         build.build(config.dataset_dir("kr"))
     elif a.cmd == "us-collect":
@@ -168,6 +170,8 @@ def main(argv: list[str] | None = None) -> None:
             indices.update_us()
         except Exception as e:  # noqa: BLE001
             print(f"미국 지수 갱신 실패: {e}")
+        from .. import pulse
+        pulse.update_fear()
     elif a.cmd == "us-build":
         us.build(config.dataset_dir("us"))
     elif a.cmd == "rank":

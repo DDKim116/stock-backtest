@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { pct, retClass } from "@/lib/format";
 import Breadth from "./Breadth";
 import Concentration from "./Concentration";
+import Gauge from "./Gauge";
 import IndexChart from "./IndexChart";
 
 interface MonthRet {
@@ -113,6 +114,7 @@ export default function Market() {
 
   return (
     <div className="space-y-4">
+      <Gauge />
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-lg font-bold">지수 흐름</h2>
         <div className="flex rounded-lg border border-border p-0.5 text-sm">

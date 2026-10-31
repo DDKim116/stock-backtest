@@ -6,6 +6,7 @@ import { pct, retClass } from "@/lib/format";
 import { type AutoView, pnlOf, type Position as Pos, stratOf, wonShort } from "@/lib/auto";
 import type { Spec, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
+import MarketPulse from "./MarketPulse";
 import TradeChart from "./TradeChart";
 
 interface Quote {
@@ -328,6 +329,8 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "auto" | "paper
       )}
       </div>
       </div>
+
+      <MarketPulse />
 
       {chart && <TradeChart trade={chart.trade} spec={chart.spec} dataset="kr" currency="KRW" onClose={back.close} />}
     </div>

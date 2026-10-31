@@ -506,6 +506,43 @@ def run_lab(body: LabRunIn):
         raise HTTPException(409, str(e))
 
 
+# ---------------------------------------------------------------- 홈 공포 지수·시총 지도, 시장 계기판
+_PULSE: dict[tuple, dict] = {}
+
+
+def _pulse_cached(name: str, dataset: str, make):
+    from ..data import indices
+
+    runner = loaded.get(dataset)
+    files = [indices.path(k) for k in ("KOSPI", "VIX", "VKOSPI", "SP500")]
+    stamp = max((f.stat().st_mtime for f in files if f.exists()), default=0.0)
+    key = (name, id(runner), stamp)
+    if key not in _PULSE:
+        if len(_PULSE) > 12:
+            _PULSE.clear()
+        _PULSE[key] = make(runner)
+    return _PULSE[key]
+
+
+@app.get("/api/pulse", dependencies=[Depends(auth)])
+def get_pulse(dataset: str = "kr"):
+    """국장 공포·탐욕(우리 계산 + VKOSPI), 미장 VIX, 시총 지도(코스피 100 · 코스닥 50)."""
+    from .. import pulse
+
+    return _pulse_cached("pulse", dataset, lambda r: {
+        "kr": pulse.kr_fear(r.panel), "us": pulse.us_fear(),
+        "treemap": {"KOSPI": pulse.treemap(r.panel, "KOSPI", 100), "KOSDAQ": pulse.treemap(r.panel, "KOSDAQ", 50)},
+    })
+
+
+@app.get("/api/gauge", dependencies=[Depends(auth)])
+def get_gauge(dataset: str = "kr"):
+    """시장 계기판: 박스 정도·200일선·대형주 쏠림·시장 폭·v2b 최근 신호 (참고용)."""
+    from .. import pulse
+
+    return _pulse_cached("gauge", dataset, lambda r: pulse.gauge(r.panel, r))
+
+
 _IX_BARS: dict[str, tuple] = {}
 
 
