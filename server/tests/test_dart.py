@@ -38,3 +38,11 @@ def test_key_rules(tmp_path, monkeypatch):
     assert (tmp_path / "dart.json").stat().st_mode & 0o077 == 0
     dart.clear_key()
     assert not dart.view()["saved"]
+
+
+def test_missing_quarters_not_full_year():
+    rows = [{"stock_code": "000660", "corp_code": "x", "bsns_year": "2015", "reprt_code": "11011", "fs_div": "CFS",
+             "account_nm": "매출액", "thstrm_amount": "400", "thstrm_add_amount": "", "thstrm_dt": "2015.01.01 ~ 2015.12.31",
+             "rcept_no": "20160320000001"}]
+    q = dart.quarterly(dart.parse(rows))
+    assert len(q) == 1 and pd.isna(q["amount"].iloc[0]) and q["cum"].iloc[0] == 400  # 1년 매출은 남지만 4분기 금액은 모름

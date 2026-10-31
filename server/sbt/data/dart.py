@@ -240,16 +240,22 @@ def quarterly(raw: pd.DataFrame, which: tuple[str, ...] = REVENUE) -> pd.DataFra
     d = d.sort_values(["stock_code", "year", "q"])
     out = []
     for (code, year), g in d.groupby(["stock_code", "year"], sort=False):
-        prev_cum = 0.0
+        prev_cum, prev_q = 0.0, 0  # 바로 앞 분기 누적 (없으면 None)
         for _, r in g.iterrows():
-            c = r["cum"] if pd.notna(r["cum"]) else (prev_cum + r["amount"] if pd.notna(r["amount"]) else None)
-            if c is None or (r["q"] > 1 and prev_cum is None):
-                prev_cum = None
-                continue
-            amt = c - (prev_cum or 0.0)
-            out.append({"stock_code": code, "year": int(year), "q": int(r["q"]), "amount": amt, "cum": c,
-                        "rcept": pd.to_datetime(r["rcept"], format="%Y%m%d", errors="coerce")})
-            prev_cum = c
+            q = int(r["q"])
+            ok_prev = prev_q == q - 1 and prev_cum is not None
+            if pd.notna(r["cum"]):
+                c = r["cum"]
+            elif ok_prev and pd.notna(r["amount"]):
+                c = prev_cum + r["amount"]
+            else:
+                c = None
+            # 앞 분기가 빠졌으면 이 분기 3개월 금액은 모른다 (누적은 1년 매출 등으로 쓸 수 있게 남긴다)
+            amt = c - prev_cum if c is not None and ok_prev else None
+            if c is not None:
+                out.append({"stock_code": code, "year": int(year), "q": q, "amount": amt, "cum": c,
+                            "rcept": pd.to_datetime(r["rcept"], format="%Y%m%d", errors="coerce")})
+            prev_cum, prev_q = c, q
     return pd.DataFrame(out)
 
 
