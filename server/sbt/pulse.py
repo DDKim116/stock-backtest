@@ -247,3 +247,66 @@ def gauge(panel, runner) -> dict:
         "v2b": {"signals": n_sig, "days": sig_days},
         "hints": [{"who": w, "text": t} for w, t in hints],
     }
+
+
+# ---------------------------------------------------------------- 미국 시총 지도 (미국 갱신 때 만들어 둔다)
+ETF_WORDS = ("ETF", "ETN", "Fund", "iShares", "SPDR", "ProShares", "Direxion", "Vanguard", "Invesco", "Index",
+             "Portfolio", "Notes", "Warrant", "Preferred", "Bitcoin Trust", "Ether")
+
+
+def _us_map_path():
+    return config.DATA_DIR / "us_map.json"
+
+
+def build_us_map(root, top: int = 100, log=print) -> None:
+    """미국 종목 중 최근 거래대금이 큰 250개의 주식 수(야후, 1주일에 한 번)로 시가총액을 내고 상위 top 개 지도를 저장.
+    과거 시가총액은 없어도 지도에는 지금 값만 있으면 된다."""
+    import json
+
+    p = root / "prices.parquet"
+    if not p.exists():
+        return
+    df = pd.read_parquet(p, columns=["date", "code", "name", "close", "value"])
+    last = df["date"].max()
+    df = df[df["date"] >= last - pd.Timedelta(days=45)]
+    names = df.drop_duplicates("code", keep="last").set_index("code")["name"].astype(str)
+    stock = ~names.str.contains("|".join(ETF_WORDS), case=False, regex=True)
+    vol = df[df["date"] >= last - pd.Timedelta(days=30)].groupby("code")["value"].mean()
+    cand = vol[vol.index.isin(names[stock].index)].nlargest(250).index.tolist()
+    sp = config.DATA_DIR / "us_shares.json"
+    cache = json.loads(sp.read_text()) if sp.exists() else {}
+    fresh = cache.get("_updated") and (dt.date.today() - dt.date.fromisoformat(cache["_updated"])).days < 7
+    if not fresh or any(c not in cache for c in cand[:150]):
+        import yfinance as yf
+
+        for c in cand:
+            if fresh and c in cache:
+                continue
+            try:
+                sh = yf.Ticker(c).fast_info["shares"]
+                if sh:
+                    cache[c] = float(sh)
+            except Exception:  # noqa: BLE001
+                continue
+        cache["_updated"] = dt.date.today().isoformat()
+        sp.write_text(json.dumps(cache))
+    piv = df[df["code"].isin(cand)].pivot_table(index="date", columns="code", values="close").sort_index()
+    items = []
+    for c in cand:
+        if c not in cache or c not in piv or not np.isfinite(piv[c].iloc[-1]):
+            continue
+        s = piv[c].dropna()
+        ch = {k: (round(float(s.iloc[-1] / s.iloc[-1 - n] - 1) * 100, 2) if len(s) > n else None)
+              for k, n in (("d1", 1), ("w1", 5), ("m1", 20))}
+        items.append({"code": c, "name": names.get(c, c), "cap": float(cache[c] * s.iloc[-1]), **ch})
+    items.sort(key=lambda x: -x["cap"])
+    out = {"market": "US", "as_of": str(pd.Timestamp(last).date()), "items": items[:top], "currency": "USD"}
+    _us_map_path().write_text(json.dumps(out, ensure_ascii=False))
+    log(f"미국 시총 지도: {len(out['items'])}종목 · {out['as_of']}")
+
+
+def us_map() -> dict:
+    import json
+
+    p = _us_map_path()
+    return json.loads(p.read_text()) if p.exists() else {"market": "US", "items": []}

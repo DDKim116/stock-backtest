@@ -514,7 +514,7 @@ def _pulse_cached(name: str, dataset: str, make):
     from ..data import indices
 
     runner = loaded.get(dataset)
-    files = [indices.path(k) for k in ("KOSPI", "VIX", "VKOSPI", "SP500")]
+    files = [indices.path(k) for k in ("KOSPI", "VIX", "VKOSPI", "SP500")] + [config.DATA_DIR / "us_map.json"]
     stamp = max((f.stat().st_mtime for f in files if f.exists()), default=0.0)
     key = (name, id(runner), stamp)
     if key not in _PULSE:
@@ -531,7 +531,8 @@ def get_pulse(dataset: str = "kr"):
 
     return _pulse_cached("pulse", dataset, lambda r: {
         "kr": pulse.kr_fear(r.panel), "us": pulse.us_fear(),
-        "treemap": {"KOSPI": pulse.treemap(r.panel, "KOSPI", 100), "KOSDAQ": pulse.treemap(r.panel, "KOSDAQ", 50)},
+        "treemap": {"KOSPI": pulse.treemap(r.panel, "KOSPI", 100), "KOSDAQ": pulse.treemap(r.panel, "KOSDAQ", 50),
+                    "US": pulse.us_map()},
     })
 
 

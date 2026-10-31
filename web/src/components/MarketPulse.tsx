@@ -36,9 +36,11 @@ interface Tile {
 interface Pulse {
   kr: KrFear;
   us: UsFear;
-  treemap: Record<"KOSPI" | "KOSDAQ", { as_of?: string; items: Tile[] }>;
+  treemap: Record<Mkt, { as_of?: string; items: Tile[] } | undefined>;
 }
 
+type Mkt = "KOSPI" | "KOSDAQ" | "US";
+const MKT_LABEL: Record<Mkt, string> = { KOSPI: "코스피", KOSDAQ: "코스닥", US: "미국" };
 const md = (d?: string) => (d ? `${+d.slice(5, 7)}/${+d.slice(8, 10)}` : "");
 const sign = (v: number, nd = 1) => `${v > 0 ? "+" : ""}${v.toFixed(nd)}`;
 
@@ -249,9 +251,15 @@ function tileColor(v: number | null, period: Period): string {
   return `color-mix(in srgb, ${v >= 0 ? "var(--up)" : "var(--down)"} ${pct}%, var(--card))`;
 }
 
+const COUNTS = [30, 50, 100];
+const usd = (v: number) => (v >= 1e12 ? `$${(v / 1e12).toFixed(2)}T` : `$${Math.round(v / 1e9).toLocaleString("en-US")}B`);
+const jo = (won: number) => (won >= 1e12 ? `${(won / 1e12).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}조` : `${Math.round(won / 1e8).toLocaleString("ko-KR")}억`);
+
 function Treemap({ data }: { data: Pulse["treemap"] }) {
-  const [market, setMarket] = useState<"KOSPI" | "KOSDAQ">("KOSPI");
+  const [market, setMarket] = useState<Mkt>("KOSPI");
   const [period, setPeriod] = useState<Period>("d1");
+  const [count, setCount] = useState(50);
+  const [pick, setPick] = useState<Tile | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const [W, setW] = useState(0);
 
@@ -265,23 +273,39 @@ function Treemap({ data }: { data: Pulse["treemap"] }) {
 
   const H = Math.round(Math.min(560, Math.max(320, W * 0.75)));
   const d = data[market];
-  const rects = useMemo(() => squarify(d?.items ?? [], W, H), [d, W, H]);
+  const items = useMemo(() => (d?.items ?? []).slice(0, count), [d, count]);
+  const rects = useMemo(() => squarify(items, W, H), [items, W, H]);
+  const sel = pick && items.find((t) => t.code === pick.code);
 
   return (
     <section className="space-y-2 rounded-xl border border-border bg-card p-3">
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
         <span className="text-muted">
-          시총 지도 · {market === "KOSPI" ? "코스피 상위 100" : "코스닥 상위 50"} {d?.as_of && `· ${md(d.as_of)} 종가`}
+          시총 지도 · {MKT_LABEL[market]} 상위 {Math.min(count, d?.items.length ?? 0)} {d?.as_of && `· ${md(d.as_of)} 종가`}
         </span>
-        <span className="flex gap-1">
-          {(["KOSPI", "KOSDAQ"] as const).map((m) => (
+        <span className="flex flex-wrap gap-1">
+          {(["KOSPI", "KOSDAQ", "US"] as const).map((m) => (data[m]?.items.length ?? 0) > 0 && (
             <button
               key={m}
               type="button"
-              onClick={() => setMarket(m)}
-              className={`rounded-md px-2 py-0.5 ${market === m ? "bg-accent text-on-accent" : "border border-border text-muted"}`}
+              onClick={() => {
+                setMarket(m);
+                setPick(null);
+              }}
+              className={`whitespace-nowrap rounded-md px-2 py-0.5 ${market === m ? "bg-accent text-on-accent" : "border border-border text-muted"}`}
             >
-              {m === "KOSPI" ? "코스피" : "코스닥"}
+              {MKT_LABEL[m]}
+            </button>
+          ))}
+          <span className="w-1" />
+          {COUNTS.map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => setCount(n)}
+              className={`whitespace-nowrap rounded-md px-2 py-0.5 ${count === n ? "bg-accent text-on-accent" : "border border-border text-muted"}`}
+            >
+              {n}
             </button>
           ))}
           <span className="w-1" />
@@ -290,35 +314,60 @@ function Treemap({ data }: { data: Pulse["treemap"] }) {
               key={k}
               type="button"
               onClick={() => setPeriod(k)}
-              className={`rounded-md px-2 py-0.5 ${period === k ? "bg-accent text-on-accent" : "border border-border text-muted"}`}
+              className={`whitespace-nowrap rounded-md px-2 py-0.5 ${period === k ? "bg-accent text-on-accent" : "border border-border text-muted"}`}
             >
               {label}
             </button>
           ))}
         </span>
       </div>
+      <div className="flex min-h-9 items-center justify-between gap-2 rounded-lg bg-background px-3 py-1.5 text-sm">
+        {sel ? (
+          <>
+            <span className="min-w-0 truncate font-semibold">{market === "US" ? `${sel.code} · ${sel.name.split(" - ")[0]}` : sel.name}</span>
+            <span className="tabular flex shrink-0 gap-2 text-xs">
+              {PERIODS.map(([k, label]) => {
+                const v = sel[k];
+                return (
+                  <span key={k} className={k === period ? "font-semibold" : "text-muted"}>
+                    {label} <span className={v == null ? "" : v >= 0 ? "text-up" : "text-down"}>{v == null ? "–" : `${sign(v, 1)}%`}</span>
+                  </span>
+                );
+              })}
+              <span className="text-faint">{market === "US" ? usd(sel.cap) : jo(sel.cap)}</span>
+            </span>
+          </>
+        ) : (
+          <span className="text-xs text-faint">네모를 누르면 종목 이름과 등락이 여기에 나와요</span>
+        )}
+      </div>
       <div ref={box} className="relative w-full overflow-hidden rounded-lg" style={{ height: H }}>
         {rects.map((r) => {
           const v = r.t[period];
           const big = r.w > 46 && r.h > 30;
+          const mid = !big && r.w > 30 && r.h > 16;
+          const on = sel?.code === r.t.code;
           return (
-            <div
+            <button
+              type="button"
               key={r.t.code}
+              onClick={() => setPick(on ? null : r.t)}
               title={`${r.t.name} ${v == null ? "–" : sign(v, 2) + "%"}`}
-              className="absolute flex flex-col items-center justify-center overflow-hidden border border-background text-center leading-tight"
+              className={`absolute flex flex-col items-center justify-center overflow-hidden border text-center leading-tight ${on ? "z-10 border-2 border-foreground" : "border-background"}`}
               style={{ left: r.x, top: r.y, width: r.w, height: r.h, background: tileColor(v, period) }}
             >
+              {mid && <span className="tabular text-[9px]">{v == null ? "–" : `${sign(v, 1)}`}</span>}
               {big && (
                 <>
                   <span className="max-w-full truncate px-0.5 font-medium" style={{ fontSize: Math.min(15, Math.max(9, Math.sqrt(r.w * r.h) / 7)) }}>
-                    {r.t.name}
+                    {market === "US" ? r.t.code : r.t.name}
                   </span>
                   <span className="tabular" style={{ fontSize: Math.min(13, Math.max(8, Math.sqrt(r.w * r.h) / 8)) }}>
                     {v == null ? "–" : `${sign(v, 1)}%`}
                   </span>
                 </>
               )}
-            </div>
+            </button>
           );
         })}
       </div>

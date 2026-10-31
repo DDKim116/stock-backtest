@@ -16,6 +16,7 @@
   python -m sbt.data.cli qld-test                   # 미국: QLD(나스닥100 2배) 매일 1만원 적립, 시작 해마다 vs QQQ
   python -m sbt.data.cli qld-rule                   # 미국: QLD 5천원 + 비중 25% 상한 규칙 (VOO 1.5만 + QQQ 1만과 함께)
   python -m sbt.data.cli qld-dip                    # 미국: QLD 가 평단보다 싸면 1만·2만으로 더 사기 vs 그 돈을 VOO 로
+  python -m sbt.data.cli us-map                     # 미국 시총 지도 만들기 (평소엔 us-update 때 자동)
   python -m sbt.data.cli us-test                    # 미국: VOO 매일 적립 · SPY/QQQ 월적립 · 무한매수법(TQQQ) 검증
   python -m sbt.data.cli size-test                  # v2b 1회 금액: 고정 vs 계좌 비율 (연 수익·낙폭·연속 손실·노는 돈)
   python -m sbt.data.cli bunt-test                  # 중간값 번트: 목표 +2.5%, 손절 = 장대양봉 저가, 갭상승 3%↑ 제외
@@ -75,6 +76,7 @@ def main(argv: list[str] | None = None) -> None:
     ar = sub.add_parser("auto-report")
     ar.add_argument("--dataset", default="kr")
     sub.add_parser("us-test")
+    sub.add_parser("us-map")
     sub.add_parser("qld-test")
     sub.add_parser("qld-rule")
     sub.add_parser("qld-dip")
@@ -172,6 +174,10 @@ def main(argv: list[str] | None = None) -> None:
             print(f"미국 지수 갱신 실패: {e}")
         from .. import pulse
         pulse.update_fear()
+        try:
+            pulse.build_us_map(root)
+        except Exception as e:  # noqa: BLE001
+            print(f"미국 시총 지도 실패: {e}")
     elif a.cmd == "us-build":
         us.build(config.dataset_dir("us"))
     elif a.cmd == "rank":
@@ -180,6 +186,9 @@ def main(argv: list[str] | None = None) -> None:
     elif a.cmd == "auto-report":
         from .. import autoreport
         autoreport.run(a.dataset)
+    elif a.cmd == "us-map":
+        from .. import pulse
+        pulse.build_us_map(config.dataset_dir("us"))
     elif a.cmd == "us-test":
         from .. import research11
         research11.run()
