@@ -313,37 +313,51 @@ def us_map() -> dict:
     return json.loads(p.read_text()) if p.exists() else {"market": "US", "items": []}
 
 
+def _hist(s, years: int = 20, step: int = 1) -> dict:
+    """지난 years 년 달마다 값(그림용)과 그 안에서 지금 위치."""
+    import pandas as pd
+
+    s = s.dropna()
+    s = s[s.index >= s.index[-1] - pd.DateOffset(years=years)]
+    m = s.groupby(s.index.to_period("M")).last()
+    m = m.iloc[::-1].iloc[::step].iloc[::-1]
+    v = float(s.iloc[-1])
+    return {"now": round(v, 3), "min": round(float(s.min()), 3), "max": round(float(s.max()), 3),
+            "avg": round(float(s.mean()), 3), "pct": round(float((s < v).mean() * 100)),
+            "start": str(m.index[0]), "spark": [round(float(x), 3) for x in m.to_numpy()]}
+
+
 def macro_status() -> list[dict]:
-    """계기판 '경제' 줄 (FRED 자료가 있을 때만)."""
+    """계기판 '경제' 줄 (FRED 자료가 있을 때만). hist = 지난 20년 그림·위치."""
     from .data import fred
 
     rows = []
     t2 = fred.load("T10Y2Y")
     if t2 is not None and len(t2):
         v = float(t2.iloc[-1])
-        rows.append({"label": "장단기 금리차", "value": f"{v:+.2f}%p", "alert": v < 0,
+        rows.append({"id": "t10y2y", "hist": _hist(t2), "ref": 0, "label": "장단기 금리차", "value": f"{v:+.2f}%p", "alert": v < 0,
                      "note": f"10년-2년 · {'역전 — 과거엔 1~2년 안에 침체가 온 경우가 많음' if v < 0 else '정상'}"})
     baa = fred.load("BAA10Y")
     if baa is not None and len(baa) > 252:
         z = (baa.iloc[-1] - baa.iloc[-252:].mean()) / baa.iloc[-252:].std()
-        rows.append({"label": "신용 스프레드", "value": f"{baa.iloc[-1]:.2f}%p", "alert": bool(z > 1),
+        rows.append({"id": "baa", "hist": _hist(baa), "ref": None, "label": "신용 스프레드", "value": f"{baa.iloc[-1]:.2f}%p", "alert": bool(z > 1),
                      "note": f"Baa 회사채-10년물 · 1년 평균보다 {z:+.1f}표준편차 · {'긴장' if z > 1 else '평소'}"})
     un = fred.load("UNRATE")
     if un is not None and len(un) > 15:
         a3 = un.rolling(3).mean()
         sahm = float(a3.iloc[-1] - a3.iloc[-13:-1].min())
-        rows.append({"label": "실업률", "value": f"{un.iloc[-1]:.1f}%", "alert": sahm >= 0.5,
+        rows.append({"id": "unrate", "hist": _hist(un), "ref": None, "label": "실업률", "value": f"{un.iloc[-1]:.1f}%", "alert": sahm >= 0.5,
                      "note": f"{un.index[-1].strftime('%Y-%m')} · 1년 저점 대비 {sahm:+.2f}%p ({'0.5 넘음 — 침체 경고' if sahm >= 0.5 else '안정'})"})
     dff = fred.load("DFF")
     if dff is not None and len(dff) > 200:
         ch = float(dff.iloc[-1] - dff.iloc[-182 if len(dff) > 182 else 0])
         state = "인상기" if ch >= 0.5 else "인하기" if ch <= -0.5 else "유지"
-        rows.append({"label": "기준금리", "value": f"{dff.iloc[-1]:.2f}%", "alert": ch >= 0.5,
+        rows.append({"id": "dff", "hist": _hist(dff), "ref": None, "label": "기준금리", "value": f"{dff.iloc[-1]:.2f}%", "alert": ch >= 0.5,
                      "note": f"미국 · 6개월 새 {ch:+.2f}%p → {state}"})
     kr = fred.load("DEXKOUS")
     if kr is not None and len(kr) > 70:
         ch = float(kr.iloc[-1] / kr.iloc[-64] - 1) * 100
-        rows.append({"label": "원/달러", "value": f"{kr.iloc[-1]:,.0f}원", "alert": ch >= 5,
+        rows.append({"id": "krw", "hist": _hist(kr), "ref": None, "label": "원/달러", "value": f"{kr.iloc[-1]:,.0f}원", "alert": ch >= 5,
                      "note": f"{kr.index[-1].strftime('%m/%d')} · 3개월 {ch:+.1f}% ({'원화 약세 — 외국인 매도 압력' if ch >= 5 else '원화 강세' if ch <= -5 else '보통'})"})
     return rows
 
