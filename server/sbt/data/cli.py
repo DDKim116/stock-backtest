@@ -8,6 +8,10 @@
   python -m sbt.data.cli dart-collect               # DART 재무(매출·영업이익·순이익) 2015~ 받기 (키는 앱 설정에서)
   python -m sbt.data.cli growth-test                # 매출 꾸준히 느는 코스피 상위 100 회사: 주가와의 관계, 언제 사고 팔지
   python -m sbt.data.cli profit-test                # 영업이익 증익·가속·흑자전환 공시 뒤 주가 (상위 100 / 101~300위)
+  python -m sbt.data.cli dart-events               # DART 공시 사건(자사주 매입·임원·주요주주 매매·잠정 실적) 받기, 이어받기
+  python -m sbt.data.cli disclosure-test            # 자사주 매입·임원 매수 공시 뒤에 사면 주가가 더 갈까
+  python -m sbt.data.cli accel-fast                 # 실적 가속을 잠정 실적 공시 날에 사면 얼마나 나아질까
+  python -m sbt.data.cli us-v2b                     # 미국판 v2b (미국 전 종목, 생존 편향 주의) + 국장 v2b 와의 관계
   python -m sbt.data.cli accel-plan                 # 실적 가속 중형주 계좌 다듬기 + v2b 와 같은 계좌 vs 따로
   python -m sbt.data.cli bull-plan                  # 대상승장 계좌: 코스피 200일선 · 주도주 + 종목 정리 규칙 · 섞기
   python -m sbt.data.cli leader-test                # v2b 대형주 빼기 · 대형주 신고가 더하기 · 주도주 계좌(코스피 상위 100 모멘텀)
@@ -94,6 +98,12 @@ def main(argv: list[str] | None = None) -> None:
     gt.add_argument("--dataset", default="kr")
     pt = sub.add_parser("profit-test")
     pt.add_argument("--dataset", default="kr")
+    sub.add_parser("dart-events")
+    sub.add_parser("us-v2b")
+    dt_ = sub.add_parser("disclosure-test")
+    dt_.add_argument("--dataset", default="kr")
+    af = sub.add_parser("accel-fast")
+    af.add_argument("--dataset", default="kr")
     acp = sub.add_parser("accel-plan")
     acp.add_argument("--dataset", default="kr")
     bp = sub.add_parser("bull-plan")
@@ -233,6 +243,18 @@ def main(argv: list[str] | None = None) -> None:
     elif a.cmd == "profit-test":
         from .. import research18
         research18.run(a.dataset)
+    elif a.cmd == "dart-events":
+        from . import dart_events
+        dart_events.run_collect()
+    elif a.cmd == "us-v2b":
+        from .. import research23
+        research23.run()
+    elif a.cmd == "disclosure-test":
+        from .. import research24
+        research24.run(a.dataset)
+    elif a.cmd == "accel-fast":
+        from .. import research25
+        research25.run(a.dataset)
     elif a.cmd == "accel-plan":
         from .. import research19
         research19.run(a.dataset)
