@@ -42,7 +42,7 @@ function avg(a: (number | null)[], i: number, n: number): number | null {
 }
 
 // 시장 탭: 지수(시총 가중) vs 동일가중 지수, 상승비율 — 대형주만 오르는 장인지 본다
-export default function Breadth() {
+export default function Breadth({ bare = false }: { bare?: boolean }) {
   const [market, setMarket] = useState("KOSPI");
   const [span, setSpan] = useState(250);
   const [data, setData] = useState<Record<string, Data>>({});
@@ -120,9 +120,9 @@ export default function Breadth() {
   const a20 = d ? avg(d.adv, last, 20) : null;
 
   return (
-    <section className="space-y-3 rounded-xl border border-border bg-card p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-semibold">시장 폭 · 지수 vs 종목 전체</h3>
+    <section className={bare ? "space-y-3" : "space-y-3 rounded-xl border border-border bg-card p-3"}>
+      <div className={`flex flex-wrap items-center gap-2 ${bare ? "justify-end" : "justify-between"}`}>
+        {!bare && <h3 className="font-semibold">시장 폭 · 지수 vs 종목 전체</h3>}
         <div className="flex rounded-lg border border-border p-0.5 text-xs">
           {MARKETS.map(([k, l]) => (
             <button

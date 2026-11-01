@@ -19,7 +19,7 @@ interface GaugeData {
 const sign = (v: number, nd = 1) => `${v > 0 ? "+" : ""}${v.toFixed(nd)}`;
 
 // 시장 탭: 지금 코스피 모습 (박스·추세·쏠림·폭·v2b) — 참고용, 규칙을 바꾸지 않는다
-export default function Gauge() {
+export default function Gauge({ bare = false }: { bare?: boolean }) {
   const [g, setG] = useState<GaugeData | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -65,9 +65,9 @@ export default function Gauge() {
     rows.push({ label: "v2b 신호", value: `${g.v2b.signals}건`, note: `최근 20거래일 · ${g.v2b.days}일에 나옴` });
 
   return (
-    <section className="space-y-3 rounded-xl border border-border bg-card p-4">
+    <section className={bare ? "space-y-3" : "space-y-3 rounded-xl border border-border bg-card p-4"}>
       <div className="flex items-baseline justify-between">
-        <h2 className="text-lg font-bold">시장 계기판</h2>
+        {!bare && <h2 className="text-lg font-bold">시장 계기판</h2>}
         <span className="tabular text-xs text-muted">{g.as_of} · 코스피</span>
       </div>
       <div className="divide-y divide-border">

@@ -43,7 +43,7 @@ function cssVar(name: string): string {
 }
 
 // 시장 탭: 시총 상위 종목이 시장 전체에서 차지하는 비율의 흐름
-export default function Concentration() {
+export default function Concentration({ bare = false }: { bare?: boolean }) {
   const [market, setMarket] = useState("KOSPI");
   const [data, setData] = useState<Record<string, Data>>({});
   const [err, setErr] = useState<string | null>(null);
@@ -92,9 +92,9 @@ export default function Concentration() {
   const first = months?.[0];
 
   return (
-    <section className="space-y-3 rounded-xl border border-border bg-card p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-semibold">시총 상위 종목 비중</h3>
+    <section className={bare ? "space-y-3" : "space-y-3 rounded-xl border border-border bg-card p-3"}>
+      <div className={`flex flex-wrap items-center gap-2 ${bare ? "justify-end" : "justify-between"}`}>
+        {!bare && <h3 className="font-semibold">시총 상위 종목 비중</h3>}
         <div className="flex rounded-lg border border-border p-0.5 text-xs">
           {MARKETS.map(([k, l]) => (
             <button

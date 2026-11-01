@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { pct, retClass } from "@/lib/format";
 import Breadth from "./Breadth";
 import Concentration from "./Concentration";
+import Fold from "./Fold";
 import Gauge from "./Gauge";
 import IndexChart from "./IndexChart";
 
@@ -113,10 +114,9 @@ export default function Market() {
   const chartIdx = shown.find((x) => x.key === chartKey) ?? shown[0];
 
   return (
-    <div className="space-y-4">
-      <Gauge />
+    <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-lg font-bold">지수 흐름</h2>
+        <h2 className="text-lg font-bold">시장</h2>
         <div className="flex rounded-lg border border-border p-0.5 text-sm">
           {GROUPS.map((g) => (
             <button
@@ -158,6 +158,7 @@ export default function Market() {
 
       {avail.length > 0 && (
         <>
+          <Fold id="index" title="지수 흐름" sub={avail.map((x) => x.name).join(" · ") + " 일봉"} defaultOpen>
           {/* 나란히 / 하나만 */}
           {avail.length > 1 && (
             <div className="flex gap-1 text-xs">
@@ -230,14 +231,15 @@ export default function Market() {
             })}
           </div>
 
-          {chartIdx && <IndexChart ixKey={chartIdx.key} name={chartIdx.name} color={SERIES[colorOf(chartIdx.key)]} />}
+          {chartIdx && <IndexChart ixKey={chartIdx.key} name={chartIdx.name} color={SERIES[colorOf(chartIdx.key)]} bare />}
+          </Fold>
+
+          <Fold id="gauge" title="시장 계기판" sub="코스피 · 미국 경제">
+            <Gauge bare />
+          </Fold>
 
           {/* 연도별 */}
-          <section className="rounded-xl border border-border bg-card p-3">
-            <div className="mb-2 flex items-baseline justify-between">
-              <h3 className="font-semibold">연도별 등락률</h3>
-              <span className="text-xs text-muted">연도를 누르면 월별</span>
-            </div>
+          <Fold id="years" title="연도별 등락률" sub="연도를 누르면 월별">
             <ul className="space-y-0.5">
               {years.map((y) => {
                 const open = year === y;
@@ -291,13 +293,12 @@ export default function Market() {
               })}
             </ul>
             <p className="mt-2 text-[11px] text-faint">전년 마지막 거래일 종가 대비 그해 마지막 거래일 종가.</p>
-          </section>
+          </Fold>
 
           {/* 월별 계절성 */}
           {heatIdx && (
-            <section className="rounded-xl border border-border bg-card p-3">
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <h3 className="font-semibold">월별 등락 한눈에</h3>
+            <Fold id="heat" title="월별 등락 한눈에">
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 {avail.length > 1 && (
                   <div className="flex gap-1 text-xs">
                     {avail.map((x) => (
@@ -321,17 +322,26 @@ export default function Market() {
                   setTimeout(() => document.getElementById(`year-${y}`)?.scrollIntoView({ behavior: "smooth" }), 50);
                 }}
               />
-            </section>
+            </Fold>
           )}
         </>
       )}
 
-      {sum && group === "kr" && <Breadth />}
-      {sum && group === "kr" && <Concentration />}
-      {sum && group === "us" && (
-        <p className="rounded-xl border border-border bg-card p-3 text-xs text-muted">
-          시총 상위 종목 비중은 지금 한국만 됩니다. 미국 데이터에는 과거 시가총액(발행주식수)이 없어서, 정확히 하려면 다른 데이터가 필요합니다.
-        </p>
+      {sum && group === "kr" && (
+        <Fold id="breadth" title="시장 폭 · 지수 vs 종목 전체">
+          <Breadth bare />
+        </Fold>
+      )}
+      {sum && (
+        <Fold id="conc" title="시총 상위 종목 비중">
+          {group === "kr" ? (
+            <Concentration bare />
+          ) : (
+            <p className="text-xs text-muted">
+              미국은 지금 날마다의 시총 지도(홈)만 됩니다. 과거 시가총액(발행주식수) 기록이 있어야 비중 흐름을 그릴 수 있어요 (SEC 자료로 가능).
+            </p>
+          )}
+        </Fold>
       )}
     </div>
   );

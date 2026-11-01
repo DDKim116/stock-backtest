@@ -1420,6 +1420,32 @@ def _push_tick(now: dt.datetime | None = None) -> list[str]:
     return sent_titles
 
 
+def _macro_tick(now: dt.datetime | None = None) -> str | None:
+    """실업률 경고가 새로 켜지거나 꺼지면 한 번 알린다 (처음엔 지금 상태만 기억). 보낸 제목을 돌려준다."""
+    from .. import pulse
+
+    now = now or _kst_now()
+    cur = pulse.unemployment_alert()
+    if cur is None:
+        return None
+    st = store.get_setting("macro_alert", {})
+    if "unemp" not in st:
+        store.set_setting("macro_alert", {**st, "unemp": cur["on"], "month": cur["month"]})
+        return None
+    if cur["on"] == st["unemp"] or not (7 <= now.hour < 23):
+        return None
+    if cur["on"]:
+        title = "⚠ 미국 실업률 경고 켜짐"
+        body = (f"{cur['month']} 실업률 {cur['rate']:.1f}% · 3개월 평균이 1년 저점보다 +{cur['gap']:.2f}%p. "
+                "과거엔 큰 하락장이 온 경우가 많았어요(1990·2001·2008·2020). 적립은 계속, QLD·비트코인 비중은 늘리지 말고 상한 규칙을 지키세요.")
+    else:
+        title = "미국 실업률 경고 꺼짐"
+        body = f"{cur['month']} 실업률 {cur['rate']:.1f}% · 1년 저점 대비 +{cur['gap']:.2f}%p로 내려왔어요."
+    push.send(store, title, body, tab="market", tag="macro-unemp")
+    store.set_setting("macro_alert", {**st, "unemp": cur["on"], "month": cur["month"]})
+    return title
+
+
 def _push_loop() -> None:
     time.sleep(60)
     while True:
@@ -1427,6 +1453,10 @@ def _push_loop() -> None:
             _push_tick()
         except Exception as e:  # noqa: BLE001
             print("알림 확인 실패:", e, flush=True)
+        try:
+            _macro_tick()
+        except Exception as e:  # noqa: BLE001
+            print("경제 알림 확인 실패:", e, flush=True)
         time.sleep(180)
 
 

@@ -32,7 +32,7 @@ function cssVar(name: string): string {
 const num = (x: number | null | undefined) => (x == null ? "–" : x.toLocaleString("ko-KR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
 // 시장 탭: 고른 지수 하나의 일봉 (요약 상자를 누르면 바뀐다)
-export default function IndexChart({ ixKey, name, color }: { ixKey: string; name: string; color: string }) {
+export default function IndexChart({ ixKey, name, color, bare = false }: { ixKey: string; name: string; color: string; bare?: boolean }) {
   const box = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const [data, setData] = useState<{ key: string; bars: Bar[] } | null>(null);
@@ -116,7 +116,7 @@ export default function IndexChart({ ixKey, name, color }: { ixKey: string; name
   const chg = shown && prev ? (shown.c / prev - 1) * 100 : null;
 
   return (
-    <section className="space-y-2 rounded-xl border border-border bg-card p-3">
+    <section className={bare ? "space-y-2" : "space-y-2 rounded-xl border border-border bg-card p-3"}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="flex items-center gap-1.5 font-semibold">
           <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: color }} />

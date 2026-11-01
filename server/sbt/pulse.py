@@ -346,3 +346,15 @@ def macro_status() -> list[dict]:
         rows.append({"label": "원/달러", "value": f"{kr.iloc[-1]:,.0f}원", "alert": ch >= 5,
                      "note": f"{kr.index[-1].strftime('%m/%d')} · 3개월 {ch:+.1f}% ({'원화 약세 — 외국인 매도 압력' if ch >= 5 else '원화 강세' if ch <= -5 else '보통'})"})
     return rows
+
+
+def unemployment_alert() -> dict | None:
+    """실업률 경고(삼의 법칙): 3개월 평균 실업률이 지난 12개월 저점보다 0.5%p 이상 높으면 켜짐."""
+    from .data import fred
+
+    un = fred.load("UNRATE")
+    if un is None or len(un) < 15:
+        return None
+    a3 = un.rolling(3).mean()
+    gap = float(a3.iloc[-1] - a3.iloc[-13:-1].min())
+    return {"on": gap >= 0.5, "gap": round(gap, 2), "rate": float(un.iloc[-1]), "month": un.index[-1].strftime("%Y-%m")}

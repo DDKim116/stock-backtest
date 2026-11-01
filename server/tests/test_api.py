@@ -205,3 +205,30 @@ def test_push_flow(client, monkeypatch):
 
     client.post("/api/push/unsubscribe", json={"endpoint": sub["endpoint"]})
     assert client.get("/api/push").json()["devices"] == []
+
+
+def test_macro_alert(client, monkeypatch):
+    import pandas as pd
+
+    from sbt import config, push
+    from sbt.api import app as app_mod
+
+    sent = []
+    monkeypatch.setattr(push, "send", lambda store, title, body, tab="", tag="": sent.append((title, tab)))
+    d = config.DATA_DIR / "fred"
+    d.mkdir(exist_ok=True)
+    m = pd.date_range("2024-01-01", periods=18, freq="MS")
+
+    def write(vals):
+        pd.DataFrame({"date": m.strftime("%Y-%m-%d"), "value": vals}).to_csv(d / "UNRATE.csv", index=False)
+
+    write([4.0] * 18)
+    day = dt.datetime(2026, 11, 2, 9, 0)
+    assert app_mod._macro_tick(day) is None  # 처음엔 상태만 기억
+    assert app_mod._macro_tick(day) is None  # 그대로면 조용
+    write([4.0] * 15 + [4.6, 4.8, 5.0])
+    assert app_mod._macro_tick(dt.datetime(2026, 11, 2, 2, 0)) is None  # 새벽엔 기다림
+    assert "켜짐" in app_mod._macro_tick(day) and sent[-1][1] == "market"
+    assert app_mod._macro_tick(day) is None  # 한 번만
+    write([4.0] * 18)
+    assert "꺼짐" in app_mod._macro_tick(day)
