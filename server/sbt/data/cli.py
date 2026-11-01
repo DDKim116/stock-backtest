@@ -17,6 +17,7 @@
   python -m sbt.data.cli qld-rule                   # 미국: QLD 5천원 + 비중 25% 상한 규칙 (VOO 1.5만 + QQQ 1만과 함께)
   python -m sbt.data.cli qld-dip                    # 미국: QLD 가 평단보다 싸면 1만·2만으로 더 사기 vs 그 돈을 VOO 로
   python -m sbt.data.cli crypto-test                # 코인: 비트코인·이더리움·리플·솔라나 매일 적립 vs VOO
+  python -m sbt.data.cli btc-dip                    # 코인: 비트코인 쌀 때 더 사기 규칙 · 미국 주식과 비트코인의 관계
   python -m sbt.data.cli us-map                     # 미국 시총 지도 만들기 (평소엔 us-update 때 자동)
   python -m sbt.data.cli us-test                    # 미국: VOO 매일 적립 · SPY/QQQ 월적립 · 무한매수법(TQQQ) 검증
   python -m sbt.data.cli size-test                  # v2b 1회 금액: 고정 vs 계좌 비율 (연 수익·낙폭·연속 손실·노는 돈)
@@ -79,6 +80,7 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("us-test")
     sub.add_parser("us-map")
     sub.add_parser("crypto-test")
+    sub.add_parser("btc-dip")
     sub.add_parser("qld-test")
     sub.add_parser("qld-rule")
     sub.add_parser("qld-dip")
@@ -188,6 +190,9 @@ def main(argv: list[str] | None = None) -> None:
     elif a.cmd == "auto-report":
         from .. import autoreport
         autoreport.run(a.dataset)
+    elif a.cmd == "btc-dip":
+        from .. import research21
+        research21.run()
     elif a.cmd == "crypto-test":
         from .. import research20
         research20.run()

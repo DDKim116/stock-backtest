@@ -20,6 +20,9 @@ NAME_RE = re.compile(r"^([a-z0-9-]+?)-(\d{8}-\d{4})\.txt$")
 # 새 연구를 만들면 여기에 한 줄 추가. 결론은 결과를 같이 보고 정한 것.
 CATALOG: list[dict] = [
     # ---- 코인
+    {"cmd": "btc-dip", "prefix": "btc-dip", "area": "코인", "title": "비트코인 더 사기 · 주식과의 관계",
+     "question": "비트코인이 쌀 때(평단 아래·고점 -50%) 더 사면 나을까? 미국 주식과 같이 움직일까?",
+     "conclusion": "결과를 보고 정해요.", "minutes": 1},
     {"cmd": "crypto-test", "prefix": "crypto", "area": "코인", "title": "메이저 코인 매일 적립",
      "question": "비트코인을 매일 1만원씩 샀다면? 이더리움·리플·솔라나와 VOO 와 비교하면? 섞으면?",
      "conclusion": "비트코인은 5년 단위로는 늘 VOO 를 이겼지만 앞선 이득이 해마다 줄어듦 (2015 시작 연 62% → 2021~23 시작 연 21~25%, VOO 17~18%) "
