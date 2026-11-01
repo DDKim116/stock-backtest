@@ -21,7 +21,7 @@ const WD = ["일", "월", "화", "수", "목", "금", "토"];
 const KIND: Record<CalEvent["kind"], [string, string]> = {
   us: ["미국", "var(--series-1)"],
   kr: ["한국", "var(--series-2)"],
-  me: ["내 일정", "var(--accent)"],
+  me: ["내 일정", "var(--mid)"], // 라임
 };
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const md = (s: string) => {
