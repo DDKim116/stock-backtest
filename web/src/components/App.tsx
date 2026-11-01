@@ -24,16 +24,17 @@ import Today from "./Today";
 import AutoTrade from "./AutoTrade";
 import WatchCard from "./WatchCard";
 import Lab from "./Lab";
+import Calendar from "./Calendar";
 
-type Tab = "today" | "run" | "explore" | "journal" | "auto" | "paper" | "market" | "lab" | "saved" | "more";
-const TAB_KEYS: Tab[] = ["today", "run", "explore", "journal", "auto", "paper", "market", "lab", "saved", "more"];
+type Tab = "today" | "run" | "explore" | "journal" | "auto" | "paper" | "market" | "calendar" | "lab" | "saved" | "more";
+const TAB_KEYS: Tab[] = ["today", "run", "explore", "journal", "auto", "paper", "market", "calendar", "lab", "saved", "more"];
 // 아래 메뉴 6개 (시안 A). 둘 이상 묶인 곳은 위에 작은 탭으로 고른다
 // 탭 이름 뒤 셋째 값은 작은 설명 (매매: 실제 주문인지 앱 계산인지 한눈에)
 const GROUPS: { label: string; tabs: [Tab, string, string?][]; icon: string }[] = [
   { label: "오늘", tabs: [["today", "오늘"]], icon: "M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" },
   { label: "검증", tabs: [["run", "검증"], ["explore", "탐색"]], icon: "M4 19h16M7 16V9M12 16V5M17 16v-4" },
   { label: "매매", tabs: [["auto", "키움 자동", "실제 주문"], ["paper", "앱 모의", "계산만"], ["journal", "실투", "내 매매 기록"]], icon: "M4 7h13l-3-3M20 17H7l3 3" },
-  { label: "시장", tabs: [["market", "지수"]], icon: "M3 17l5-6 4 4 8-9" },
+  { label: "시장", tabs: [["market", "지수"], ["calendar", "일정"]], icon: "M3 17l5-6 4 4 8-9" },
   { label: "연구", tabs: [["lab", "연구"]], icon: "M9 3h6M10 3v6l-5.5 9.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3M7 15h10" },
   { label: "더보기", tabs: [["saved", "전략"], ["more", "설정"]], icon: "M5 12h.01M12 12h.01M19 12h.01" },
 ];
@@ -521,6 +522,7 @@ export default function App() {
       )}
       {!needLogin && tab === "market" && <Market />}
       {!needLogin && tab === "lab" && <Lab />}
+      {!needLogin && tab === "calendar" && <Calendar />}
       {tab === "more" && (
         <div className="space-y-8">
           <Settings onSaved={loadDatasets} />

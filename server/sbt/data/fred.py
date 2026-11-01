@@ -103,6 +103,14 @@ def fetch(series_id: str, start: str = "1976-01-01", session: requests.Session |
     return out
 
 
+def api(path: str, params: dict) -> dict:
+    """FRED API 다른 목록 (releases 등)."""
+    r = requests.get(f"https://api.stlouisfed.org/fred/{path}",
+                     params={"api_key": _key(), "file_type": "json", **params}, timeout=60)
+    r.raise_for_status()
+    return r.json()
+
+
 def test() -> str:
     s = fetch("T10Y2Y", (dt.date.today() - dt.timedelta(days=20)).isoformat())
     if s.empty:
@@ -130,6 +138,12 @@ def update(log=print) -> int:
         log(f"  {info['name']}: {s.index[0].date()} ~ {s.index[-1].date()} ({len(s):,}개)")
         n += 1
         time.sleep(0.3)
+    try:
+        from .. import calendar
+
+        calendar.update_fred_dates(api, log)
+    except Exception as e:  # noqa: BLE001
+        log(f"  달력 받기 실패: {e}")
     return n
 
 

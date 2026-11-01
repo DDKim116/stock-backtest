@@ -6,6 +6,7 @@ import { pct, retClass } from "@/lib/format";
 import { type AutoView, pnlOf, type Position as Pos, stratOf, wonShort } from "@/lib/auto";
 import type { Spec, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
+import { Upcoming } from "./Calendar";
 import MarketPulse from "./MarketPulse";
 import TradeChart from "./TradeChart";
 
@@ -72,7 +73,7 @@ function asTrade(p: Pos): Trade {
 }
 
 // 홈 '오늘': 자동 매매 현황·보유 종목 실시간·다음 일정·지수·실시간 감시를 한 화면에
-export default function Today({ onGo, newsCount }: { onGo: (tab: "auto" | "paper" | "run" | "market") => void; newsCount: number }) {
+export default function Today({ onGo, newsCount }: { onGo: (tab: "auto" | "paper" | "run" | "market" | "calendar") => void; newsCount: number }) {
   const [auto, setAuto] = useState<AutoView | null>(null);
   const [acct, setAcct] = useState<Account | null>(null);
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});
@@ -329,6 +330,8 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "auto" | "paper
       )}
       </div>
       </div>
+
+      <Upcoming onMore={() => onGo("calendar")} />
 
       <MarketPulse />
 

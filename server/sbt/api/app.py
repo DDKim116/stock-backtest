@@ -1477,6 +1477,21 @@ def _broker_view() -> dict:
     return {"ip": kiwoom.server_ip(), "kiwoom": kiwoom.view()}
 
 
+# ---------------------------------------------------------------- 달력
+@app.get("/api/calendar", dependencies=[Depends(auth)])
+def get_calendar(start: str | None = None, end: str | None = None):
+    """미국 경제 발표·만기·수출입·우리 규칙 일정 (한국 시간)."""
+    from .. import calendar
+
+    today = _kst_now().date()
+    a = dt.date.fromisoformat(start) if start else today.replace(day=1)
+    b = dt.date.fromisoformat(end) if end else a + dt.timedelta(days=62)
+    if (b - a).days > 400:
+        raise HTTPException(422, "기간이 너무 깁니다")
+    return {"today": today.isoformat(), "start": a.isoformat(), "end": b.isoformat(), "events": calendar.events(a, b),
+            "has_us": calendar._path().exists()}
+
+
 # ---------------------------------------------------------------- FRED 경제 지표 (키 저장·확인)
 class FredKeyIn(BaseModel):
     key: str
