@@ -514,7 +514,8 @@ def _pulse_cached(name: str, dataset: str, make):
     from ..data import indices
 
     runner = loaded.get(dataset)
-    files = [indices.path(k) for k in ("KOSPI", "VIX", "VKOSPI", "SP500")] + [config.DATA_DIR / "us_map.json"]
+    files = [indices.path(k) for k in ("KOSPI", "VIX", "VKOSPI", "SP500")] + [config.DATA_DIR / "us_map.json"] + \
+        [config.DATA_DIR / "fred" / "T10Y2Y.csv"]
     stamp = max((f.stat().st_mtime for f in files if f.exists()), default=0.0)
     key = (name, id(runner), stamp)
     if key not in _PULSE:
@@ -1444,6 +1445,47 @@ def _broker_view() -> dict:
     from ..broker import kiwoom
 
     return {"ip": kiwoom.server_ip(), "kiwoom": kiwoom.view()}
+
+
+# ---------------------------------------------------------------- FRED 경제 지표 (키 저장·확인)
+class FredKeyIn(BaseModel):
+    key: str
+
+
+@app.get("/api/fred", dependencies=[Depends(auth)])
+def fred_info():
+    from ..data import fred
+
+    return fred.view()
+
+
+@app.put("/api/fred", dependencies=[Depends(auth)])
+def fred_set_key(body: FredKeyIn):
+    from ..data import fred
+
+    try:
+        fred.set_key(body.key)
+    except fred.FredError as e:
+        raise HTTPException(422, str(e))
+    return fred.view()
+
+
+@app.delete("/api/fred", dependencies=[Depends(auth)])
+def fred_clear_key():
+    from ..data import fred
+
+    fred.clear_key()
+    return fred.view()
+
+
+@app.post("/api/fred/test", dependencies=[Depends(auth)])
+def fred_test():
+    from ..data import fred
+
+    try:
+        return {"ok": True, "message": fred.test()}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "message": str(e)}
 
 
 # ---------------------------------------------------------------- DART 재무 자료 (키 저장·확인)

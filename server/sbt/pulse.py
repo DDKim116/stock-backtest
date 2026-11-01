@@ -246,6 +246,7 @@ def gauge(panel, runner) -> dict:
         "breadth": None if adv20 is None else round(adv20, 1),
         "v2b": {"signals": n_sig, "days": sig_days},
         "hints": [{"who": w, "text": t} for w, t in hints],
+        "macro": macro_status(),
     }
 
 
@@ -310,3 +311,38 @@ def us_map() -> dict:
 
     p = _us_map_path()
     return json.loads(p.read_text()) if p.exists() else {"market": "US", "items": []}
+
+
+def macro_status() -> list[dict]:
+    """계기판 '경제' 줄 (FRED 자료가 있을 때만)."""
+    from .data import fred
+
+    rows = []
+    t2 = fred.load("T10Y2Y")
+    if t2 is not None and len(t2):
+        v = float(t2.iloc[-1])
+        rows.append({"label": "장단기 금리차", "value": f"{v:+.2f}%p", "alert": v < 0,
+                     "note": f"10년-2년 · {'역전 — 과거엔 1~2년 안에 침체가 온 경우가 많음' if v < 0 else '정상'}"})
+    baa = fred.load("BAA10Y")
+    if baa is not None and len(baa) > 252:
+        z = (baa.iloc[-1] - baa.iloc[-252:].mean()) / baa.iloc[-252:].std()
+        rows.append({"label": "신용 스프레드", "value": f"{baa.iloc[-1]:.2f}%p", "alert": bool(z > 1),
+                     "note": f"Baa 회사채-10년물 · 1년 평균보다 {z:+.1f}표준편차 · {'긴장' if z > 1 else '평소'}"})
+    un = fred.load("UNRATE")
+    if un is not None and len(un) > 15:
+        a3 = un.rolling(3).mean()
+        sahm = float(a3.iloc[-1] - a3.iloc[-13:-1].min())
+        rows.append({"label": "실업률", "value": f"{un.iloc[-1]:.1f}%", "alert": sahm >= 0.5,
+                     "note": f"{un.index[-1].strftime('%Y-%m')} · 1년 저점 대비 {sahm:+.2f}%p ({'0.5 넘음 — 침체 경고' if sahm >= 0.5 else '안정'})"})
+    dff = fred.load("DFF")
+    if dff is not None and len(dff) > 200:
+        ch = float(dff.iloc[-1] - dff.iloc[-182 if len(dff) > 182 else 0])
+        state = "인상기" if ch >= 0.5 else "인하기" if ch <= -0.5 else "유지"
+        rows.append({"label": "기준금리", "value": f"{dff.iloc[-1]:.2f}%", "alert": ch >= 0.5,
+                     "note": f"미국 · 6개월 새 {ch:+.2f}%p → {state}"})
+    kr = fred.load("DEXKOUS")
+    if kr is not None and len(kr) > 70:
+        ch = float(kr.iloc[-1] / kr.iloc[-64] - 1) * 100
+        rows.append({"label": "원/달러", "value": f"{kr.iloc[-1]:,.0f}원", "alert": ch >= 5,
+                     "note": f"{kr.index[-1].strftime('%m/%d')} · 3개월 {ch:+.1f}% ({'원화 약세 — 외국인 매도 압력' if ch >= 5 else '원화 강세' if ch <= -5 else '보통'})"})
+    return rows

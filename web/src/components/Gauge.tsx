@@ -13,6 +13,7 @@ interface GaugeData {
   breadth?: number | null;
   v2b?: { signals: number | null; days: number | null };
   hints?: { who: string; text: string }[];
+  macro?: { label: string; value: string; note: string; alert: boolean }[];
 }
 
 const sign = (v: number, nd = 1) => `${v > 0 ? "+" : ""}${v.toFixed(nd)}`;
@@ -80,6 +81,20 @@ export default function Gauge() {
           </div>
         ))}
       </div>
+      {g.macro && g.macro.length > 0 && (
+        <div>
+          <div className="mb-1 text-xs text-muted">미국 경제 (FRED)</div>
+          <div className="divide-y divide-border">
+            {g.macro.map((m) => (
+              <div key={m.label} className="grid grid-cols-[5.5rem_4.5rem_1fr] items-baseline gap-2 py-2 text-sm">
+                <span className="text-muted">{m.label}</span>
+                <span className={`tabular text-right font-semibold ${m.alert ? "text-warning" : ""}`}>{m.value}</span>
+                <span className={`text-xs ${m.alert ? "text-warning" : "text-faint"}`}>{m.note}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {g.hints && g.hints.length > 0 && (
         <div className="space-y-1.5 rounded-lg bg-background p-3 text-xs">
           <div className="text-muted">지금 장에서 우리 전략들은 (연구 결과 기준)</div>

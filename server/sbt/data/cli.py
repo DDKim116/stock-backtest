@@ -18,6 +18,8 @@
   python -m sbt.data.cli qld-dip                    # 미국: QLD 가 평단보다 싸면 1만·2만으로 더 사기 vs 그 돈을 VOO 로
   python -m sbt.data.cli crypto-test                # 코인: 비트코인·이더리움·리플·솔라나 매일 적립 vs VOO
   python -m sbt.data.cli btc-dip                    # 코인: 비트코인 쌀 때 더 사기 규칙 · 미국 주식과 비트코인의 관계
+  python -m sbt.data.cli fred-update                # FRED 경제 지표 받기 (평소엔 us-update 때 자동, 키는 앱 설정에서)
+  python -m sbt.data.cli macro-test                 # 경제 지표(금리차·신용 스프레드·실업률·금리 인상기)로 위험한 때 피하기
   python -m sbt.data.cli us-map                     # 미국 시총 지도 만들기 (평소엔 us-update 때 자동)
   python -m sbt.data.cli us-test                    # 미국: VOO 매일 적립 · SPY/QQQ 월적립 · 무한매수법(TQQQ) 검증
   python -m sbt.data.cli size-test                  # v2b 1회 금액: 고정 vs 계좌 비율 (연 수익·낙폭·연속 손실·노는 돈)
@@ -81,6 +83,8 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("us-map")
     sub.add_parser("crypto-test")
     sub.add_parser("btc-dip")
+    sub.add_parser("fred-update")
+    sub.add_parser("macro-test")
     sub.add_parser("qld-test")
     sub.add_parser("qld-rule")
     sub.add_parser("qld-dip")
@@ -182,6 +186,12 @@ def main(argv: list[str] | None = None) -> None:
             pulse.build_us_map(root)
         except Exception as e:  # noqa: BLE001
             print(f"미국 시총 지도 실패: {e}")
+        from . import fred
+        if fred.view()["saved"]:
+            try:
+                fred.update()
+            except Exception as e:  # noqa: BLE001
+                print(f"FRED 갱신 실패: {e}")
     elif a.cmd == "us-build":
         us.build(config.dataset_dir("us"))
     elif a.cmd == "rank":
@@ -190,6 +200,12 @@ def main(argv: list[str] | None = None) -> None:
     elif a.cmd == "auto-report":
         from .. import autoreport
         autoreport.run(a.dataset)
+    elif a.cmd == "fred-update":
+        from . import fred
+        fred.run_update()
+    elif a.cmd == "macro-test":
+        from .. import research22
+        research22.run()
     elif a.cmd == "btc-dip":
         from .. import research21
         research21.run()

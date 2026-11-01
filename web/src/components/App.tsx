@@ -19,6 +19,7 @@ import Notes from "./Notes";
 import PushSettings from "./PushSettings";
 import BrokerSettings from "./BrokerSettings";
 import DartSettings from "./DartSettings";
+import FredSettings from "./FredSettings";
 import Today from "./Today";
 import AutoTrade from "./AutoTrade";
 import WatchCard from "./WatchCard";
@@ -526,6 +527,7 @@ export default function App() {
           {!needLogin && <PushSettings />}
           {!needLogin && <BrokerSettings />}
           {!needLogin && <DartSettings />}
+          {!needLogin && <FredSettings />}
           {!needLogin && (
             <section>
               <h2 className="mb-3 text-lg font-bold">제작 노트</h2>
