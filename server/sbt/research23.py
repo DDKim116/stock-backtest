@@ -153,7 +153,7 @@ def run(dataset: str = "us", kr_dataset: str = "kr", markets: list[str] | None =
               f"  거래가 있던 달: 국장 {(a != 0).sum()} · 미국 {(b != 0).sum()} · 전체 {len(idx)}달",
               f"  국장이 쉰 달 {kr_idle:.0f}% → 둘 다 쉰 달 {both_idle:.0f}% (미국이 빈 달을 얼마나 채우나)",
               f"  달마다 손익 상관 {corr:+.2f} (0 에 가까울수록 서로 다른 때 벌고 잃음 · 1 이면 같이 움직임)",
-              f"  둘 다 손실인 달 {int(bad.sum())}번 · 합친 최악의 달 = 1건 금액의 {(a + b).min():+.1f}배"]
+              f"  둘 다 손실인 달 {int(bad.sum())}번"]
     except FileNotFoundError as e:
         L += ["", f"3부. 국장 자료가 없어 건너뜀 ({e})"]
 

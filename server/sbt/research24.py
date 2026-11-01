@@ -140,7 +140,7 @@ def signals() -> list[tuple[str, pd.DataFrame]]:
         reg = buy["reg"].astype(str)
         out += [("임원·주주 아무나 매수", buy),
                 ("등기임원 매수", buy[reg.str.contains("등기") & ~reg.str.contains("비등기")]),
-                ("주요주주 매수", buy[buy["major"].astype(str).str.contains("주요")]),
+                ("주요주주 매수", buy[~buy["major"].astype(str).str.strip().isin(["", "-", "None", "nan", "해당없음"])]),
                 ("지분 0.1%p 이상 매수", buy[buy["chg_rate"] >= 0.1]),
                 ("30일 안에 2명 이상 매수", clusters(buy)),
                 ("(비교) 임원·주주 매도", ins[ins["chg"] < 0])]
