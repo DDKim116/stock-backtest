@@ -96,6 +96,9 @@ def events(start: dt.date, end: dt.date) -> list[dict]:
                     "note": "미국 장 마감 무렵 거래량·변동 커짐" + (" (분기 만기)" if q else "")})
         out.append({"date": dt.date(y, m, 1).isoformat(), "time": "09:00", "imp": 2, "kind": "kr", "name": "한국 수출입 동향",
                     "note": "반도체 수출이 코스피 이익의 큰 몫 — 지난달 숫자"})
+        sat = _nth_weekday(y, m, 5, 1)
+        out.append({"date": sat.isoformat(), "time": "", "imp": 1, "kind": "me", "name": "서버 업데이트",
+                    "note": "Termius: sudo apt update && sudo apt upgrade -y (재시작 필요하면 sudo reboot)"})
         lw = _last_weekday(y, m)
         out.append({"date": lw.isoformat(), "time": "", "imp": 1, "kind": "me", "name": "v2b 성적표 보기",
                     "note": "연구 탭 → 키움 모의투자 성적표 → 다시 돌리기"})

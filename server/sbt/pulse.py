@@ -358,3 +358,19 @@ def unemployment_alert() -> dict | None:
     a3 = un.rolling(3).mean()
     gap = float(a3.iloc[-1] - a3.iloc[-13:-1].min())
     return {"on": gap >= 0.5, "gap": round(gap, 2), "rate": float(un.iloc[-1]), "month": un.index[-1].strftime("%Y-%m")}
+
+
+def server_updates() -> dict:
+    """우분투가 알려 주는 대기 중인 업데이트 수와 재시작 필요 여부 (sudo 없이 읽을 수 있는 파일)."""
+    import re
+    from pathlib import Path
+
+    n = sec = 0
+    p = Path("/var/lib/update-notifier/updates-available")
+    if p.exists():
+        t = p.read_text(errors="replace")
+        m = re.search(r"(\d+)\s+updates? can be applied", t)
+        n = int(m.group(1)) if m else 0
+        m = re.search(r"(\d+) of these updates (?:are|is a) (?:standard )?security update", t)  # ESM(유료) 안내는 빼고
+        sec = int(m.group(1)) if m else 0
+    return {"updates": n, "security": sec, "reboot": Path("/var/run/reboot-required").exists()}

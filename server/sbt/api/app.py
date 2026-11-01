@@ -1446,6 +1446,32 @@ def _macro_tick(now: dt.datetime | None = None) -> str | None:
     return title
 
 
+def _server_tick(now: dt.datetime | None = None) -> str | None:
+    """토요일 오전(10~12시)에 서버 업데이트가 쌓여 있거나 재시작이 필요하면 그 주에 한 번 알린다."""
+    from .. import pulse
+
+    now = now or _kst_now()
+    if now.weekday() != 5 or not (10 <= now.hour < 12):
+        return None
+    week = now.strftime("%G-%V")
+    if store.get_setting("server_alert_week") == week:
+        return None
+    u = pulse.server_updates()
+    store.set_setting("server_alert_week", week)
+    if u["updates"] < 5 and not u["reboot"]:
+        return None
+    parts = []
+    if u["updates"]:
+        parts.append(f"업데이트 {u['updates']}개" + (f"(보안 {u['security']})" if u["security"] else ""))
+    if u["reboot"]:
+        parts.append("재시작 필요")
+    title = "서버 점검 · " + " · ".join(parts)
+    body = ("주말이라 지금 하기 좋아요. Termius 에서: sudo apt update && sudo apt upgrade -y"
+            + (" → 끝나면 sudo reboot" if u["reboot"] else " (끝에 'restart required' 가 보이면 sudo reboot)"))
+    push.send(store, title, body, tab="more", tag="server-update")
+    return title
+
+
 def _push_loop() -> None:
     time.sleep(60)
     while True:
@@ -1457,6 +1483,10 @@ def _push_loop() -> None:
             _macro_tick()
         except Exception as e:  # noqa: BLE001
             print("경제 알림 확인 실패:", e, flush=True)
+        try:
+            _server_tick()
+        except Exception as e:  # noqa: BLE001
+            print("서버 점검 알림 실패:", e, flush=True)
         time.sleep(180)
 
 

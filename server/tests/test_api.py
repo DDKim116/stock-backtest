@@ -238,3 +238,18 @@ def test_warm_once_never_raises(client):
     from sbt.api import app as app_mod
 
     app_mod._warm_once()  # 데이터가 없거나 일부가 실패해도 조용히 넘어가야 한다
+
+
+def test_server_alert(client, monkeypatch):
+    from sbt import pulse, push
+    from sbt.api import app as app_mod
+
+    sent = []
+    monkeypatch.setattr(push, "send", lambda store, title, body, tab="", tag="": sent.append(title))
+    monkeypatch.setattr(pulse, "server_updates", lambda: {"updates": 20, "security": 3, "reboot": True})
+    assert app_mod._server_tick(dt.datetime(2026, 11, 2, 10, 30)) is None  # 월요일엔 안 보냄
+    t = app_mod._server_tick(dt.datetime(2026, 11, 7, 10, 30))  # 토요일 오전
+    assert t and "20개" in t and "재시작" in t
+    assert app_mod._server_tick(dt.datetime(2026, 11, 7, 11, 0)) is None  # 그 주엔 한 번만
+    monkeypatch.setattr(pulse, "server_updates", lambda: {"updates": 2, "security": 0, "reboot": False})
+    assert app_mod._server_tick(dt.datetime(2026, 11, 14, 10, 30)) is None  # 몇 개뿐이면 조용
