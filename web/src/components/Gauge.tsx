@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { cachedApi } from "@/lib/api";
 
 interface GaugeData {
@@ -38,6 +38,24 @@ interface MacroRow {
 const sign = (v: number, nd = 1) => `${v > 0 ? "+" : ""}${v.toFixed(nd)}`;
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 
+// 점 바로 밑의 ▲ (점과 같은 위치) + 옆에 글 (왼쪽 절반이면 오른쪽에, 오른쪽 절반이면 왼쪽에)
+function Under({ p, children }: { p: number; children: ReactNode }) {
+  const x = clamp(p, 0, 100);
+  return (
+    <div className="relative h-4 text-[11px] font-medium">
+      <span className="absolute top-0 -translate-x-1/2 leading-4" style={{ left: `${x}%` }}>
+        ▲
+      </span>
+      <span
+        className="absolute top-0 whitespace-nowrap leading-4"
+        style={x < 50 ? { left: `calc(${x}% + 9px)` } : { right: `calc(${100 - x}% + 9px)` }}
+      >
+        {children}
+      </span>
+    </div>
+  );
+}
+
 // 0 을 가운데 둔 막대 (scale = 끝까지 갔을 때의 값)
 function Diverge({ v, scale, label }: { v: number; scale: number; label?: string }) {
   const w = (clamp(Math.abs(v) / scale, 0, 1) * 50).toFixed(1);
@@ -64,10 +82,10 @@ function Pic({ g, id }: { g: GaugeData; id: string }) {
         <div className="relative h-2.5 rounded-full bg-gradient-to-r from-[var(--down)] to-[var(--up)] opacity-80">
           <div className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-card bg-foreground" style={{ left: `${clamp(pos, 0, 100)}%` }} />
         </div>
+        <Under p={pos}>지금 {pos}%</Under>
         <div className="tabular flex justify-between text-[11px] text-faint">
-          <span>1년 저점 {Math.round(g.box.low).toLocaleString("ko-KR")}</span>
-          <span>지금 {pos}% 위치</span>
-          <span>고점 {Math.round(g.box.high).toLocaleString("ko-KR")}</span>
+          <span>1년 저점 {Math.round(g.box.low).toLocaleString("ko-KR")} (0%)</span>
+          <span>(100%) 고점 {Math.round(g.box.high).toLocaleString("ko-KR")}</span>
         </div>
       </div>
     );
@@ -166,19 +184,18 @@ function Spark({ h, ref0 }: { h: Hist; ref0?: number | null }) {
 
 // 지난 20년 중 지금이 어디쯤인지 (왼쪽 = 가장 낮았을 때, 오른쪽 = 가장 높았을 때)
 function Where({ h }: { h: Hist }) {
-  const p = h.max > h.min ? ((h.now - h.min) / (h.max - h.min)) * 100 : 50;
+  const p = h.pct; // 지난 20년 중 지금보다 낮았던 날의 비율 = 점 위치
   const word = h.pct >= 80 ? "20년 중 높은 편" : h.pct <= 20 ? "20년 중 낮은 편" : "20년 중 보통";
   return (
     <div className="space-y-1">
       <div className="relative h-2 rounded-full bg-background">
         <div className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-card bg-accent" style={{ left: `${clamp(p, 0, 100)}%` }} />
       </div>
+      <Under p={p}>{word}</Under>
       <div className="flex justify-between text-[11px] text-faint">
-        <span>낮음</span>
-        <span className="font-medium text-foreground">
-          {word} (지금보다 낮았던 날 {h.pct}%)
-        </span>
-        <span>높음</span>
+        <span>20년 중 가장 낮음</span>
+        <span>지금보다 낮았던 날 {h.pct}%</span>
+        <span>가장 높음</span>
       </div>
     </div>
   );
@@ -224,14 +241,18 @@ function Macro({ rows }: { rows: MacroRow[] }) {
           return (
             <button key={m.label} type="button" onClick={() => setOpen(open === id ? null : id)} className="block w-full space-y-1.5 py-2.5 text-left text-sm">
               <div className="grid grid-cols-[5.5rem_4.5rem_1fr] items-baseline gap-2">
-                <span className="text-muted">
+                <span className="font-bold">
                   {m.label} <span className="text-[10px] text-faint">{open === id ? "▴" : "▾"}</span>
                 </span>
                 <span className={`tabular text-right font-semibold ${m.alert ? "text-warning" : ""}`}>{m.value}</span>
                 <span className={`text-xs ${m.alert ? "text-warning" : "text-faint"}`}>{m.note}</span>
               </div>
-              {m.hist && <Where h={m.hist} />}
-              {m.hist && open === id && <Spark h={m.hist} ref0={m.ref} />}
+              {m.hist && (
+                <div className="space-y-1.5 px-5">
+                  <Where h={m.hist} />
+                  {open === id && <Spark h={m.hist} ref0={m.ref} />}
+                </div>
+              )}
               {open === id && EASY_MACRO[id] && (
                 <ul className="space-y-0.5 rounded-lg bg-background p-2.5 text-xs text-muted">
                   {EASY_MACRO[id].map((t) => (
@@ -327,7 +348,7 @@ export default function Gauge({ bare = false }: { bare?: boolean }) {
             className="block w-full space-y-1.5 py-2.5 text-left text-sm"
           >
             <div className="grid grid-cols-[5.5rem_4.5rem_1fr] items-baseline gap-2">
-              <span className="text-muted">
+              <span className="font-bold">
                 {r.label} <span className="text-[10px] text-faint">{open === r.id ? "▴" : "▾"}</span>
               </span>
               <span className={`tabular text-right font-semibold ${r.tone === "up" ? "text-up" : r.tone === "down" ? "text-down" : ""}`}>
@@ -335,7 +356,9 @@ export default function Gauge({ bare = false }: { bare?: boolean }) {
               </span>
               <span className="text-xs text-faint">{r.note}</span>
             </div>
-            <Pic g={g} id={r.id} />
+            <div className="px-5">
+              <Pic g={g} id={r.id} />
+            </div>
             {open === r.id && (
               <ul className="space-y-0.5 rounded-lg bg-background p-2.5 text-xs text-muted">
                 {EASY[r.id]?.map((t) => (
