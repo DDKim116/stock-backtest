@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useRef, useState } from "react";
 import { createChart, LineSeries, type Time } from "lightweight-charts";
-import { api } from "@/lib/api";
+import { cachedApi } from "@/lib/api";
 
 interface Row {
   date: string;
@@ -52,7 +52,7 @@ export default function Concentration({ bare = false }: { bare?: boolean }) {
 
   useEffect(() => {
     if (data[market]) return;
-    api<Data>(`/api/concentration?market=${market}`)
+    cachedApi<Data>(`/api/concentration?market=${market}`)
       .then((r) => {
         setData((d) => ({ ...d, [market]: r }));
         setErr(null);

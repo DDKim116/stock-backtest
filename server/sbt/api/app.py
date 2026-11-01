@@ -1464,6 +1464,28 @@ if os.environ.get("SBT_PUSH_LOOP", "1") != "0":
     threading.Thread(target=_push_loop, daemon=True, name="push").start()
 
 
+def _warm_once() -> None:
+    """시장 탭·홈의 무거운 계산을 미리 해 둔다 (이미 계산돼 있으면 바로 넘어감)."""
+    ds = config.DEFAULT_DATASET
+    for f, args in ((get_pulse, (ds,)), (get_gauge, (ds,)), (get_breadth, ("KOSPI", ds)), (get_breadth, ("KOSDAQ", ds)),
+                    (get_concentration, ("KOSPI", ds)), (get_concentration, ("KOSDAQ", ds))):
+        try:
+            f(*args)
+        except Exception:  # noqa: BLE001 — 데이터가 없거나 한쪽이 실패해도 나머지는 계속
+            pass
+
+
+def _warm_loop() -> None:
+    time.sleep(20)
+    while True:
+        _warm_once()
+        time.sleep(300)
+
+
+if os.environ.get("SBT_PUSH_LOOP", "1") != "0":
+    threading.Thread(target=_warm_loop, daemon=True, name="warm").start()
+
+
 # ---------------------------------------------------------------- 증권사 연결 (키움, 시세 조회만)
 
 class BrokerKeysIn(BaseModel):

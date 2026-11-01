@@ -90,3 +90,14 @@ export async function apiDownload(path: string, fallbackName: string): Promise<v
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
+
+// 무거운 시장 자료는 한 번 받으면 잠시 기억한다 (탭을 오가거나 상자를 다시 열 때 바로 보이게)
+const memo = new Map<string, { at: number; p: Promise<unknown> }>();
+export function cachedApi<T>(path: string, ttlMs = 5 * 60_000): Promise<T> {
+  const hit = memo.get(path);
+  if (hit && Date.now() - hit.at < ttlMs) return hit.p as Promise<T>;
+  const p = api<T>(path);
+  memo.set(path, { at: Date.now(), p });
+  p.catch(() => memo.delete(path)); // 실패한 건 기억하지 않는다
+  return p;
+}

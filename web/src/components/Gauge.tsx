@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { cachedApi } from "@/lib/api";
 
 interface GaugeData {
   available: boolean;
@@ -24,7 +24,7 @@ export default function Gauge({ bare = false }: { bare?: boolean }) {
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    api<GaugeData>("/api/gauge")
+    cachedApi<GaugeData>("/api/gauge")
       .then(setG)
       .catch((e) => setErr((e as Error).message));
   }, []);

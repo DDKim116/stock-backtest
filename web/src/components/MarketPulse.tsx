@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api } from "@/lib/api";
+import { cachedApi } from "@/lib/api";
 
 interface KrFear {
   available: boolean;
@@ -60,7 +60,7 @@ export default function MarketPulse() {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    api<Pulse>("/api/pulse")
+    cachedApi<Pulse>("/api/pulse")
       .then(setP)
       .catch((e) => setErr((e as Error).message));
   }, []);

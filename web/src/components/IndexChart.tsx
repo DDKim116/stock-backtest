@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CandlestickSeries, createChart, type IChartApi, LineSeries, type Time } from "lightweight-charts";
-import { api } from "@/lib/api";
+import { cachedApi } from "@/lib/api";
 import { pct, retClass } from "@/lib/format";
 import { sma } from "@/lib/indicators";
 
@@ -42,7 +42,7 @@ export default function IndexChart({ ixKey, name, color, bare = false }: { ixKey
 
   useEffect(() => {
     let stop = false;
-    api<{ bars: Bar[] }>(`/api/indices/bars?key=${ixKey}`)
+    cachedApi<{ bars: Bar[] }>(`/api/indices/bars?key=${ixKey}`)
       .then((r) => {
         if (stop) return;
         setData({ key: ixKey, bars: r.bars });

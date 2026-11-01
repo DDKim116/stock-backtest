@@ -232,3 +232,9 @@ def test_macro_alert(client, monkeypatch):
     assert app_mod._macro_tick(day) is None  # 한 번만
     write([4.0] * 18)
     assert "꺼짐" in app_mod._macro_tick(day)
+
+
+def test_warm_once_never_raises(client):
+    from sbt.api import app as app_mod
+
+    app_mod._warm_once()  # 데이터가 없거나 일부가 실패해도 조용히 넘어가야 한다

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createChart, HistogramSeries, LineSeries, LineStyle, type Time } from "lightweight-charts";
-import { api } from "@/lib/api";
+import { cachedApi } from "@/lib/api";
 import { pct, retClass } from "@/lib/format";
 
 interface Data {
@@ -51,7 +51,7 @@ export default function Breadth({ bare = false }: { bare?: boolean }) {
 
   useEffect(() => {
     if (data[market]) return;
-    api<Data>(`/api/breadth?market=${market}`)
+    cachedApi<Data>(`/api/breadth?market=${market}`)
       .then((r) => {
         setData((d) => ({ ...d, [market]: r }));
         setErr(null);

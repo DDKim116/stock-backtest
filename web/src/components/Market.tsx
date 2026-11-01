@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { cachedApi } from "@/lib/api";
 import { pct, retClass } from "@/lib/format";
 import Breadth from "./Breadth";
 import Concentration from "./Concentration";
@@ -87,7 +87,7 @@ export default function Market() {
 
   useEffect(() => {
     if (data[group]) return;
-    api<Summary>(`/api/indices?group=${group}`)
+    cachedApi<Summary>(`/api/indices?group=${group}`)
       .then((r) => {
         setData((d) => ({ ...d, [group]: r }));
         setErr(null);
