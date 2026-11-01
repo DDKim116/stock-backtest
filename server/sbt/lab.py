@@ -19,6 +19,10 @@ NAME_RE = re.compile(r"^([a-z0-9-]+?)-(\d{8}-\d{4})\.txt$")
 
 # 새 연구를 만들면 여기에 한 줄 추가. 결론은 결과를 같이 보고 정한 것.
 CATALOG: list[dict] = [
+    # ---- 코인
+    {"cmd": "crypto-test", "prefix": "crypto", "area": "코인", "title": "메이저 코인 매일 적립",
+     "question": "비트코인을 매일 1만원씩 샀다면? 이더리움·리플·솔라나와 VOO 와 비교하면? 섞으면?",
+     "conclusion": "결과를 보고 정해요.", "minutes": 1},
     # ---- 미장
     {"cmd": "qld-dip", "prefix": "qld-dip", "area": "미장", "title": "QLD 폭락 때 더 사기",
      "question": "QLD가 내 평단보다 떨어지면 1만·2만원으로 늘려 사면 회복 때 더 벌까? 그 돈을 VOO에 넣는 것보다 나을까?",

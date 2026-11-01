@@ -11,7 +11,7 @@ interface Report {
 }
 interface Item {
   cmd: string;
-  area: "국장" | "미장";
+  area: "국장" | "미장" | "코인";
   title: string;
   question: string;
   conclusion: string;
@@ -32,7 +32,7 @@ interface LabView {
   running: Running | null;
 }
 
-const AREAS = ["전체", "국장", "미장"] as const;
+const AREAS = ["전체", "국장", "미장", "코인"] as const;
 // 2026-10-30T12:05 → 10/30 12:05
 const when = (iso: string) => `${+iso.slice(5, 7)}/${+iso.slice(8, 10)} ${iso.slice(11, 16)}`;
 
@@ -121,7 +121,7 @@ export default function Lab() {
             <div className="flex items-start justify-between gap-2">
               <h3 className="font-semibold leading-snug">{it.title}</h3>
               <span
-                className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] ${it.area === "미장" ? "border-down text-down" : "border-up text-up"}`}
+                className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] ${it.area === "미장" ? "border-down text-down" : it.area === "코인" ? "border-warning text-warning" : "border-up text-up"}`}
               >
                 {it.area}
               </span>
