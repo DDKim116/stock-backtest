@@ -265,7 +265,8 @@ class Auto:
             d["pnl"] = round(d["pnl"])
             d["items"].sort(key=lambda x: x["pnl"], reverse=True)
         eq = self._q("SELECT date, assets FROM at_equity ORDER BY date")
-        return {"days": sorted(days.values(), key=lambda x: x["date"]), "equity": eq}
+        start = self._q("SELECT MIN(entry_date) d FROM at_positions")[0]["d"]
+        return {"days": sorted(days.values(), key=lambda x: x["date"]), "equity": eq, "start": start}
 
     def remove_strategy(self, sid: int) -> None:
         s = self.settings()

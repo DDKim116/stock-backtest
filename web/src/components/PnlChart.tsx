@@ -20,7 +20,9 @@ interface Day {
 interface Daily {
   days: Day[];
   equity: { date: string; assets: number }[];
+  start?: string | null; // 처음 산 날
 }
+const START = 50_000_000; // 모의투자 계좌 시작 금액
 
 type Range = "1m" | "3m" | "all";
 const RANGES: [Range, string, number][] = [
@@ -38,7 +40,7 @@ const won = (v: number) => (v >= 1e8 ? `${(v / 1e8).toLocaleString("ko-KR", { ma
 const tone = (v: number) => (v > 0 ? "text-up" : v < 0 ? "text-down" : "text-muted");
 
 // 날마다 판 종목들의 손익(막대, 누르면 종목) + 계좌 금액(꺾은선)
-export default function PnlChart({ assets, unrealized, colorOf }: { assets?: number | null; unrealized?: number | null; colorOf?: (sid: number | null) => string }) {
+export default function PnlChart({ assets, colorOf }: { assets?: number | null; unrealized?: number | null; colorOf?: (sid: number | null) => string }) {
   const [data, setData] = useState<Daily | null>(null);
   const [range, setRange] = useState<Range>("1m");
   const [pick, setPick] = useState<string | null>(null);
@@ -52,20 +54,17 @@ export default function PnlChart({ assets, unrealized, colorOf }: { assets?: num
   const from = new Date(nowMs - RANGES.find(([k]) => k === range)![2] * 86400e3).toISOString().slice(0, 10);
 
   // 계좌 금액: 장 마감 기록이 있으면 그 값, 없는 날은 '지금 계좌 − 보유 평가손익 − 그 뒤 실현 손익'으로 거꾸로 계산
+  // 계좌 금액: 시작 5천만 (처음 산 날) + 그날까지 판 손익. 장 마감 기록이 있는 날은 그 값, 오늘은 지금 계좌(보유 평가 포함)
   const line = useMemo(() => {
     if (!data) return [];
-    const total = data.days.reduce((s, d) => s + d.pnl, 0);
     const snap = Object.fromEntries(data.equity.map((e) => [e.date, e.assets]));
+    const first = [data.start, data.days[0]?.date, data.equity[0]?.date].filter(Boolean).sort()[0] as string | undefined;
     const pts: { date: string; v: number }[] = [];
-    if (assets != null) {
-      const base = assets - (unrealized ?? 0) - total;
-      let cum = 0;
-      const first = data.days[0]?.date;
-      if (first) pts.push({ date: first < (data.equity[0]?.date ?? "9") ? first : (data.equity[0]?.date ?? first), v: base });
-      for (const d of data.days) {
-        cum += d.pnl;
-        pts.push({ date: d.date, v: snap[d.date] ?? base + cum });
-      }
+    if (first) pts.push({ date: first, v: START });
+    let cum = 0;
+    for (const d of data.days) {
+      cum += d.pnl;
+      pts.push({ date: d.date, v: snap[d.date] ?? START + cum });
     }
     for (const e of data.equity) if (!pts.some((p) => p.date === e.date)) pts.push({ date: e.date, v: e.assets });
     if (assets != null) {
@@ -74,8 +73,9 @@ export default function PnlChart({ assets, unrealized, colorOf }: { assets?: num
       else pts.push({ date: today, v: assets });
     }
     pts.sort((a, b) => a.date.localeCompare(b.date));
-    return pts;
-  }, [data, assets, unrealized, today]);
+    // 같은 날이 두 번이면 뒤의 값
+    return pts.filter((p, i) => i === pts.length - 1 || pts[i + 1].date !== p.date);
+  }, [data, assets, today]);
 
   if (!data) return null;
   const days = data.days.filter((d) => d.date >= from);
@@ -91,12 +91,13 @@ export default function PnlChart({ assets, unrealized, colorOf }: { assets?: num
   // 꺾은선
   const W = 300;
   const H = 90;
-  const lo = Math.min(...lp.map((p) => p.v));
-  const hi = Math.max(...lp.map((p) => p.v));
+  const lo = Math.min(START, ...lp.map((p) => p.v));
+  const hi = Math.max(START, ...lp.map((p) => p.v));
   const y = (v: number) => (hi > lo ? H - 6 - ((v - lo) / (hi - lo)) * (H - 12) : H / 2);
   const x = (i: number) => (lp.length > 1 ? (i / (lp.length - 1)) * W : W / 2);
   const pts = lp.map((p, i) => `${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
-  const chg = lp.length > 1 ? lp[lp.length - 1].v - lp[0].v : 0;
+  const now = lp.length ? lp[lp.length - 1].v : START;
+  const chg = now - START; // 늘 시작 5천만 대비
 
   return (
     <section className="space-y-3 rounded-xl border border-border bg-card p-4">
@@ -125,14 +126,15 @@ export default function PnlChart({ assets, unrealized, colorOf }: { assets?: num
           <div className="flex items-baseline justify-between text-xs">
             <span className="font-semibold">계좌 금액</span>
             <span className="tabular">
-              {won(lp[0].v)} → <b>{won(lp[lp.length - 1].v)}</b>{" "}
+              시작 {won(START)} → <b>{won(now)}</b>{" "}
               <span className={tone(chg)}>
-                ({man(chg)}, {lp[0].v > 0 ? `${chg >= 0 ? "+" : ""}${((chg / lp[0].v) * 100).toFixed(1)}%` : "-"})
+                ({man(chg)}, {`${chg >= 0 ? "+" : ""}${((chg / START) * 100).toFixed(1)}%`})
               </span>
             </span>
           </div>
           <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-24 w-full" aria-label="계좌 금액">
             <polygon points={`0,${H} ${pts} ${W},${H}`} fill="var(--accent)" opacity={0.12} />
+            <line x1={0} x2={W} y1={y(START)} y2={y(START)} stroke="var(--faint)" strokeDasharray="4 4" strokeWidth={1} vectorEffect="non-scaling-stroke" />
             <polyline points={pts} fill="none" stroke="var(--accent)" strokeWidth={2} vectorEffect="non-scaling-stroke" />
           </svg>
           <div className="tabular flex justify-between text-[11px] text-faint">
@@ -210,7 +212,7 @@ export default function PnlChart({ assets, unrealized, colorOf }: { assets?: num
           </div>
         </div>
       )}
-      <p className="text-[11px] text-faint">손익은 수수료·세금 빼기 전 · 계좌 금액은 장 마감마다 기록 (기록 전 날짜는 판 손익으로 거꾸로 계산)</p>
+      <p className="text-[11px] text-faint">손익은 수수료·세금 빼기 전 · 점선 = 시작 5,000만 · 계좌 금액 = 시작 + 판 손익 (장 마감마다 키움 계좌 금액도 기록, 오늘은 보유 평가 포함)</p>
     </section>
   );
 }
