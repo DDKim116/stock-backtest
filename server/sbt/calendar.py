@@ -17,7 +17,6 @@ ET, KST = ZoneInfo("America/New_York"), ZoneInfo("Asia/Seoul")
 
 # FRED 발표 이름 → (한글 이름, 미국 동부 시각, 중요도 1~3, 한 줄 설명)
 RELEASES: list[tuple[str, str, str, int, str]] = [
-    ("FOMC Press Release", "FOMC 금리 결정", "14:00", 3, "미국 기준금리 발표. 주식·코인·환율이 가장 크게 움직이는 날"),
     ("Consumer Price Index", "미국 소비자물가(CPI)", "08:30", 3, "물가가 예상보다 높으면 금리 인하가 늦어져 성장주에 부담"),
     ("Employment Situation", "미국 고용보고서", "08:30", 3, "실업률·일자리 수. 실업률 경고(삼의 법칙)도 이 숫자로 판단"),
     ("Personal Income and Outlays", "미국 PCE 물가", "08:30", 2, "연준이 가장 중요하게 보는 물가"),
@@ -26,6 +25,15 @@ RELEASES: list[tuple[str, str, str, int, str]] = [
     ("Advance Monthly Sales for Retail and Food Services", "미국 소매판매", "08:30", 2, "소비가 살아 있는지"),
     ("Job Openings and Labor Turnover Survey", "미국 구인(JOLTS)", "10:00", 1, "일자리 수요"),
 ]
+
+
+# FOMC 는 FRED 발표 목록이 매일 갱신돼 쓸 수 없어 연준 공식 일정(회의 이틀째 = 발표일, 동부 14:00)을 직접 적는다.
+# 새해 일정이 나오면 여기에 더한다 (federalreserve.gov → FOMC → Meeting calendars).
+FOMC_DAYS = [
+    "2025-01-29", "2025-03-19", "2025-05-07", "2025-06-18", "2025-07-30", "2025-09-17", "2025-10-29", "2025-12-10",
+    "2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17", "2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09",
+]
+FOMC_NOTE = "미국 기준금리 발표(이틀 회의 끝, 한국은 새벽). 주식·코인·환율이 가장 크게 움직이는 날"
 
 
 def _path():
@@ -45,7 +53,11 @@ def update_fred_dates(get, log=print) -> int:
             continue
         j = get("release/dates", {"release_id": rid, "realtime_start": start, "realtime_end": "9999-12-31",
                                   "include_release_dates_with_no_data": "true", "sort_order": "asc", "limit": 200})
-        for d in j.get("release_dates", []):
+        got = j.get("release_dates", [])
+        if len(got) > 60:  # 매일 갱신되는 발표면 일정으로 못 씀 (예전 FOMC 처럼)
+            log(f"  달력: '{name}' 은 발표일이 너무 잦아 뺌 ({len(got)}개)")
+            continue
+        for d in got:
             out.append({"date": d["date"], "name": ko, "et": t, "imp": imp, "note": note, "kind": "us"})
     _path().parent.mkdir(parents=True, exist_ok=True)
     _path().write_text(json.dumps(out, ensure_ascii=False))
@@ -75,8 +87,14 @@ def _last_weekday(y: int, m: int) -> dt.date:
 def events(start: dt.date, end: dt.date) -> list[dict]:
     out: list[dict] = []
     # 미국 발표 (FRED)
+    for d in FOMC_DAYS:
+        kd, kt = _kst(dt.date.fromisoformat(d), "14:00")
+        if start <= kd <= end:
+            out.append({"date": kd.isoformat(), "time": kt, "name": "FOMC 금리 결정", "imp": 3, "note": FOMC_NOTE, "kind": "us"})
     if _path().exists():
         for e in json.loads(_path().read_text()):
+            if e["name"] == "FOMC 금리 결정":  # 예전에 FRED 에서 받은 것 (매일로 잘못 들어감)
+                continue
             day = dt.date.fromisoformat(e["date"])
             kd, kt = _kst(day, e["et"])
             if start <= kd <= end:
