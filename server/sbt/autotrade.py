@@ -99,6 +99,8 @@ class Auto:
                 sold_qty INTEGER NOT NULL DEFAULT 0, sold_amount REAL NOT NULL DEFAULT 0,
                 exit_date TEXT, exit_price REAL, ret REAL,
                 created_at TEXT NOT NULL, updated_at TEXT NOT NULL)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS at_equity (
+                date TEXT PRIMARY KEY, assets REAL NOT NULL, pnl REAL, ts TEXT NOT NULL)""")
             db.execute("""CREATE TABLE IF NOT EXISTS at_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, text TEXT NOT NULL)""")
             # 여러 전략용 칸 (예전 데이터는 첫 전략으로 본다)
@@ -234,6 +236,36 @@ class Auto:
         except Exception as e:  # noqa: BLE001
             self.log(now, f"⚠ 계좌 금액을 못 읽어 고정 금액으로 계산: {e}")
             return None
+
+    def _snap_equity(self, now: dt.datetime, day: str, mode: str) -> None:
+        """장 마감 뒤 하루 한 번 계좌 금액(추정예탁자산)을 남긴다 — 누적 그래프용."""
+        try:
+            b = self.kw.balance(mode)
+            if b.get("assets"):
+                self._x("INSERT OR REPLACE INTO at_equity (date, assets, pnl, ts) VALUES (?, ?, ?, ?)",
+                        (day, float(b["assets"]), b.get("pnl"), now.isoformat(timespec="seconds")))
+        except Exception as e:  # noqa: BLE001
+            self.log(now, f"⚠ 계좌 금액 기록 실패: {e}")
+
+    def daily(self) -> dict:
+        """날마다 실현 손익(판 종목들) + 장 마감 계좌 금액 기록. 손익은 수수료·세금 빼기 전."""
+        rows = self._q("""SELECT id, code, name, strategy_id, exit_reason, exit_date, ret, qty, sold_qty, sold_amount,
+                          entry_price, entry_date FROM at_positions
+                          WHERE status = 'closed' AND exit_date IS NOT NULL AND sold_qty > 0 ORDER BY exit_date, id""")
+        first = (self.settings()["strategies"] or [{"id": None}])[0]["id"]
+        days: dict[str, dict] = {}
+        for r in rows:
+            pnl = float(r["sold_amount"]) - float(r["entry_price"]) * int(r["sold_qty"])
+            d = days.setdefault(r["exit_date"], {"date": r["exit_date"], "pnl": 0.0, "items": []})
+            d["pnl"] += pnl
+            d["items"].append({"code": r["code"], "name": r["name"], "strategy_id": r["strategy_id"] or first,
+                               "reason": r["exit_reason"], "ret": r["ret"], "pnl": round(pnl),
+                               "entry_date": r["entry_date"]})
+        for d in days.values():
+            d["pnl"] = round(d["pnl"])
+            d["items"].sort(key=lambda x: x["pnl"], reverse=True)
+        eq = self._q("SELECT date, assets FROM at_equity ORDER BY date")
+        return {"days": sorted(days.values(), key=lambda x: x["date"]), "equity": eq}
 
     def remove_strategy(self, sid: int) -> None:
         s = self.settings()
@@ -842,5 +874,6 @@ class Auto:
             self.sync(now, mode)
             self._set_state(close_done=tstr)
             self._finish_day(now, tstr)
+            self._snap_equity(now, tstr, mode)
 
 

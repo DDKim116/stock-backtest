@@ -1779,6 +1779,12 @@ def auto_view():
     return _auto().view(_kst_now().date().isoformat())
 
 
+@app.get("/api/auto/daily", dependencies=[Depends(auth)])
+def auto_daily():
+    """날마다 실현 손익(어떤 종목을 팔아서) + 장 마감 계좌 금액 기록."""
+    return _auto().daily()
+
+
 @app.get("/api/auto/compare", dependencies=[Depends(auth)])
 def auto_compare():
     """전략마다 모의투자 실제 vs 백테스트 기대치."""

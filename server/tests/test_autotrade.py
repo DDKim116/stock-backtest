@@ -72,7 +72,7 @@ class FakeKw:
         for no, f in self.fills.items():
             o = self.orders[no]
             q[o["code"]] = q.get(o["code"], 0) + (f["qty"] if o["side"] == "buy" else -f["qty"])
-        return {"holdings": [{"code": c, "qty": n} for c, n in q.items() if n > 0]}
+        return {"assets": 50_000_000, "pnl": 0, "holdings": [{"code": c, "qty": n} for c, n in q.items() if n > 0]}
 
     def fill(self, no, price, qty=None):
         self.fills[no] = {"qty": qty or self.orders[no]["qty"], "price": price}
@@ -198,6 +198,10 @@ def test_week(env):
     assert last["status"] == "closed" and last["exit_reason"] == "기간만료"
     v = a.view()
     assert v["stats"]["n"] == 2 and v["stats"]["win"] == 1
+    dly = a.daily()  # 날마다 실현 손익 + 장 마감 계좌 금액
+    assert sum(len(d["items"]) for d in dly["days"]) == 2
+    assert all(d["pnl"] == sum(x["pnl"] for x in d["items"]) for d in dly["days"])
+    assert any(e["date"] == "2026-11-02" for e in dly["equity"])
 
 
 def test_target_and_disable(env):

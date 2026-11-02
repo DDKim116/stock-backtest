@@ -8,6 +8,7 @@ import type { Spec, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
 import { Upcoming } from "./Calendar";
 import MarketPulse from "./MarketPulse";
+import PnlChart from "./PnlChart";
 import TradeChart from "./TradeChart";
 
 interface Quote {
@@ -219,6 +220,14 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "auto" | "paper
         {acct && <div className="tabular text-xs text-muted">주문가능 {won(acct.cash.orderable)}원</div>}
         {auto && !auto.key_saved && <p className="text-xs text-warning">설정 → 키움 연결에 키를 넣으면 실시간 값이 보입니다.</p>}
       </section>
+
+      {auto && (
+        <PnlChart
+          assets={acct?.balance.assets ?? null}
+          unrealized={acct?.balance.pnl ?? null}
+          colorOf={(sid) => auto.strategies.find((x) => x.id === sid)?.color ?? "var(--faint)"}
+        />
+      )}
 
       <section className="space-y-1.5">
         <div className="flex justify-between px-1 text-xs text-muted">
