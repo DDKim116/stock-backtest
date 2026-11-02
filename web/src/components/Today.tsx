@@ -147,6 +147,15 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "auto" | "paper
     </button>
   );
 
+  const noPlan = !banner && auto?.last_plan && auto.last_plan.count === 0 && waiting.length === 0 && (
+    <div className="rounded-xl border border-border bg-card px-4 py-3">
+      <div className="font-semibold">{md(auto.last_plan.trade_date)} 매수 후보 없음</div>
+      <div className="text-sm text-muted">
+        {md(auto.last_plan.signal_date)} 장 마감 기준으로 v2b 신호가 없었어요 · 다음 후보는 장 마감 뒤 16:40쯤
+      </div>
+    </div>
+  );
+
   return (
     <div className="space-y-3">
       <header className="flex items-end justify-between">
@@ -170,7 +179,7 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "auto" | "paper
 
       {err && <p className="text-sm text-critical">⚠ {err}</p>}
 
-      <div className="fold:hidden">{banner}</div>
+      <div className="fold:hidden">{banner || noPlan}</div>
 
       <div className="space-y-3 fold:grid fold:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] fold:items-start fold:gap-4 fold:space-y-0">
       <div className="space-y-3">
@@ -256,7 +265,7 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "auto" | "paper
 
       </div>
       <div className="space-y-3">
-      <div className="hidden fold:block">{banner}</div>
+      <div className="hidden fold:block">{banner || noPlan}</div>
       <section className="grid grid-cols-2 gap-2 fold:grid-cols-1">
         <div className="rounded-xl border border-border bg-card p-3">
           <div className="text-[11px] text-muted">다음 일정</div>
@@ -323,11 +332,6 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "auto" | "paper
         </section>
       )}
 
-      {auto?.last_plan && auto.last_plan.count === 0 && waiting.length === 0 && (
-        <p className="px-1 text-xs text-faint">
-          {md(auto.last_plan.trade_date)} 매수 후보 없음 · {md(auto.last_plan.signal_date)}에는 신호가 없었습니다.
-        </p>
-      )}
       </div>
       </div>
 
