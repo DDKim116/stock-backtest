@@ -1707,7 +1707,7 @@ def _live_call(fn):
 def live_quote(codes: str):
     from ..broker import kiwoom
 
-    cs = sorted({c.strip() for c in codes.split(",") if c.strip().isalnum()})[:50]
+    cs = sorted({c.strip() for c in codes.split(",") if c.strip().isalnum()})[:100]  # 시총 지도 상위 100 (키움 50개씩 2번)
     if not cs:
         return {}
     mode = _live_mode()

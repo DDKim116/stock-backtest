@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { cachedApi } from "@/lib/api";
+import { api, cachedApi } from "@/lib/api";
 
 interface KrFear {
   available: boolean;
@@ -42,6 +42,20 @@ interface Pulse {
 type Mkt = "KOSPI" | "KOSDAQ" | "US";
 const MKT_LABEL: Record<Mkt, string> = { KOSPI: "코스피", KOSDAQ: "코스닥", US: "미국" };
 const md = (d?: string) => (d ? `${+d.slice(5, 7)}/${+d.slice(8, 10)}` : "");
+// 한국 시각: 평일 09:00 이후이고 오늘이 지도 날짜보다 뒤면 키움 실시간 값으로 1일 등락을 바꾼다
+function kst() {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", weekday: "short", hour12: false,
+    }).formatToParts(new Date()).map((x) => [x.type, x.value]),
+  );
+  return { date: `${p.year}-${p.month}-${p.day}`, hm: `${p.hour === "24" ? "00" : p.hour}:${p.minute}`, wd: p.weekday as string };
+}
+interface LiveQ {
+  price: number;
+  change_pct: number | null;
+  mktcap: number | null;
+}
 const sign = (v: number, nd = 1) => `${v > 0 ? "+" : ""}${v.toFixed(nd)}`;
 
 // 0 공포(파랑) ~ 100 탐욕(빨강)
@@ -273,7 +287,36 @@ function Treemap({ data }: { data: Pulse["treemap"] }) {
 
   const H = Math.round(Math.min(560, Math.max(320, W * 0.75)));
   const d = data[market];
-  const items = useMemo(() => (d?.items ?? []).slice(0, count), [d, count]);
+  // 장중(또는 저녁 갱신 전)엔 키움 실시간 값: 1일 등락·시총만 바꾼다 (1주·1달은 종가 기준 그대로)
+  const [live, setLive] = useState<{ market: Mkt; at: string; q: Record<string, LiveQ> } | null>(null);
+  useEffect(() => {
+    if (market === "US" || !d?.as_of) return;
+    const codes = d.items.slice(0, 100).map((t) => t.code);
+    let stop = false;
+    const load = () => {
+      const n = kst();
+      if (n.wd === "Sat" || n.wd === "Sun" || n.hm < "09:00" || n.date <= (d.as_of ?? "")) return;
+      api<Record<string, LiveQ>>(`/api/live/quote?codes=${codes.join(",")}`)
+        .then((q) => !stop && setLive({ market, at: n.hm, q }))
+        .catch(() => {});
+    };
+    load();
+    const t = setInterval(() => kst().hm < "15:35" && load(), 60_000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [market, d]);
+  const lv = live && live.market === market ? live : null;
+  const items = useMemo(() => {
+    const base = (d?.items ?? []).slice(0, count);
+    if (!lv) return base;
+    return base.map((t) => {
+      const q = lv.q[t.code];
+      if (!q || q.change_pct == null) return t;
+      return { ...t, d1: q.change_pct, cap: q.mktcap ?? t.cap * (1 + q.change_pct / 100) };
+    });
+  }, [d, count, lv]);
   const rects = useMemo(() => squarify(items, W, H), [items, W, H]);
   const sel = pick && items.find((t) => t.code === pick.code);
 
@@ -281,7 +324,12 @@ function Treemap({ data }: { data: Pulse["treemap"] }) {
     <section className="space-y-2 rounded-xl border border-border bg-card p-3">
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
         <span className="text-muted">
-          시총 지도 · {MKT_LABEL[market]} 상위 {Math.min(count, d?.items.length ?? 0)} {d?.as_of && `· ${md(d.as_of)} 종가`}
+          시총 지도 · {MKT_LABEL[market]} 상위 {Math.min(count, d?.items.length ?? 0)}{" "}
+          {lv ? (
+            <span className="text-accent">· 실시간 {lv.at} (1일)</span>
+          ) : (
+            d?.as_of && `· ${md(d.as_of)} 종가`
+          )}
         </span>
         <span className="flex flex-wrap gap-1">
           {(["KOSPI", "KOSDAQ", "US"] as const).map((m) => (data[m]?.items.length ?? 0) > 0 && (
@@ -371,7 +419,7 @@ function Treemap({ data }: { data: Pulse["treemap"] }) {
           );
         })}
       </div>
-      <div className="text-[11px] text-faint">네모 크기 = 시가총액 · 빨강 오름 / 파랑 내림 · 장 마감 종가 기준 (장중 실시간 아님)</div>
+      <div className="text-[11px] text-faint">네모 크기 = 시가총액 · 빨강 오름 / 파랑 내림 · 코스피·코스닥 1일은 장중 실시간(키움, 1분마다), 1주·1달과 미국은 마지막 종가 기준</div>
     </section>
   );
 }
