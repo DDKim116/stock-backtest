@@ -61,6 +61,9 @@ CATALOG: list[dict] = [
      "conclusion": "VOO 매일 적립은 2010~2016 어느 해에 시작해도 10년 뒤 +91~171%. 월적립에서 QQQ가 S&P500을 매번 이김. "
                    "TQQQ·무한매수법은 낙폭이 −54~−100%로 크고 대부분 QQQ 보유보다 못함.", "minutes": 1},
     # ---- 국장
+    {"cmd": "v2b-target", "prefix": "v2b-target", "area": "국장", "title": "v2b 목표가 날마다 낮추기",
+     "question": "5일 동안 목표 10%에 닿는 비율은? 3일째 5%·4일째 3%처럼 목표를 낮추면 손실이 줄고 수익은 늘까?",
+     "conclusion": "결과를 보고 정해요.", "minutes": 3},
     {"cmd": "dart-events", "prefix": "dart-events", "area": "국장", "title": "DART 공시 사건 받기",
      "question": "자사주 매입 결정 · 임원·주요주주 지분 변동 · 잠정 실적 공시를 2015년부터 받는다 (설정에 DART 키 필요)",
      "conclusion": "처음엔 30~60분. 하루 한도에 걸리거나 멈추면 다시 누르면 이어서 받아요.", "minutes": 45},
