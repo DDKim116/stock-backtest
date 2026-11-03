@@ -266,7 +266,11 @@ class Auto:
             d["items"].sort(key=lambda x: x["pnl"], reverse=True)
         eq = self._q("SELECT date, assets FROM at_equity ORDER BY date")
         start = self._q("SELECT MIN(entry_date) d FROM at_positions")[0]["d"]
-        return {"days": sorted(days.values(), key=lambda x: x["date"]), "equity": eq, "start": start}
+        # 거래 금액 합계 (수수료·세금 비교용): 산 금액은 아직 들고 있는 것까지, 판 금액은 판 것만
+        tot = self._q("""SELECT COALESCE(SUM(entry_price * qty), 0) buy, COALESCE(SUM(sold_amount), 0) sell
+                         FROM at_positions WHERE entry_price > 0""")[0]
+        return {"days": sorted(days.values(), key=lambda x: x["date"]), "equity": eq, "start": start,
+                "buy_amount": round(tot["buy"]), "sell_amount": round(tot["sell"])}
 
     def remove_strategy(self, sid: int) -> None:
         s = self.settings()

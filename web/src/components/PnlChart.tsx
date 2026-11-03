@@ -21,6 +21,8 @@ interface Daily {
   days: Day[];
   equity: { date: string; assets: number }[];
   start?: string | null; // 처음 산 날
+  buy_amount?: number; // 산 금액 합계
+  sell_amount?: number; // 판 금액 합계
 }
 const START = 50_000_000; // 모의투자 계좌 시작 금액
 
@@ -103,6 +105,9 @@ export default function PnlChart({ assets, unrealized, colorOf }: { assets?: num
     assets != null && unrealized != null
       ? { realized: realizedAll, held: unrealized, cost: assets - START - realizedAll - unrealized }
       : null;
+  // 실제 계좌 기준 비용: 수수료 0.015% (사고팔 때) + 거래세 0.20% (팔 때)
+  const realCost = data.buy_amount != null && data.sell_amount != null ? data.buy_amount * 0.00015 + data.sell_amount * (0.00015 + 0.002) : null;
+  const costRate = parts && data.buy_amount && data.sell_amount ? (-parts.cost / (data.buy_amount + data.sell_amount)) * 100 : null;
   const chg = now - START; // 늘 시작 5천만 대비
 
   return (
@@ -163,9 +168,16 @@ export default function PnlChart({ assets, unrealized, colorOf }: { assets?: num
               <div>
                 <div className="text-faint">수수료·세금 등</div>
                 <div className={`tabular font-semibold ${tone(parts.cost)}`}>{man(parts.cost)}</div>
+                {realCost != null && <div className="text-faint">실제 계좌면 약 {man(-realCost)}</div>}
               </div>
               <div className="col-span-3 text-faint">
                 셋을 더하면 계좌 변화 <b className={tone(chg)}>{man(chg)}</b> (시작 5,000만 대비, 처음부터)
+                {data.buy_amount ? (
+                  <span className="block">
+                    거래 금액 산 {won(data.buy_amount)} · 판 {won(data.sell_amount ?? 0)}
+                    {costRate != null && costRate > 0 && ` · 거래 금액의 ${costRate.toFixed(2)}%가 비용`} — 키움 모의투자는 실제보다 수수료가 높게 붙어요
+                  </span>
+                ) : null}
               </div>
             </div>
           )}
