@@ -14,7 +14,9 @@ interface Item {
 }
 interface Day {
   date: string;
-  pnl: number;
+  pnl: number; // 실제 계좌 수수료·세금을 뺀 손익
+  gross?: number; // 빼기 전
+  cost?: number; // 실제 계좌 수수료·세금
   items: Item[];
 }
 interface Daily {
@@ -55,29 +57,27 @@ export default function PnlChart({ assets, unrealized, colorOf }: { assets?: num
   const today = new Date(nowMs).toISOString().slice(0, 10);
   const from = new Date(nowMs - RANGES.find(([k]) => k === range)![2] * 86400e3).toISOString().slice(0, 10);
 
-  // 계좌 금액: 장 마감 기록이 있으면 그 값, 없는 날은 '지금 계좌 − 보유 평가손익 − 그 뒤 실현 손익'으로 거꾸로 계산
-  // 계좌 금액: 시작 5천만 (처음 산 날) + 그날까지 판 손익. 장 마감 기록이 있는 날은 그 값, 오늘은 지금 계좌(보유 평가 포함)
+  // 계좌 금액 (실제 계좌 기준): 시작 5천만 + 그날까지 판 손익(실제 수수료·세금 뺀 값), 오늘은 + 들고 있는 종목 평가손익
+  // (키움 모의투자 계좌 금액은 모의투자 수수료가 더 높아 이보다 낮게 나온다 → 참고로만 따로 표시)
   const line = useMemo(() => {
     if (!data) return [];
-    const snap = Object.fromEntries(data.equity.map((e) => [e.date, e.assets]));
-    const first = [data.start, data.days[0]?.date, data.equity[0]?.date].filter(Boolean).sort()[0] as string | undefined;
+    const first = [data.start, data.days[0]?.date].filter(Boolean).sort()[0] as string | undefined;
     const pts: { date: string; v: number }[] = [];
     if (first) pts.push({ date: first, v: START });
     let cum = 0;
     for (const d of data.days) {
       cum += d.pnl;
-      pts.push({ date: d.date, v: snap[d.date] ?? START + cum });
+      pts.push({ date: d.date, v: START + cum });
     }
-    for (const e of data.equity) if (!pts.some((p) => p.date === e.date)) pts.push({ date: e.date, v: e.assets });
-    if (assets != null) {
+    if (unrealized != null) {
       const i = pts.findIndex((p) => p.date === today);
-      if (i >= 0) pts[i] = { date: today, v: assets };
-      else pts.push({ date: today, v: assets });
+      const v = START + cum + unrealized;
+      if (i >= 0) pts[i] = { date: today, v };
+      else pts.push({ date: today, v });
     }
     pts.sort((a, b) => a.date.localeCompare(b.date));
-    // 같은 날이 두 번이면 뒤의 값
     return pts.filter((p, i) => i === pts.length - 1 || pts[i + 1].date !== p.date);
-  }, [data, assets, today]);
+  }, [data, unrealized, today]);
 
   if (!data) return null;
   const days = data.days.filter((d) => d.date >= from);
@@ -99,15 +99,10 @@ export default function PnlChart({ assets, unrealized, colorOf }: { assets?: num
   const x = (i: number) => (lp.length > 1 ? (i / (lp.length - 1)) * W : W / 2);
   const pts = lp.map((p, i) => `${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
   const now = lp.length ? lp[lp.length - 1].v : START;
-  // 계좌 변화 = 판 손익(수수료·세금 전) + 지금 보유 종목 평가손익 + 나머지(수수료·세금 등)
-  const realizedAll = data.days.reduce((s, d) => s + d.pnl, 0);
-  const parts =
-    assets != null && unrealized != null
-      ? { realized: realizedAll, held: unrealized, cost: assets - START - realizedAll - unrealized }
-      : null;
-  // 실제 계좌 기준 비용: 수수료 0.015% (사고팔 때) + 거래세 0.20% (팔 때)
-  const realCost = data.buy_amount != null && data.sell_amount != null ? data.buy_amount * 0.00015 + data.sell_amount * (0.00015 + 0.002) : null;
-  const costRate = parts && data.buy_amount && data.sell_amount ? (-parts.cost / (data.buy_amount + data.sell_amount)) * 100 : null;
+  // 계좌 변화 = 판 종목 손익(수수료 전) − 실제 계좌 수수료·세금 + 들고 있는 종목 평가손익
+  const gross = data.days.reduce((s, d) => s + (d.gross ?? d.pnl), 0);
+  const cost = data.days.reduce((s, d) => s + (d.cost ?? 0), 0);
+  const parts = unrealized != null ? { realized: gross, held: unrealized, cost: -cost } : null;
   const chg = now - START; // 늘 시작 5천만 대비
 
   return (
@@ -166,18 +161,16 @@ export default function PnlChart({ assets, unrealized, colorOf }: { assets?: num
                 <div className={`tabular font-semibold ${tone(parts.held)}`}>{man(parts.held)}</div>
               </div>
               <div>
-                <div className="text-faint">수수료·세금 등</div>
+                <div className="text-faint">수수료·세금 (실거래)</div>
                 <div className={`tabular font-semibold ${tone(parts.cost)}`}>{man(parts.cost)}</div>
-                {realCost != null && <div className="text-faint">실제 계좌면 약 {man(-realCost)}</div>}
               </div>
               <div className="col-span-3 text-faint">
-                셋을 더하면 계좌 변화 <b className={tone(chg)}>{man(chg)}</b> (시작 5,000만 대비, 처음부터)
-                {data.buy_amount ? (
+                셋을 더하면 실거래 기준 계좌 변화 <b className={tone(chg)}>{man(chg)}</b> (시작 5,000만 대비, 처음부터)
+                {assets != null && (
                   <span className="block">
-                    거래 금액 산 {won(data.buy_amount)} · 판 {won(data.sell_amount ?? 0)}
-                    {costRate != null && costRate > 0 && ` · 거래 금액의 ${costRate.toFixed(2)}%가 비용`} — 키움 모의투자는 실제보다 수수료가 높게 붙어요
+                    키움 모의투자 계좌 실제 금액 {won(assets)} (모의투자는 수수료가 실제보다 높아 더 낮게 나와요)
                   </span>
-                ) : null}
+                )}
               </div>
             </div>
           )}
@@ -249,7 +242,7 @@ export default function PnlChart({ assets, unrealized, colorOf }: { assets?: num
           </div>
         </div>
       )}
-      <p className="text-[11px] text-faint">손익은 수수료·세금 빼기 전 · 점선 = 시작 5,000만 · 계좌 금액 = 시작 + 판 손익 (장 마감마다 키움 계좌 금액도 기록, 오늘은 보유 평가 포함)</p>
+      <p className="text-[11px] text-faint">모두 실제 계좌 기준 (수수료 0.015% · 거래세 0.20%를 뺀 손익) · 점선 = 시작 5,000만 · 오늘 금액은 들고 있는 종목 평가 포함</p>
     </section>
   );
 }

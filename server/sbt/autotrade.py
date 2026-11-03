@@ -56,6 +56,7 @@ OPEN = dt.time(9, 0)
 LATE_BUY_UNTIL = dt.time(9, 30)
 STOP_UNTIL = dt.time(15, 19)
 EXPIRE_AT = dt.time(15, 20, 30)
+REAL_FEE, REAL_TAX = 0.00015, 0.002  # 실제 계좌 수수료(사고팔 때) · 거래세(팔 때)
 EXPIRE_UNTIL = dt.time(15, 29)
 CLOSE_AT = dt.time(15, 31)
 
@@ -248,21 +249,27 @@ class Auto:
             self.log(now, f"⚠ 계좌 금액 기록 실패: {e}")
 
     def daily(self) -> dict:
-        """날마다 실현 손익(판 종목들) + 장 마감 계좌 금액 기록. 손익은 수수료·세금 빼기 전."""
+        """날마다 실현 손익(판 종목들, 실제 계좌 수수료·세금을 뺀 값) + 장 마감 계좌 금액 기록."""
         rows = self._q("""SELECT id, code, name, strategy_id, exit_reason, exit_date, ret, qty, sold_qty, sold_amount,
                           entry_price, entry_date FROM at_positions
                           WHERE status = 'closed' AND exit_date IS NOT NULL AND sold_qty > 0 ORDER BY exit_date, id""")
         first = (self.settings()["strategies"] or [{"id": None}])[0]["id"]
         days: dict[str, dict] = {}
         for r in rows:
-            pnl = float(r["sold_amount"]) - float(r["entry_price"]) * int(r["sold_qty"])
-            d = days.setdefault(r["exit_date"], {"date": r["exit_date"], "pnl": 0.0, "items": []})
-            d["pnl"] += pnl
+            buy = float(r["entry_price"]) * int(r["sold_qty"])
+            sell = float(r["sold_amount"])
+            cost = buy * REAL_FEE + sell * (REAL_FEE + REAL_TAX)  # 실제 계좌 기준 (모의투자 수수료는 더 높음)
+            gross = sell - buy
+            net = gross - cost
+            d = days.setdefault(r["exit_date"], {"date": r["exit_date"], "pnl": 0.0, "gross": 0.0, "cost": 0.0, "items": []})
+            d["pnl"] += net
+            d["gross"] += gross
+            d["cost"] += cost
             d["items"].append({"code": r["code"], "name": r["name"], "strategy_id": r["strategy_id"] or first,
-                               "reason": r["exit_reason"], "ret": r["ret"], "pnl": round(pnl),
-                               "entry_date": r["entry_date"]})
+                               "reason": r["exit_reason"], "ret": round(net / buy * 100, 2) if buy else r["ret"],
+                               "pnl": round(net), "entry_date": r["entry_date"]})
         for d in days.values():
-            d["pnl"] = round(d["pnl"])
+            d["pnl"], d["gross"], d["cost"] = round(d["pnl"]), round(d["gross"]), round(d["cost"])
             d["items"].sort(key=lambda x: x["pnl"], reverse=True)
         eq = self._q("SELECT date, assets FROM at_equity ORDER BY date")
         start = self._q("SELECT MIN(entry_date) d FROM at_positions")[0]["d"]
@@ -327,7 +334,7 @@ class Auto:
         self._x(f"UPDATE {table} SET {sets}, updated_at = ? WHERE id = ?", (*kw.values(), self._ts(now), rid))
 
     # ------------------------------------------------------------ 기대치 vs 실제
-    COST_PCT = 0.23  # 매수·매도 수수료 0.015% 씩 + 거래세 0.20% (백테스트와 같은 가정)
+    COST_PCT = round((REAL_FEE * 2 + REAL_TAX) * 100, 4)  # 매수·매도 수수료 0.015% 씩 + 거래세 0.20% (백테스트와 같은 가정)
 
     def expectation(self, sid: int, since: str = "2021-01-01") -> dict | None:
         """전략의 백테스트 기대치 (since 이후 신호, 비용 차감, 거래 1건당). 데이터가 바뀔 때만 다시 계산."""
