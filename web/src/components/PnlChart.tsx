@@ -40,7 +40,7 @@ const won = (v: number) => (v >= 1e8 ? `${(v / 1e8).toLocaleString("ko-KR", { ma
 const tone = (v: number) => (v > 0 ? "text-up" : v < 0 ? "text-down" : "text-muted");
 
 // 날마다 판 종목들의 손익(막대, 누르면 종목) + 계좌 금액(꺾은선)
-export default function PnlChart({ assets, colorOf }: { assets?: number | null; unrealized?: number | null; colorOf?: (sid: number | null) => string }) {
+export default function PnlChart({ assets, unrealized, colorOf }: { assets?: number | null; unrealized?: number | null; colorOf?: (sid: number | null) => string }) {
   const [data, setData] = useState<Daily | null>(null);
   const [range, setRange] = useState<Range>("1m");
   const [pick, setPick] = useState<string | null>(null);
@@ -97,6 +97,12 @@ export default function PnlChart({ assets, colorOf }: { assets?: number | null; 
   const x = (i: number) => (lp.length > 1 ? (i / (lp.length - 1)) * W : W / 2);
   const pts = lp.map((p, i) => `${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
   const now = lp.length ? lp[lp.length - 1].v : START;
+  // 계좌 변화 = 판 손익(수수료·세금 전) + 지금 보유 종목 평가손익 + 나머지(수수료·세금 등)
+  const realizedAll = data.days.reduce((s, d) => s + d.pnl, 0);
+  const parts =
+    assets != null && unrealized != null
+      ? { realized: realizedAll, held: unrealized, cost: assets - START - realizedAll - unrealized }
+      : null;
   const chg = now - START; // 늘 시작 5천만 대비
 
   return (
@@ -144,6 +150,25 @@ export default function PnlChart({ assets, colorOf }: { assets?: number | null; 
             </span>
             <span>{md(lp[lp.length - 1].date)}</span>
           </div>
+          {parts && (
+            <div className="grid grid-cols-3 gap-2 rounded-lg bg-background p-2 text-center text-[11px]">
+              <div>
+                <div className="text-faint">판 종목 손익</div>
+                <div className={`tabular font-semibold ${tone(parts.realized)}`}>{man(parts.realized)}</div>
+              </div>
+              <div>
+                <div className="text-faint">들고 있는 종목 평가</div>
+                <div className={`tabular font-semibold ${tone(parts.held)}`}>{man(parts.held)}</div>
+              </div>
+              <div>
+                <div className="text-faint">수수료·세금 등</div>
+                <div className={`tabular font-semibold ${tone(parts.cost)}`}>{man(parts.cost)}</div>
+              </div>
+              <div className="col-span-3 text-faint">
+                셋을 더하면 계좌 변화 <b className={tone(chg)}>{man(chg)}</b> (시작 5,000만 대비, 처음부터)
+              </div>
+            </div>
+          )}
         </div>
       )}
 
