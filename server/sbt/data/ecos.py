@@ -183,7 +183,8 @@ def find_seoul_apt(sess=None, log=print) -> dict | None:
             items = _items(code, sess)
             pick = _pick_items(items, "서울")
             if not pick:
-                log(f"  {code} {name}: '서울' 항목 없음")
+                sample = sorted({f"{i.get('ITEM_NAME')}({i.get('CYCLE')})" for i in items})[:25]
+                log(f"  {code} {name}: '서울' 항목 없음 · 항목 {len(items)}개 예: {', '.join(sample)}")
                 continue
             sr = search(code, "M", "198001", end, pick, sess)
         except EcosError as e:
