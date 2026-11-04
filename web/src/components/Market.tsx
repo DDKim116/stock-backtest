@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { cachedApi } from "@/lib/api";
 import { pct, retClass } from "@/lib/format";
+import AptChart from "./AptChart";
 import Breadth from "./Breadth";
 import Concentration from "./Concentration";
 import Fold from "./Fold";
@@ -330,6 +331,11 @@ export default function Market() {
       {sum && group === "kr" && (
         <Fold id="breadth" title="시장 폭 · 지수 vs 종목 전체">
           <Breadth bare />
+        </Fold>
+      )}
+      {group === "kr" && (
+        <Fold id="apt" title="서울 아파트 · 코스피 · 기준금리" sub="한국은행 ECOS · 달마다">
+          <AptChart />
         </Fold>
       )}
       {sum && (

@@ -1585,6 +1585,55 @@ def fred_test():
         return {"ok": False, "message": str(e)}
 
 
+# ---------------------------------------------------------------- 한국은행 ECOS (서울 아파트·기준금리)
+class EcosKeyIn(BaseModel):
+    key: str
+
+
+@app.get("/api/ecos", dependencies=[Depends(auth)])
+def ecos_info():
+    from ..data import ecos
+
+    return ecos.view()
+
+
+@app.put("/api/ecos", dependencies=[Depends(auth)])
+def ecos_set_key(body: EcosKeyIn):
+    from ..data import ecos
+
+    try:
+        ecos.set_key(body.key)
+    except ecos.EcosError as e:
+        raise HTTPException(422, str(e))
+    return ecos.view()
+
+
+@app.delete("/api/ecos", dependencies=[Depends(auth)])
+def ecos_clear_key():
+    from ..data import ecos
+
+    ecos.clear_key()
+    return ecos.view()
+
+
+@app.post("/api/ecos/test", dependencies=[Depends(auth)])
+def ecos_test():
+    from ..data import ecos
+
+    try:
+        return {"ok": True, "message": ecos.test()}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "message": str(e)}
+
+
+@app.get("/api/apt", dependencies=[Depends(auth)])
+def apt_chart():
+    """시장 탭 '서울 아파트': 달마다 아파트·코스피·기준금리."""
+    from .. import research27
+
+    return research27.chart()
+
+
 # ---------------------------------------------------------------- DART 재무 자료 (키 저장·확인)
 class DartKeyIn(BaseModel):
     key: str
