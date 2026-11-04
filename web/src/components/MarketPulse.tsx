@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, cachedApi } from "@/lib/api";
+import type { Spec, Trade } from "@/lib/types";
+import { useBackClose } from "@/lib/useBackClose";
+import TradeChart from "./TradeChart";
 
 interface KrFear {
   available: boolean;
@@ -269,11 +272,33 @@ const COUNTS = [30, 50, 100];
 const usd = (v: number) => (v >= 1e12 ? `$${(v / 1e12).toFixed(2)}T` : `$${Math.round(v / 1e9).toLocaleString("en-US")}B`);
 const jo = (won: number) => (won >= 1e12 ? `${(won / 1e12).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}조` : `${Math.round(won / 1e8).toLocaleString("ko-KR")}억`);
 
+function asTrade(t: Tile, m: Mkt): Trade {
+  const today = kst().date;
+  return {
+    code: t.code, name: t.name, market: MKT_LABEL[m], signal_date: today, signal_close: null, limit: null, fill_date: null, fill_price: null,
+    outcome: "", outcome_opt: "", uncertain: false, exit_date: null, exit_price: null, days: null, ret: null, ret_opt: null, mfe: null, mae: null,
+  };
+}
+
 function Treemap({ data }: { data: Pulse["treemap"] }) {
   const [market, setMarket] = useState<Mkt>("KOSPI");
   const [period, setPeriod] = useState<Period>("d1");
   const [count, setCount] = useState(50);
   const [pick, setPick] = useState<Tile | null>(null);
+  // 네모를 누르면 그 종목 차트 (국내: 키움 실시간 5분봉부터, 미국: 일봉)
+  const [chart, setChart] = useState<{ t: Tile; market: Mkt } | null>(null);
+  const [spec, setSpec] = useState<Spec | null>(null);
+  const closeChart = useCallback(() => setChart(null), []);
+  const back = useBackClose(!!chart, closeChart);
+  const openChart = (t: Tile) => {
+    setPick(t);
+    if (!spec)
+      api<{ spec: Spec }>("/api/parse", { body: { text: "[신호]\n종가 > 0\n" } })
+        .then((r) => setSpec({ ...r.spec, exit: { ...r.spec.exit, target_pct: null, stop_pct: null } }))
+        .catch(() => {});
+    back.push();
+    setChart({ t, market });
+  };
   const box = useRef<HTMLDivElement>(null);
   const [W, setW] = useState(0);
 
@@ -386,7 +411,7 @@ function Treemap({ data }: { data: Pulse["treemap"] }) {
             </span>
           </>
         ) : (
-          <span className="text-xs text-faint">네모를 누르면 종목 이름과 등락이 여기에 나와요</span>
+          <span className="text-xs text-faint">네모를 누르면 그 종목 차트가 열려요 (국내는 실시간 분봉)</span>
         )}
       </div>
       <div ref={box} className="relative w-full overflow-hidden rounded-lg" style={{ height: H }}>
@@ -399,7 +424,7 @@ function Treemap({ data }: { data: Pulse["treemap"] }) {
             <button
               type="button"
               key={r.t.code}
-              onClick={() => setPick(on ? null : r.t)}
+              onClick={() => openChart(r.t)}
               title={`${r.t.name} ${v == null ? "–" : sign(v, 2) + "%"}`}
               className={`absolute flex flex-col items-center justify-center overflow-hidden border text-center leading-tight ${on ? "z-10 border-2 border-foreground" : "border-background"}`}
               style={{ left: r.x, top: r.y, width: r.w, height: r.h, background: tileColor(v, period) }}
@@ -420,6 +445,18 @@ function Treemap({ data }: { data: Pulse["treemap"] }) {
         })}
       </div>
       <div className="text-[11px] text-faint">네모 크기 = 시가총액 · 빨강 오름 / 파랑 내림 · 코스피·코스닥 1일은 장중 실시간(키움, 1분마다), 1주·1달과 미국은 마지막 종가 기준</div>
+      {chart && spec && (
+        <TradeChart
+          trade={asTrade(chart.t, chart.market)}
+          spec={spec}
+          dataset={chart.market === "US" ? "us" : "kr"}
+          currency={chart.market === "US" ? "USD" : "KRW"}
+          onClose={back.close}
+          strategy={false}
+          startMode={chart.market === "US" ? "day" : 5}
+          subtitle={`시총 지도 · ${MKT_LABEL[chart.market]}${chart.market === "US" ? " · 일봉 (미국은 실시간 없음)" : " · 분봉은 키움 실시간 (30초마다)"}`}
+        />
+      )}
     </section>
   );
 }

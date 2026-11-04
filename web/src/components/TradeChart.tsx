@@ -118,6 +118,8 @@ export default function TradeChart({
   onClose,
   mine,
   strategy = true,
+  startMode = "day",
+  subtitle,
 }: {
   trade: Trade;
   spec: Spec;
@@ -126,11 +128,13 @@ export default function TradeChart({
   onClose: () => void;
   mine?: { date: string; side: "buy" | "sell"; price: number }[]; // 매매일지의 내 체결
   strategy?: boolean; // false 면 전략 표시(신호·매수·청산·가격선)를 빼고 내 체결만
+  startMode?: "day" | number; // 처음 보여 줄 것: 일봉 또는 분봉(분)
+  subtitle?: string; // 머리 둘째 줄 (기본: 신호·결과 또는 '내 매수·매도 표시')
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [dayBars, setDayBars] = useState<Bar[] | null>(null);
   const [live, setLive] = useState<Bar | null>(null); // 오늘 봉 (키움 실시간)
-  const [mode, setMode] = useState<"day" | number>("day"); // 일봉 또는 분봉 단위(분)
+  const [mode, setMode] = useState<"day" | number>(startMode); // 일봉 또는 분봉 단위(분)
   const [mbars, setMbars] = useState<Bar[] | null>(null);
   const [liveAt, setLiveAt] = useState<string | null>(null);
   const [liveErr, setLiveErr] = useState<string | null>(null);
@@ -523,7 +527,7 @@ export default function TradeChart({
             {trade.name} <span className="text-sm font-normal text-muted">{trade.code} · {trade.market}</span>
           </div>
           <div className="text-xs text-muted">
-            {strategy ? `신호 ${trade.signal_date} · ${trade.outcome}` : "내 매수·매도 표시"}
+            {subtitle ?? (strategy ? `신호 ${trade.signal_date} · ${trade.outcome}` : "내 매수·매도 표시")}
             {trade.uncertain && ` (낙관적: ${trade.outcome_opt})`}
           </div>
         </div>
