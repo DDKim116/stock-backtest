@@ -33,7 +33,8 @@ def fake(tmp_path, monkeypatch):
                         {"GRP_CODE": "G2", "ITEM_CODE": "T3", "ITEM_NAME": "아파트", "CYCLE": "M"}]
             if parts[0] == "721Y001":
                 return [{"ITEM_CODE": "010101000", "ITEM_NAME": "콜금리(1일, 전체거래)", "CYCLE": "M"}]
-            return [{"ITEM_CODE": "K1", "ITEM_NAME": "KOSPI", "CYCLE": "M"}]
+            return [{"ITEM_CODE": "K0", "ITEM_NAME": "KOSPI 거래대금", "CYCLE": "M"},
+                    {"ITEM_CODE": "K1", "ITEM_NAME": "KOSPI", "CYCLE": "M"}]
         stat, cyc, a, b, *items = parts
         if stat == "722Y001":
             return [{"TIME": t, "DATA_VALUE": str(v)} for t, v in zip(rate_m, rate) if a <= t <= b]
@@ -42,6 +43,7 @@ def fake(tmp_path, monkeypatch):
             return [{"TIME": t, "DATA_VALUE": f"{v:.2f}"} for t, v in zip(apt_m, apt) if a <= t <= b]
         if stat == "721Y001":
             return [{"TIME": t, "DATA_VALUE": "5.0"} for t in _months("1990-01", "1999-12")]
+        assert items == ["K1"], items  # 거래대금은 건너뛴다
         return [{"TIME": t, "DATA_VALUE": f"{500 + i:.1f}"} for i, t in enumerate(_months("1990-01", "2026-09"))]
 
     monkeypatch.setattr(ecos, "_call", call)
@@ -73,3 +75,12 @@ def test_key_rules(tmp_path, monkeypatch):
     ecos.set_key("ABCDEFGHIJ0123456789")
     assert ecos.view()["saved"] and ecos.view()["key_tail"] == "6789"
     assert oct((tmp_path / "ecos.json").stat().st_mode)[-3:] == "600"
+
+
+def test_chain_rebased_tables():
+    old = pd.Series([50.0, 60, 80, 90, 100], index=pd.to_datetime(["2003-11-01", "2010-01-01", "2021-06-01", "2023-01-01", "2025-03-01"]))
+    new = pd.Series([40.0, 45, 50, 60], index=pd.to_datetime(["2021-06-01", "2023-01-01", "2025-03-01", "2026-09-01"]))
+    c = ecos.chain([old, new])
+    assert c.index[0] == pd.Timestamp("2003-11-01") and c.index[-1] == pd.Timestamp("2026-09-01")
+    assert c.loc["2026-09-01"] == 60 and abs(c.loc["2010-01-01"] - 30) < 1e-9  # 옛 표는 0.5 배로 맞춰 앞에
+    assert ecos._family("4.4.3.1.4. 유형별 주택매매가격지수(기준월: 2021.06)") == ecos._family("4.4.3.1.1. 유형별 주택매매가격지수(기준월: 2026.06)")

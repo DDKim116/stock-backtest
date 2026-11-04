@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -143,33 +144,99 @@ def _pick_items(items: list[dict], want: str) -> list[str] | None:
     return out if found else None
 
 
+def _family(name: str) -> str:
+    """'4.4.3.1.4. 유형별 주택매매가격지수(기준월: 2021.06)' → '유형별주택매매가격지수' (기준월만 다른 같은 표 묶기)."""
+    n = re.sub(r"^[\d.]+\s*", "", str(name))
+    n = re.sub(r"\(?\s*기준\s*(월|시점|년)?\s*[:：]?\s*[\d.\s]+\)?", "", n)
+    return n.replace(" ", "")
+
+
+def chain(series: list[pd.Series]) -> pd.Series:
+    """기준월만 다른 지수들을 이어 붙인다: 가장 최근 것 기준, 그 전은 겹치는 달의 비율로 맞춰 앞에 붙임."""
+    ss = sorted([x for x in series if len(x)], key=lambda x: (x.index[-1], x.index[0]), reverse=True)
+    if not ss:
+        return pd.Series(dtype=float)
+    out = ss[0].copy()
+    for o in ss[1:]:
+        ov = out.index.intersection(o.index)
+        if len(ov) < 3 or o.index[0] >= out.index[0]:
+            continue
+        ov = ov[-12:]
+        f = float((out.loc[ov] / o.loc[ov]).median())
+        out = pd.concat([o[o.index < out.index[0]] * f, out]).sort_index()
+    return out
+
+
 def find_seoul_apt(sess=None, log=print) -> dict | None:
-    """통계표 목록에서 서울 아파트 매매가격지수를 찾는다 (가장 긴 것)."""
+    """통계표 목록에서 서울 아파트 매매가격지수를 찾는다. 기준월만 다른 표는 이어 붙이고, 가장 긴 것을 고른다."""
     cands = []
     for t in _tables(sess):
         nm = str(t.get("STAT_NAME", "")).replace(" ", "")
-        if t.get("SRCH_YN") != "Y" or "매매가격지수" not in nm or "전세" in nm:
+        if t.get("SRCH_YN") != "Y" or "매매가격지수" not in nm or "전세" in nm or "월세" in nm:
             continue
-        score = (2 if "아파트" in nm else 0) + (1 if "KB" in nm.upper() else 0) + (1 if "주택" in nm else 0)
-        cands.append((score, t["STAT_CODE"], t.get("STAT_NAME", ""), t.get("CYCLE", "")))
-    cands.sort(key=lambda x: -x[0])
-    best = None
-    for score, code, name, cyc in cands[:8]:
+        cands.append((t["STAT_CODE"], t.get("STAT_NAME", "")))
+    log(f"  매매가격지수 표 {len(cands)}개: " + " · ".join(f"{c} {n}" for c, n in cands[:20]))
+    fams: dict[str, list] = {}
+    end = dt.date.today().strftime("%Y%m")
+    for code, name in cands[:20]:
         try:
             items = _items(code, sess)
             pick = _pick_items(items, "서울")
             if not pick:
+                log(f"  {code} {name}: '서울' 항목 없음")
                 continue
-            s = search(code, "M", "198001", dt.date.today().strftime("%Y%m"), pick, sess)
+            sr = search(code, "M", "198001", end, pick, sess)
         except EcosError as e:
-            log(f"  {name}: {e}")
+            log(f"  {code} {name}: {e}")
             continue
-        log(f"  후보 {code} {name}: {len(s)}달 ({s.index[0].date() if len(s) else '-'} ~)")
-        if len(s) >= 60 and (best is None or len(s) > len(best["s"])):
-            names = {i["ITEM_CODE"]: i.get("ITEM_NAME") for i in items}
-            best = {"stat": code, "name": name, "items": pick, "item_names": [names.get(c, c) for c in pick], "s": s}
+        names = {i["ITEM_CODE"]: i.get("ITEM_NAME") for i in items}
+        log(f"  후보 {code} {name} [{', '.join(str(names.get(c, c)) for c in pick)}]: {len(sr)}달"
+            + (f" ({sr.index[0]:%Y-%m} ~ {sr.index[-1]:%Y-%m})" if len(sr) else ""))
+        if len(sr) >= 12:
+            fams.setdefault(_family(name), []).append({"stat": code, "name": name, "items": pick,
+                                                        "item_names": [names.get(c, c) for c in pick], "s": sr})
         time.sleep(0.2)
+    best = None
+    for fam, parts in fams.items():
+        sr = chain([x["s"] for x in parts])
+        # 아파트 표가 아니면 항목에 '아파트'가 있어야 함
+        apt_ok = "아파트" in fam or any("아파트" in str(n) for x in parts for n in x["item_names"])
+        if not apt_ok or len(sr) < 60:
+            continue
+        key = (len(sr), sr.index[-1])
+        if best is None or key > best["key"]:
+            best = {"key": key, "stat": ",".join(x["stat"] for x in parts), "name": fam, "s": sr,
+                    "items": parts[0]["items"], "item_names": parts[0]["item_names"], "tables": len(parts)}
+    if best:
+        best.pop("key")
     return best
+
+
+def find_kospi(ref: pd.Series | None, sess=None, log=print) -> dict | None:
+    """주식시장(월) 표에서 코스피 '지수' 항목 (거래대금·시가총액 같은 것 말고). 앱 지수와 겹치는 달 값이 맞는 것."""
+    bad = ("거래", "대금", "시가총액", "상장", "회사", "수량", "주식수", "외국인", "PER", "배당")
+    tried = 0
+    for t in _tables(sess):
+        nm = str(t.get("STAT_NAME", ""))
+        if t.get("SRCH_YN") != "Y" or not ("주식" in nm or "주가" in nm) or t.get("CYCLE") not in ("M", "MM") or tried >= 6:
+            continue
+        tried += 1
+        for it in _items(t["STAT_CODE"], sess):
+            iname = str(it.get("ITEM_NAME", ""))
+            if not any(w in iname.upper() for w in ("KOSPI", "코스피", "종합주가")) or any(b in iname for b in bad):
+                continue
+            k = search(t["STAT_CODE"], "M", "198001", dt.date.today().strftime("%Y%m"), [it["ITEM_CODE"]], sess)
+            if len(k) < 120:
+                continue
+            ok = True
+            if ref is not None and len(ref):
+                ov = k.index.intersection(ref.index)
+                err = float((k.loc[ov] / ref.loc[ov] - 1).abs().median()) if len(ov) >= 12 else 1.0
+                ok = err < 0.03
+                log(f"  코스피 후보 {t['STAT_CODE']} {nm} · {iname}: 앱 지수와 차이 {err * 100:.1f}%")
+            if ok:
+                return {"stat": t["STAT_CODE"], "name": nm, "item": it["ITEM_CODE"], "item_name": iname, "s": k}
+    return None
 
 
 def _find_item(stat: str, want: tuple[str, ...], sess=None) -> tuple[str, str] | None:
@@ -222,27 +289,29 @@ def update(log=print) -> int:
     if best:
         _save("seoul_apt", best["s"])
         meta["seoul_apt"] = {k: v for k, v in best.items() if k != "s"}
-        log(f"  → 고른 표: {best['stat']} {best['name']} · 항목 {', '.join(map(str, best['item_names']))} · "
-            f"{best['s'].index[0]:%Y-%m} ~ {best['s'].index[-1]:%Y-%m}")
+        log(f"  → 고른 표: {best['stat']} {best['name']} (기준월 다른 표 {best['tables']}개 이어 붙임) · "
+            f"항목 {', '.join(map(str, best['item_names']))} · {best['s'].index[0]:%Y-%m} ~ {best['s'].index[-1]:%Y-%m}")
         n += 1
     else:
         log("  ⚠ 서울 아파트 매매가격지수 표를 찾지 못했습니다 (결과를 알려 주세요)")
-    # 코스피 월말 (ECOS 주식시장 표에서, 없으면 앱의 지수 파일을 쓴다)
+    # 코스피 월말 (ECOS 주식시장 표에서 '지수' 항목 — 앱 지수(2010~)와 값이 맞는지 확인해서, 그 전 달을 채우는 데 쓴다)
     try:
-        tried = 0
-        for t in _tables(sess):
-            nm = str(t.get("STAT_NAME", ""))
-            if t.get("SRCH_YN") == "Y" and ("주식" in nm or "주가" in nm) and t.get("CYCLE") in ("M", "MM") and tried < 8:
-                tried += 1
-                hit = _find_item(t["STAT_CODE"], ("KOSPI", "코스피", "종합주가지수"), sess)
-                if hit:
-                    k = search(t["STAT_CODE"], "M", "198001", end, [hit[0]], sess)
-                    if len(k) > 120:
-                        _save("kospi", k)
-                        meta["kospi"] = {"stat": t["STAT_CODE"], "name": nm, "item": hit[0]}
-                        log(f"  코스피(월): {t['STAT_CODE']} {nm} · {k.index[0]:%Y-%m} ~ ({len(k)}달)")
-                        n += 1
-                        break
+        from .indices import load as index_load
+
+        ik = index_load("KOSPI")
+        ref = None
+        if ik is not None and len(ik):
+            ref = ik.groupby(ik.index.to_period("M")).last()
+            ref.index = ref.index.to_timestamp()
+        hit = find_kospi(ref, sess, log)
+        if hit:
+            _save("kospi", hit["s"])
+            meta["kospi"] = {k: v for k, v in hit.items() if k != "s"}
+            log(f"  코스피(월): {hit['stat']} {hit['name']} · {hit['item_name']} · {hit['s'].index[0]:%Y-%m} ~")
+            n += 1
+        else:
+            (_dir() / "kospi.csv").unlink(missing_ok=True)
+            log("  코스피(월): ECOS 에서 맞는 항목을 못 찾음 → 앱 지수(2010~)만 씀")
     except EcosError as e:
         log(f"  코스피(월): {e}")
     _dir().mkdir(parents=True, exist_ok=True)
