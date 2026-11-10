@@ -234,6 +234,11 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "auto" | "paper
           <span>보유 종목</span>
           <span>매수가 → 현재가 · 수익률</span>
         </div>
+        {(sess === "장 마감" || sess === "장 전") && active.length > 0 && (
+          <p className="px-1 text-[11px] text-warning">
+            지금 현재가는 장 마감 뒤 거래(시간외·넥스트레이드) 값일 수 있어요. 목표가·손절 자동 매도는 정규장(09:00~15:30)에서만 해요 — 다음 날 시가가 목표가 이상이면 시가에 팔려요.
+          </p>
+        )}
         <div className="divide-y divide-border rounded-xl border border-border bg-card">
           {active.length === 0 && <p className="px-4 py-3 text-sm text-faint">보유 종목이 없습니다.</p>}
           {active.slice(0, 6).map((p) => {
