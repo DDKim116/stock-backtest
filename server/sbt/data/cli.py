@@ -8,6 +8,7 @@
   python -m sbt.data.cli dart-collect               # DART 재무(매출·영업이익·순이익) 2015~ 받기 (키는 앱 설정에서)
   python -m sbt.data.cli growth-test                # 매출 꾸준히 느는 코스피 상위 100 회사: 주가와의 관계, 언제 사고 팔지
   python -m sbt.data.cli profit-test                # 영업이익 증익·가속·흑자전환 공시 뒤 주가 (상위 100 / 101~300위)
+  python -m sbt.data.cli third-touch                # 전고점 세 번째 돌파: 얼마나 먹나 (시총대별)
   python -m sbt.data.cli v2b-target                 # v2b 목표가를 날이 지날수록 낮추면 (3일째 5%·4일째 3% 등)
   python -m sbt.data.cli dart-events               # DART 공시 사건(자사주 매입·임원·주요주주 매매·잠정 실적) 받기, 이어받기
   python -m sbt.data.cli disclosure-test            # 자사주 매입·임원 매수 공시 뒤에 사면 주가가 더 갈까
@@ -104,6 +105,8 @@ def main(argv: list[str] | None = None) -> None:
     pt = sub.add_parser("profit-test")
     pt.add_argument("--dataset", default="kr")
     sub.add_parser("dart-events")
+    tt3 = sub.add_parser("third-touch")
+    tt3.add_argument("--dataset", default="kr")
     vt = sub.add_parser("v2b-target")
     vt.add_argument("--dataset", default="kr")
     sub.add_parser("us-v2b")
@@ -262,6 +265,9 @@ def main(argv: list[str] | None = None) -> None:
     elif a.cmd == "profit-test":
         from .. import research18
         research18.run(a.dataset)
+    elif a.cmd == "third-touch":
+        from .. import research28
+        research28.run(a.dataset)
     elif a.cmd == "v2b-target":
         from .. import research26
         research26.run(a.dataset)

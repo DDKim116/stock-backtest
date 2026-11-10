@@ -61,6 +61,9 @@ CATALOG: list[dict] = [
      "conclusion": "VOO 매일 적립은 2010~2016 어느 해에 시작해도 10년 뒤 +91~171%. 월적립에서 QQQ가 S&P500을 매번 이김. "
                    "TQQQ·무한매수법은 낙폭이 −54~−100%로 크고 대부분 QQQ 보유보다 못함.", "minutes": 1},
     # ---- 국장
+    {"cmd": "third-touch", "prefix": "third-touch", "area": "국장", "title": "전고점 세 번째 돌파",
+     "question": "1년 고점을 두 번 찍고 내려왔다가 세 번째에 뚫으면 얼마나 갈까? 목표·손절은? 시가총액대별로는?",
+     "conclusion": "결과를 보고 정해요.", "minutes": 3},
     {"cmd": "ecos-update", "prefix": "ecos", "area": "국장", "title": "한국은행 ECOS 받기 (아파트·금리)",
      "question": "서울 아파트 매매가격지수(1986~)·한국 기준금리·코스피(월)를 받는다 (설정에 ECOS 키 필요)",
      "conclusion": "처음 한 번 받으면 이후엔 매일 국내 갱신 때 자동. 고른 아파트 표 이름이 결과에 나와요.", "minutes": 1},

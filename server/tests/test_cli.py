@@ -3,7 +3,7 @@ import pytest
 from sbt.data import cli
 
 
-@pytest.mark.parametrize("cmd", ["accel-plan", "ecos-update", "apt-test", "v2b-target", "dart-events", "us-v2b", "disclosure-test", "accel-fast", "profit-test", "growth-test", "dart-collect", "bull-plan", "leader-test",
+@pytest.mark.parametrize("cmd", ["accel-plan", "third-touch", "ecos-update", "apt-test", "v2b-target", "dart-events", "us-v2b", "disclosure-test", "accel-fast", "profit-test", "growth-test", "dart-collect", "bull-plan", "leader-test",
                                  "box-test", "qld-dip", "kr-update", "kr-evening", "us-update", "auto-report"])
 def test_every_command_parses(cmd, monkeypatch):
     """명령 이름만으로 인자 해석이 되는지 (실제 실행은 하지 않음)."""
