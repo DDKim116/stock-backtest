@@ -450,13 +450,23 @@ export default function TradeChart({
 
   const shown = hover ?? pinned ?? bars?.find((b) => b.t === trade.signal_date) ?? null;
 
+  // 전일 종가: 일봉은 앞 봉, 분봉은 그 전 거래일의 일봉 종가 (분봉끼리 비교하면 1분 등락이라 의미가 없음)
+  const prevClose = (i: number): number | null => {
+    if (!bars || i < 0) return null;
+    if (isDay) return i > 0 ? bars[i - 1].c : null;
+    const day = bars[i].t.slice(0, 10);
+    const pd = (dayBars ?? []).filter((b) => b.t < day);
+    return pd.length ? pd[pd.length - 1].c : null;
+  };
+  const vs = (v: number, base: number | null | undefined) => (base ? (v / base - 1) * 100 : null);
+
   // 고른 봉의 등락률·이평·RSI·매수가 대비
   const info = useMemo(() => {
     if (!bars || !shown) return null;
     const i = bars.findIndex((b) => b.t === shown.t);
     if (i < 0) return null;
     const closes = bars.map((b) => b.c);
-    const prev = i > 0 ? bars[i - 1].c : null;
+    const prev = prevClose(i);
     const mas = periods.map((n) => ({ n, v: sma(closes, n)[i] }));
     const r = showRSI ? rsi(closes, 14)[i] : null;
     const bb = showBB ? bollinger(closes, 20, 2) : null;
@@ -467,10 +477,13 @@ export default function TradeChart({
       rsi: r,
       bb: bb ? { up: bb.up[i], lo: bb.lo[i] } : null,
       vsBuy: base && shown.t >= (trade.fill_date ?? "") ? (shown.c / base - 1) * 100 : null,
+      prev,
+      hiBuy: base && shown.t >= (trade.fill_date ?? "") ? (shown.h / base - 1) * 100 : null,
+      loBuy: base && shown.t >= (trade.fill_date ?? "") ? (shown.l / base - 1) * 100 : null,
       ix: showIx ? ixInfo(bars, i, ixP) : null,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- periods 는 spec 에서 나옴
-  }, [bars, shown, ind, trade, spec]);
+  }, [bars, shown, ind, trade, spec, dayBars, isDay]);
 
   // 누른 봉 정보 카드 (항목, 값, 색)
   const pinCard = useMemo(() => {
@@ -478,13 +491,17 @@ export default function TradeChart({
     const i = bars.findIndex((b) => b.t === pinned.t);
     if (i < 0) return null;
     const closes = bars.map((b) => b.c);
-    const prev = i > 0 ? bars[i - 1].c : null;
+    const prev = prevClose(i);
     const chg = prev ? (pinned.c / prev - 1) * 100 : null;
+    const wp = (v: number) => {
+      const d = vs(v, prev);
+      return d == null ? price(v, currency) : `${price(v, currency)} (${pct(d, 1, true)})`;
+    };
     const rows: [string, string, string?][] = [
       ["등락률", pct(chg, 2, true), retClass(chg)],
-      ["시가", price(pinned.o, currency)],
-      ["고가", price(pinned.h, currency)],
-      ["저가", price(pinned.l, currency)],
+      ["시가", wp(pinned.o), retClass(vs(pinned.o, prev))],
+      ["고가", wp(pinned.h), retClass(vs(pinned.h, prev))],
+      ["저가", wp(pinned.l), retClass(vs(pinned.l, prev))],
       ["종가", price(pinned.c, currency)],
       ["거래량", Math.round(pinned.v).toLocaleString("ko-KR")],
     ];
@@ -513,11 +530,15 @@ export default function TradeChart({
     const base = trade.fill_price ?? null;
     if (base && pinned.t >= (trade.fill_date ?? "")) {
       const d = (pinned.c / base - 1) * 100;
-      rows.push(["매수가 대비", pct(d, 2, true), retClass(d)]);
+      rows.push(["매수가 대비 종가", pct(d, 2, true), retClass(d)]);
+      const dh = (pinned.h / base - 1) * 100;
+      const dl = (pinned.l / base - 1) * 100;
+      rows.push(["매수가 대비 고가", pct(dh, 2, true), retClass(dh)]);
+      rows.push(["매수가 대비 저가", pct(dl, 2, true), retClass(dl)]);
     }
     return rows;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- periods 는 spec 에서 나옴
-  }, [bars, pinned, ind, trade, spec, currency, ixName]);
+  }, [bars, pinned, ind, trade, spec, currency, ixName, dayBars, isDay]);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background" role="dialog" aria-modal="true">
@@ -544,10 +565,22 @@ export default function TradeChart({
                 {pinned && pinned.t === shown.t && !hover && " 📌"}
               </span>
               {info?.chg != null && <span className={retClass(info.chg)}>{pct(info.chg, 2, true)}</span>}
-              <span>시 {price(shown.o, currency)}</span>
-              <span>고 {price(shown.h, currency)}</span>
-              <span>저 {price(shown.l, currency)}</span>
-              <span>종 {price(shown.c, currency)}</span>
+              {(
+                [
+                  ["시", shown.o],
+                  ["고", shown.h],
+                  ["저", shown.l],
+                  ["종", shown.c],
+                ] as [string, number][]
+              ).map(([k, v]) => {
+                const d = k === "종" ? null : vs(v, info?.prev);
+                return (
+                  <span key={k}>
+                    {k} {price(v, currency)}
+                    {d != null && <span className={`ml-0.5 ${retClass(d)}`}>({pct(d, 1, true)})</span>}
+                  </span>
+                );
+              })}
             </div>
             <div className="flex flex-wrap gap-x-3">
               <span>거래량 {Math.round(shown.v).toLocaleString("ko-KR")}</span>
@@ -555,7 +588,17 @@ export default function TradeChart({
               {shown.m != null && <span>시총 {bigMoney(shown.m, currency)}</span>}
               {info?.vsBuy != null && (
                 <span>
-                  매수가 대비 <span className={retClass(info.vsBuy)}>{pct(info.vsBuy, 2, true)}</span>
+                  매수가 대비 종 <span className={retClass(info.vsBuy)}>{pct(info.vsBuy, 2, true)}</span>
+                  {info.hiBuy != null && (
+                    <>
+                      {" "}· 고 <span className={retClass(info.hiBuy)}>{pct(info.hiBuy, 1, true)}</span>
+                    </>
+                  )}
+                  {info.loBuy != null && (
+                    <>
+                      {" "}· 저 <span className={retClass(info.loBuy)}>{pct(info.loBuy, 1, true)}</span>
+                    </>
+                  )}
                 </span>
               )}
               {info?.mas.map((m) =>
