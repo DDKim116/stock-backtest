@@ -7,6 +7,12 @@ git fetch -q origin main
 if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] && [ "${1:-}" != "--force" ]; then
   exit 0
 fi
+# 자동 매매 주문 시각(평일 08:40~09:05 매수, 15:15~15:35 기간만료 매도·마무리)에는 서버를 다시 켜지 않는다 → 다음 차례에
+hm=$(TZ=Asia/Seoul date +%H%M); wd=$(TZ=Asia/Seoul date +%u)
+if [ "${1:-}" != "--force" ] && [ "$wd" -le 5 ] && { { [ "$hm" -ge 0840 ] && [ "$hm" -lt 0905 ]; } || { [ "$hm" -ge 1515 ] && [ "$hm" -lt 1535 ]; }; }; then
+  echo "주문 시각이라 다음에 적용 ($hm)"
+  exit 0
+fi
 echo "새 버전 적용: $(git rev-parse --short origin/main)"
 git merge -q --ff-only origin/main
 .venv/bin/pip install -q -e "server[dev]"

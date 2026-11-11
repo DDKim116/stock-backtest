@@ -798,6 +798,14 @@ class Auto:
             if pos["status"] == "open" and self._held_days(pos["entry_date"], now.date()) >= hold:
                 self._sell_all(now, pos, mode, "기간만료")
 
+    def _overdue(self, now: dt.datetime, mode: str) -> None:
+        """어제까지가 만료일이었는데 아직 들고 있는 종목 (서버 재시작·주문 실패 등으로 15:20 매도를 놓침) → 장 시작에 시장가."""
+        for pos in self.positions("active"):
+            hold = pos["hold_days"] or self.rules(pos["strategy_id"])["hold"]
+            if pos["status"] == "open" and self._held_days(pos["entry_date"], now.date()) > hold:
+                self.log(now, f"기간만료 매도를 놓쳐 오늘 장 시작에 팝니다: {pos['name']}")
+                self._sell_all(now, pos, mode, "기간만료")
+
     def _finish_day(self, now: dt.datetime, today: str) -> None:
         for p in self._q("SELECT * FROM at_plans WHERE status IN ('ordered', 'partial')"):
             if p["status"] == "partial":
@@ -883,6 +891,9 @@ class Auto:
         if OPEN <= t < CLOSE_AT:
             self.sync(now, mode)
             self._reconcile(now, mode)
+            if t < EXPIRE_AT and st.get("overdue_done") != tstr:
+                self._set_state(overdue_done=tstr)
+                self._overdue(now, mode)
             if t < STOP_UNTIL:
                 self._check_stops(now, mode)
         # 4) 보유기간 만료

@@ -459,3 +459,22 @@ def test_held_days_when_data_is_late(env):
     runner.days.append("2026-11-10")
     assert a._held_days("2026-11-04", dt.date(2026, 11, 11)) == 5
     assert a._held_days("2026-11-04", dt.date(2026, 11, 10)) == 4
+
+
+def test_overdue_expiry_sold_next_morning(env):
+    a, kw, runner, sent = env
+    runner.days = ["2026-11-04", "2026-11-05", "2026-11-06", "2026-11-09", "2026-11-10", "2026-11-11"]
+    now = dt.datetime(2026, 11, 12, 9, 1)
+    pid = a._x("""INSERT INTO at_positions (code, name, qty, entry_date, entry_price, target_price, stop_price, status,
+                  created_at, updated_at, hold_days) VALUES ('057030','YBM넷',10,'2026-11-04',5000,5500,4650,'open',?,?,5)""",
+               (now.isoformat(), now.isoformat()))
+    a._overdue(now, "mock")
+    pos = [p for p in a.positions() if p["id"] == pid][0]
+    assert pos["status"] == "closing" and pos["exit_reason"] == "기간만료"
+    assert any(o["side"] == "sell" and o["kind"] == "market" and o["code"] == "057030" for o in kw.orders.values())
+    # 아직 만료 전(5거래일째 당일)인 종목은 건드리지 않는다
+    pid2 = a._x("""INSERT INTO at_positions (code, name, qty, entry_date, entry_price, target_price, stop_price, status,
+                   created_at, updated_at, hold_days) VALUES ('000002','나',10,'2026-11-05',5000,5500,4650,'open',?,?,5)""",
+                (now.isoformat(), now.isoformat()))
+    a._overdue(now, "mock")
+    assert [p for p in a.positions() if p["id"] == pid2][0]["status"] == "open"
