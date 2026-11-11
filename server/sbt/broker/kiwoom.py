@@ -127,25 +127,27 @@ def token(mode: str) -> str:
     return tok
 
 
-# API 별 최소 호출 간격(초). 키움 유량 제한보다 넉넉하게 (kt00018 은 2026-10-29 부터 초당 3회)
+# API 별 최소 호출 간격(초). 키움 유량 제한보다 넉넉하게.
+# 계좌 TR(/api/dostk/acnt: 잔고·예수금·체결 등)은 2026-11-12 부터 초당 1회 → 계좌 TR 끼리는 모두 묶어서 1.1초 간격
 MIN_GAP = {"kt00018": 0.4}
 DEFAULT_GAP = 0.25
+ACNT_PATH, ACNT_GAP = "/api/dostk/acnt", 1.1
 _rate_lock = threading.Lock()
 _last_call: dict[str, float] = {}
 
 
-def _throttle(api_id: str) -> None:
-    gap = MIN_GAP.get(api_id, DEFAULT_GAP)
+def _throttle(api_id: str, path: str = "") -> None:
+    key, gap = ("acnt", ACNT_GAP) if path == ACNT_PATH else (api_id, MIN_GAP.get(api_id, DEFAULT_GAP))
     with _rate_lock:
-        wait = _last_call.get(api_id, 0) + gap - time.monotonic()
+        wait = _last_call.get(key, 0) + gap - time.monotonic()
         if wait > 0:
             time.sleep(wait)
-        _last_call[api_id] = time.monotonic()
+        _last_call[key] = time.monotonic()
 
 
 def call(mode: str, path: str, api_id: str, body: dict) -> dict:
     for attempt in range(3):
-        _throttle(api_id)
+        _throttle(api_id, path)
         try:
             return _post(mode, path, body, {"api-id": api_id, "authorization": f"Bearer {token(mode)}",
                                             "cont-yn": "N", "next-key": ""})

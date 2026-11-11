@@ -1922,8 +1922,8 @@ def auto_plan_now():
 def auto_account():
     from ..broker import kiwoom
 
-    try:
-        return {"cash": kiwoom.cash("mock"), "balance": kiwoom.balance("mock")}
+    try:  # 여러 화면이 같이 열려도 키움 계좌 TR(초당 1회 제한)은 5초에 한 번만
+        return _live("acct", 5, lambda: {"cash": kiwoom.cash("mock"), "balance": kiwoom.balance("mock")})
     except kiwoom.KiwoomError as e:
         raise HTTPException(502, str(e))
 
