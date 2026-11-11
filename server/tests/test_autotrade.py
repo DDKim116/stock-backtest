@@ -449,3 +449,13 @@ def test_disable_strategy_expires_pending(env):
     a.set_strategy(sid, enabled=False)
     p = a.plans("2026-10-26")[0]
     assert p["status"] == "expired" and p["msg"] == "전략을 끔"
+
+
+def test_held_days_when_data_is_late(env):
+    a, kw, runner, sent = env
+    # 데이터가 11/9 까지만 있어도(11/10 갱신 지연) 11/11 은 11/4 매수 뒤 5거래일째
+    runner.days = ["2026-11-04", "2026-11-05", "2026-11-06", "2026-11-09"]
+    assert a._held_days("2026-11-04", dt.date(2026, 11, 11)) == 5
+    runner.days.append("2026-11-10")
+    assert a._held_days("2026-11-04", dt.date(2026, 11, 11)) == 5
+    assert a._held_days("2026-11-04", dt.date(2026, 11, 10)) == 4

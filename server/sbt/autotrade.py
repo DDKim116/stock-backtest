@@ -767,22 +767,30 @@ class Auto:
                 self._sell_all(now, pos, mode, "손절")
 
     def _held_days(self, entry_date: str, today: dt.date) -> int:
-        """체결일 다음부터 오늘까지 거래일 수 (실제 시세 데이터 + 오늘)."""
+        """체결일 다음부터 오늘까지 거래일 수 (오늘이 거래일이면 오늘 포함).
+        시세 데이터의 날짜로 세되, 데이터가 어제까지 안 들어와 있으면(갱신 지연) 거래소 달력으로 센다
+        — 데이터가 늦어 하루 덜 세면 기간 만료 매도가 하루 늦어지기 때문."""
+        cal = 0
+        d = dt.date.fromisoformat(entry_date)
+        while True:
+            d = next_trading_day(d)
+            if d >= today:
+                break
+            cal += 1
+        cal += 1 if is_trading_day(today) else 0
         try:
-            dates = self.get_runner("kr").panel.dates
             import numpy as np
 
-            u = np.unique(dates)
+            u = np.unique(self.get_runner("kr").panel.dates)
+            prev_td = today - dt.timedelta(days=1)
+            while not is_trading_day(prev_td):
+                prev_td -= dt.timedelta(days=1)
+            if len(u) == 0 or u.max() < np.datetime64(prev_td.isoformat()):
+                return cal  # 데이터가 밀려 있음 → 달력
             n = int(((u > np.datetime64(entry_date)) & (u < np.datetime64(today.isoformat()))).sum())
+            return n + (1 if is_trading_day(today) else 0)
         except Exception:  # noqa: BLE001
-            n = 0
-            d = dt.date.fromisoformat(entry_date)
-            while True:
-                d = next_trading_day(d)
-                if d >= today:
-                    break
-                n += 1
-        return n + (1 if is_trading_day(today) else 0)
+            return cal
 
     def _expire(self, now: dt.datetime, mode: str) -> None:
         for pos in self.positions("active"):
