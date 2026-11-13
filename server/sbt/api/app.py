@@ -1825,7 +1825,27 @@ class AutoStrategyIn(BaseModel):
 
 @app.get("/api/auto", dependencies=[Depends(auth)])
 def auto_view():
-    return _auto().view(_kst_now().date().isoformat())
+    v = _auto().view(_kst_now().date().isoformat())
+    v["version"] = _version()
+    v["now"] = _kst_now().replace(tzinfo=None).isoformat(timespec="seconds")
+    return v
+
+
+_VER: str | None = None
+
+
+def _version() -> str:
+    """서버에 깔린 코드 버전 (git 짧은 해시) — 앱에서 배포가 됐는지 확인용."""
+    global _VER
+    if _VER is None:
+        try:
+            import subprocess
+
+            _VER = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=Path(__file__).resolve().parents[3],
+                                  capture_output=True, text=True, timeout=5).stdout.strip() or "?"
+        except Exception:  # noqa: BLE001
+            _VER = "?"
+    return _VER
 
 
 @app.get("/api/auto/daily", dependencies=[Depends(auth)])

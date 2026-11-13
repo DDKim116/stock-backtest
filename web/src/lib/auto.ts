@@ -72,6 +72,9 @@ export interface AutoView {
   stats_manual: { n: number; win: number; avg: number | null };
   last_plan: { trade_date: string; signal_date: string; count: number; per?: Record<string, number> } | null;
   log: { ts: string; text: string }[];
+  state?: { last_tick?: string; last_error?: string; buy_done?: string; expire_done?: string; overdue_done?: string; close_done?: string };
+  version?: string;
+  now?: string;
 }
 export interface Account {
   cash: { orderable: number | null; deposit: number | null };

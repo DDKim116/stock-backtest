@@ -478,3 +478,21 @@ def test_overdue_expiry_sold_next_morning(env):
                 (now.isoformat(), now.isoformat()))
     a._overdue(now, "mock")
     assert [p for p in a.positions() if p["id"] == pid2][0]["status"] == "open"
+
+
+def test_expiry_runs_even_if_execution_check_fails(env, monkeypatch):
+    a, kw, runner, sent = env
+    runner.days = ["2026-11-04", "2026-11-05", "2026-11-06", "2026-11-09", "2026-11-10"]
+    t0 = dt.datetime(2026, 11, 11, 15, 21)
+    pid = a._x("""INSERT INTO at_positions (code, name, qty, entry_date, entry_price, target_price, stop_price, status,
+                  created_at, updated_at, hold_days) VALUES ('298000','효성화학',10,'2026-11-04',5000,5500,4650,'open',?,?,5)""",
+               (t0.isoformat(), t0.isoformat()))
+
+    def boom(mode):
+        raise kiwoom.KiwoomError("1700: 허용된 요청 개수를 초과하였습니다")
+
+    monkeypatch.setattr(kw, "executions", boom)
+    a.tick(t0)
+    pos = [p for p in a.positions() if p["id"] == pid][0]
+    assert pos["status"] == "closing" and pos["exit_reason"] == "기간만료"
+    assert "체결 확인" in a._state()["last_error"]

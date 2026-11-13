@@ -115,6 +115,7 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
         {!v.key_saved && (
           <p className="rounded-lg bg-background p-3 text-sm text-warning">설정 → 키움 연결에서 모의투자 키를 먼저 넣어 주세요.</p>
         )}
+        <Health v={v} />
         <div className="flex justify-between gap-2 text-sm">
           <span className="text-muted">계좌 사용</span>
           <span className="tabular">
@@ -704,6 +705,35 @@ function GlobalSettings({ v, busy, onSave }: { v: AutoView; busy: boolean; onSav
       >
         저장
       </button>
+    </div>
+  );
+}
+
+// 자동 매매가 살아 있는지: 마지막 확인 시각 · 오늘 단계 · 마지막 오류 · 서버 버전
+function Health({ v }: { v: AutoView }) {
+  const st = v.state ?? {};
+  const now = v.now ? new Date(v.now) : null;
+  const last = st.last_tick ? new Date(st.last_tick) : null;
+  const ago = now && last ? Math.round((now.getTime() - last.getTime()) / 1000) : null;
+  const today = (v.now ?? "").slice(0, 10);
+  const wd = now ? now.getDay() : 0;
+  const hm = (v.now ?? "").slice(11, 16);
+  const trading = wd >= 1 && wd <= 5;
+  const mark = (done: string | undefined, due: string) => (done === today ? "✓" : trading && hm >= due ? "✗" : "·");
+  const alive = ago != null && ago < 120;
+  const errToday = st.last_error && st.last_error.startsWith(today);
+  return (
+    <div className="space-y-1 rounded-lg bg-background p-2.5 text-xs">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className={alive ? "text-accent" : "text-critical"}>
+          ● {alive ? "작동 중" : "멈춤?"} {last ? `· 마지막 확인 ${st.last_tick!.slice(11, 19)}${ago != null ? ` (${ago}초 전)` : ""}` : "· 기록 없음"}
+        </span>
+        <span className="tabular text-muted">
+          오늘 매수 {mark(st.buy_done, "08:50")} · 기간만료 {mark(st.expire_done, "15:21")} · 마무리 {mark(st.close_done, "15:32")}
+        </span>
+        {v.version && <span className="tabular text-faint">버전 {v.version}</span>}
+      </div>
+      {errToday && <div className="text-warning">마지막 오류 {st.last_error!.slice(11)}</div>}
     </div>
   );
 }

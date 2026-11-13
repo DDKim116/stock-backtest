@@ -80,6 +80,7 @@ class Auto:
         self.lock = threading.Lock()
         self._expect: dict = {}
         self._last_rec: dt.datetime | None = None
+        self._errs: dict[str, dt.datetime] = {}  # 단계 오류 → 마지막으로 기록한 때
         self._miss: dict[int, int] = {}  # 포지션 id → 잔고가 모자란 것을 본 횟수 (두 번 연속이면 직접 매도로 본다)
         db = store.db
         with _lock:
@@ -792,11 +793,20 @@ class Auto:
         except Exception:  # noqa: BLE001
             return cal
 
+    def _err(self, now: dt.datetime, name: str, e: Exception) -> None:
+        """단계 오류: 기록에 남기고, 같은 오류는 10분에 한 번만 (20초마다 쌓이지 않게)."""
+        key = f"{name}:{str(e)[:80]}"
+        last = self._errs.get(key)
+        if last is None or (now - last).total_seconds() >= 600:
+            self._errs[key] = now
+            self.log(now, f"⚠ {name} 오류: {e}")
+        self._set_state(last_error=f"{now.isoformat(timespec='seconds')} {name}: {str(e)[:200]}")
+
     def _expire(self, now: dt.datetime, mode: str) -> None:
         for pos in self.positions("active"):
             hold = pos["hold_days"] or self.rules(pos["strategy_id"])["hold"]
             if pos["status"] == "open" and self._held_days(pos["entry_date"], now.date()) >= hold:
-                self._sell_all(now, pos, mode, "기간만료")
+                self._sell_all(now, pos, mode, "기간만료")  # 실패하면 안에서 알림·기록, 다음 종목은 계속
 
     def _overdue(self, now: dt.datetime, mode: str) -> None:
         """어제까지가 만료일이었는데 아직 들고 있는 종목 (서버 재시작·주문 실패 등으로 15:20 매도를 놓침) → 장 시작에 시장가."""
@@ -877,34 +887,42 @@ class Auto:
                 self._set_state(remind=tstr)
         if not is_trading_day(today):
             return
+        # 단계마다 따로: 한 단계(예: 키움 체결 조회)가 오류여도 다른 단계(기간만료 매도 등)는 그대로 한다
+        def step(name: str, fn) -> bool:
+            try:
+                fn()
+                return True
+            except Exception as e:  # noqa: BLE001
+                self._err(now, name, e)
+                return False
+
         # 2) 08:50 매수 + 목표가 주문 다시 걸기 (늦게 켜졌으면 09:30 까지)
         if BUY_AT <= t < LATE_BUY_UNTIL and st.get("buy_done") != tstr:
             self._set_state(buy_done=tstr)
             if s["enabled"]:
-                self._place_buys(now, tstr, mode)
-            try:
-                self._reconcile(now, mode, ex={}, force=True)  # 밤사이(시간외 등) 직접 판 것
-            except Exception as e:  # noqa: BLE001
-                self.log(now, f"잔고 확인 실패: {e}")
-            self._refresh_targets(now, tstr, mode)
-        # 3) 장중
-        if OPEN <= t < CLOSE_AT:
-            self.sync(now, mode)
-            self._reconcile(now, mode)
-            if t < EXPIRE_AT and st.get("overdue_done") != tstr:
+                step("매수 주문", lambda: self._place_buys(now, tstr, mode))
+            step("잔고 확인", lambda: self._reconcile(now, mode, ex={}, force=True))  # 밤사이(시간외 등) 직접 판 것
+            step("목표가 주문", lambda: self._refresh_targets(now, tstr, mode))
+        # 3) 기간만료를 놓친 종목 → 장 시작에 (성공할 때까지 장중에 다시 시도)
+        if OPEN <= t < EXPIRE_AT and st.get("overdue_done") != tstr:
+            if step("놓친 기간만료 매도", lambda: self._overdue(now, mode)):
                 self._set_state(overdue_done=tstr)
-                self._overdue(now, mode)
-            if t < STOP_UNTIL:
-                self._check_stops(now, mode)
-        # 4) 보유기간 만료
+        # 4) 보유기간 만료 (15:20:30~15:29, 성공할 때까지 그 안에서 다시 시도)
         if EXPIRE_AT <= t < EXPIRE_UNTIL and st.get("expire_done") != tstr:
-            self._set_state(expire_done=tstr)
-            self._expire(now, mode)
-        # 5) 마무리
+            if step("기간만료 매도", lambda: self._expire(now, mode)):
+                self._set_state(expire_done=tstr)
+        # 5) 장중: 체결 확인 · 잔고 · 손절
+        if OPEN <= t < CLOSE_AT:
+            step("체결 확인", lambda: self.sync(now, mode))
+            step("잔고 확인", lambda: self._reconcile(now, mode))
+            if t < STOP_UNTIL:
+                step("손절 감시", lambda: self._check_stops(now, mode))
+        # 6) 마무리
         if t >= CLOSE_AT and st.get("close_done") != tstr:
-            self.sync(now, mode)
+            step("체결 확인", lambda: self.sync(now, mode))
             self._set_state(close_done=tstr)
-            self._finish_day(now, tstr)
-            self._snap_equity(now, tstr, mode)
+            step("마무리", lambda: self._finish_day(now, tstr))
+            step("계좌 금액 기록", lambda: self._snap_equity(now, tstr, mode))
+        self._set_state(last_tick=now.isoformat(timespec="seconds"))
 
 
