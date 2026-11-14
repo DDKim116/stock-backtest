@@ -57,7 +57,7 @@ function nextEvent(hm: string, wd: string, approve: boolean): [string, string] {
     ...(approve ? ([["08:45", "매수 후보 승인 마감"]] as [string, string][]) : []),
     ["08:50", "매수 주문 · 목표가 다시 걸기"],
     ["09:00", "장 시작 · 손절 감시"],
-    ["15:20", "보유기간 만료 매도"],
+    ["15:10", "보유기간 만료 매도"],
     ["16:40", "다음 거래일 매수 후보 계산"],
   ];
   const n = ev.find(([t]) => t > hm);

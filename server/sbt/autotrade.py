@@ -9,7 +9,7 @@
   · '지정가' 전략 (예: 중간값): 그 지정가로, 유효기간 동안 매일 아침 다시 주문 (KRX 지정가는 그날만 유효).
   같은 시각, 보유 종목의 목표가 매도를 다시 건다. 목표·손절·보유기간은 그 종목을 산 전략의 규칙.
 - 09:00~15:19 체결 확인 (체결되면 목표가 매도 주문), 손절가 이하면 시장가 매도.
-- 15:20 보유기간이 끝난 종목은 시장가 매도 (종가 동시호가).
+- 15:10 보유기간이 끝난 종목은 시장가 매도 (장중 연속 매매). 못 팔면 15:29 까지 다시 시도, 그래도 남으면 다음 거래일 장 시작에.
 - 15:31 마무리: 안 된 매수 주문은 '미체결'로, 목표가 주문은 내일 다시.
 
 '전체 중지'(enabled=false)는 새 매수만 멈춘다. 이미 산 종목의 목표가·손절·기간 만료 매도는 계속한다.
@@ -55,7 +55,9 @@ BUY_AT = dt.time(8, 50)
 OPEN = dt.time(9, 0)
 LATE_BUY_UNTIL = dt.time(9, 30)
 STOP_UNTIL = dt.time(15, 19)
-EXPIRE_AT = dt.time(15, 20, 30)
+# 기간만료 매도: 15:10 부터 시장가 (장중 연속 매매 — 손절과 같은 길이라 바로 체결).
+# 못 팔았으면 15:29 까지(마감 동시호가 포함) 20초마다 다시 시도, 그래도 남으면 다음 거래일 장 시작에.
+EXPIRE_AT = dt.time(15, 10)
 REAL_FEE, REAL_TAX = 0.00015, 0.002  # 실제 계좌 수수료(사고팔 때) · 거래세(팔 때)
 EXPIRE_UNTIL = dt.time(15, 29)
 CLOSE_AT = dt.time(15, 31)
@@ -464,7 +466,7 @@ class Auto:
             "positions": positions,
             "stats": stat(rule), "stats_manual": stat(manual),
             "last_plan": self._state().get("last_plan"),
-            "log": self._q("SELECT ts, text FROM at_log ORDER BY id DESC LIMIT 60"),
+            "log": self._q("SELECT ts, text FROM at_log ORDER BY id DESC LIMIT 150"),
             "state": self._state(),
         }
 
@@ -616,23 +618,35 @@ class Auto:
             if pos["status"] == "open" and pos["target_date"] != today:
                 self._place_target(now, pos, mode, today)
 
-    def _sell_all(self, now: dt.datetime, pos: dict, mode: str, reason: str) -> None:
+    def _sell_all(self, now: dt.datetime, pos: dict, mode: str, reason: str) -> bool:
+        """목표가 주문 취소 → 시장가 매도. 주문이 들어갔으면 True. 실패 기록·알림은 종목·사유마다 10분에 한 번."""
         if pos["target_order"] and pos["target_date"] == now.date().isoformat():
             try:
                 self.kw.cancel(mode, pos["code"], pos["target_order"])
-            except Exception as e:  # noqa: BLE001 — 이미 체결됐을 수 있다
-                self.log(now, f"목표가 주문 취소 실패 {pos['name']}: {e}")
+            except Exception as e:  # noqa: BLE001 — 이미 체결·취소됐을 수 있다
+                if self._once(now, f"cancel:{pos['id']}"):
+                    self.log(now, f"목표가 주문 취소 실패 {pos['name']}: {e}")
         left = pos["qty"] - pos["sold_qty"]
         if left <= 0:
-            return
+            return True
         try:
             no = self.kw.sell_market(mode, pos["code"], left)
         except Exception as e:  # noqa: BLE001
-            self.log(now, f"{reason} 매도 주문 실패 {pos['name']}: {e}")
-            self.notify(f"⚠ {reason} 매도 실패", f"{pos['name']}: {e}")
-            return
+            if self._once(now, f"sell:{pos['id']}:{reason}"):
+                self.log(now, f"{reason} 매도 주문 실패 {pos['name']}: {e}")
+                self.notify(f"⚠ {reason} 매도 실패", f"{pos['name']}: {e}")
+            self._set_state(last_error=f"{now.isoformat(timespec='seconds')} {reason} 매도 {pos['name']}: {str(e)[:200]}")
+            return False
         self._upd("at_positions", pos["id"], now, status="closing", exit_order=no, exit_reason=reason, target_order=None)
-        self.log(now, f"{reason} 매도 주문 {pos['name']} {left}주 (시장가)")
+        self.log(now, f"{reason} 매도 주문 {pos['name']} {left}주 (시장가) · 주문번호 {no}")
+        return True
+
+    def _once(self, now: dt.datetime, key: str, every: int = 600) -> bool:
+        last = self._errs.get(key)
+        if last is not None and (now - last).total_seconds() < every:
+            return False
+        self._errs[key] = now
+        return True
 
     def manual_sell(self, pid: int, now: dt.datetime) -> None:
         """앱의 '지금 팔기': 목표가 주문 취소 → 시장가 매도. 통계는 '직접 매도'로 따로."""
@@ -802,19 +816,38 @@ class Auto:
             self.log(now, f"⚠ {name} 오류: {e}")
         self._set_state(last_error=f"{now.isoformat(timespec='seconds')} {name}: {str(e)[:200]}")
 
-    def _expire(self, now: dt.datetime, mode: str) -> None:
+    def _due(self, now: dt.datetime, overdue: bool) -> list[dict]:
+        """기간이 찬(overdue=True 면 이미 지난) 보유 종목. held 에 보유 거래일 수를 붙여 준다."""
+        out = []
         for pos in self.positions("active"):
+            if pos["status"] != "open":
+                continue
             hold = pos["hold_days"] or self.rules(pos["strategy_id"])["hold"]
-            if pos["status"] == "open" and self._held_days(pos["entry_date"], now.date()) >= hold:
-                self._sell_all(now, pos, mode, "기간만료")  # 실패하면 안에서 알림·기록, 다음 종목은 계속
+            held = self._held_days(pos["entry_date"], now.date())
+            if held > hold or (not overdue and held >= hold):
+                out.append({**pos, "held": held, "hold": hold})
+        return out
 
-    def _overdue(self, now: dt.datetime, mode: str) -> None:
-        """어제까지가 만료일이었는데 아직 들고 있는 종목 (서버 재시작·주문 실패 등으로 15:20 매도를 놓침) → 장 시작에 시장가."""
-        for pos in self.positions("active"):
-            hold = pos["hold_days"] or self.rules(pos["strategy_id"])["hold"]
-            if pos["status"] == "open" and self._held_days(pos["entry_date"], now.date()) > hold:
-                self.log(now, f"기간만료 매도를 놓쳐 오늘 장 시작에 팝니다: {pos['name']}")
-                self._sell_all(now, pos, mode, "기간만료")
+    def _expire(self, now: dt.datetime, mode: str) -> bool:
+        """기간 만료 종목을 시장가로. 모두 주문이 들어갔으면 True (남았으면 다음 확인 때 다시 시도)."""
+        due = self._due(now, overdue=False)
+        if self._once(now, f"expire-report:{now.date()}", every=86400):
+            opens = [p for p in self.positions("active") if p["status"] == "open"]
+            days = ", ".join(f"{p['name']} {self._held_days(p['entry_date'], now.date())}일째" for p in opens) or "없음"
+            self.log(now, f"기간만료 확인 · 보유 {days} → 팔 것 {len(due)}종목")
+        ok = True
+        for pos in due:
+            ok &= self._sell_all(now, pos, mode, "기간만료")
+        return ok
+
+    def _overdue(self, now: dt.datetime, mode: str) -> bool:
+        """만료일이 지났는데 아직 들고 있는 종목 (15시대 매도를 놓쳤거나 체결이 안 됨) → 장중에 시장가."""
+        ok = True
+        for pos in self._due(now, overdue=True):
+            if self._once(now, f"overdue:{pos['id']}:{now.date()}", every=86400):
+                self.log(now, f"기간만료 매도를 놓쳐 지금 팝니다: {pos['name']} (보유 {pos['held']}일째 / {pos['hold']}일)")
+            ok &= self._sell_all(now, pos, mode, "기간만료")
+        return ok
 
     def _finish_day(self, now: dt.datetime, today: str) -> None:
         for p in self._q("SELECT * FROM at_plans WHERE status IN ('ordered', 'partial')"):
@@ -904,12 +937,13 @@ class Auto:
             step("잔고 확인", lambda: self._reconcile(now, mode, ex={}, force=True))  # 밤사이(시간외 등) 직접 판 것
             step("목표가 주문", lambda: self._refresh_targets(now, tstr, mode))
         # 3) 기간만료를 놓친 종목 → 장 시작에 (성공할 때까지 장중에 다시 시도)
+        res: dict[str, bool] = {}
         if OPEN <= t < EXPIRE_AT and st.get("overdue_done") != tstr:
-            if step("놓친 기간만료 매도", lambda: self._overdue(now, mode)):
+            if step("놓친 기간만료 매도", lambda: res.update(ok=self._overdue(now, mode))) and res.get("ok"):
                 self._set_state(overdue_done=tstr)
-        # 4) 보유기간 만료 (15:20:30~15:29, 성공할 때까지 그 안에서 다시 시도)
+        # 4) 보유기간 만료 (15:10~15:29, 모두 주문이 들어갈 때까지 그 안에서 다시 시도)
         if EXPIRE_AT <= t < EXPIRE_UNTIL and st.get("expire_done") != tstr:
-            if step("기간만료 매도", lambda: self._expire(now, mode)):
+            if step("기간만료 매도", lambda: res.update(ok=self._expire(now, mode))) and res.get("ok"):
                 self._set_state(expire_done=tstr)
         # 5) 장중: 체결 확인 · 잔고 · 손절
         if OPEN <= t < CLOSE_AT:

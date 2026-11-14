@@ -722,6 +722,38 @@ function Health({ v }: { v: AutoView }) {
   const mark = (done: string | undefined, due: string) => (done === today ? "✓" : trading && hm >= due ? "✗" : "·");
   const alive = ago != null && ago < 120;
   const errToday = st.last_error && st.last_error.startsWith(today);
+  const [copied, setCopied] = useState(false);
+  // 문제가 생겼을 때 그대로 붙여 보낼 수 있게: 상태 · 보유 종목 · 최근 기록 (키·계좌번호 같은 비밀은 없음)
+  const copy = async () => {
+    const pos = v.positions
+      .filter((p) => p.status !== "closed")
+      .map((p) => {
+        const x = p as unknown as Record<string, unknown>;
+        return `  ${p.name}(${p.code}) ${p.status} · ${p.entry_date} 매수 ${p.qty}주 @${p.entry_price} · 판 ${p.sold_qty ?? 0}주 · 목표주문 ${x.target_order ?? "-"}(${x.target_date ?? "-"}) · 매도주문 ${x.exit_order ?? "-"} ${p.exit_reason ?? ""} · 보유기간 ${x.hold_days ?? "-"}일`;
+      });
+    const text = [
+      `[자동 매매 진단] ${v.now} · 버전 ${v.version} · ${v.settings.enabled ? "켜짐" : "꺼짐"} · ${v.settings.mode}`,
+      `상태: ${JSON.stringify(st)}`,
+      `보유 ${pos.length}:`,
+      ...pos,
+      `기록 (최근 ${v.log.length}):`,
+      ...v.log.map((l) => `  ${l.ts} ${l.text}`),
+    ].join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
   return (
     <div className="space-y-1 rounded-lg bg-background p-2.5 text-xs">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -729,9 +761,12 @@ function Health({ v }: { v: AutoView }) {
           ● {alive ? "작동 중" : "멈춤?"} {last ? `· 마지막 확인 ${st.last_tick!.slice(11, 19)}${ago != null ? ` (${ago}초 전)` : ""}` : "· 기록 없음"}
         </span>
         <span className="tabular text-muted">
-          오늘 매수 {mark(st.buy_done, "08:50")} · 기간만료 {mark(st.expire_done, "15:21")} · 마무리 {mark(st.close_done, "15:32")}
+          오늘 매수 {mark(st.buy_done, "08:50")} · 기간만료 {mark(st.expire_done, "15:12")} · 마무리 {mark(st.close_done, "15:32")}
         </span>
         {v.version && <span className="tabular text-faint">버전 {v.version}</span>}
+        <button type="button" onClick={copy} className="rounded-md border border-border px-2 py-0.5 text-muted">
+          {copied ? "복사됨 ✓" : "진단 복사"}
+        </button>
       </div>
       {errToday && <div className="text-warning">마지막 오류 {st.last_error!.slice(11)}</div>}
     </div>

@@ -496,3 +496,31 @@ def test_expiry_runs_even_if_execution_check_fails(env, monkeypatch):
     pos = [p for p in a.positions() if p["id"] == pid][0]
     assert pos["status"] == "closing" and pos["exit_reason"] == "기간만료"
     assert "체결 확인" in a._state()["last_error"]
+
+
+def test_expiry_at_1510_retries_until_order_goes_in(env, monkeypatch):
+    a, kw, runner, sent = env
+    runner.days = ["2026-11-04", "2026-11-05", "2026-11-06", "2026-11-09", "2026-11-10"]
+    t0 = dt.datetime(2026, 11, 11, 15, 10, 5)
+    pid = a._x("""INSERT INTO at_positions (code, name, qty, entry_date, entry_price, target_price, stop_price, status,
+                  created_at, updated_at, hold_days) VALUES ('298000','효성화학',10,'2026-11-04',5000,5500,4650,'open',?,?,5)""",
+               (t0.isoformat(), t0.isoformat()))
+    real = kw.sell_market
+    fails = {"n": 2}
+
+    def flaky(mode, code, qty):
+        if fails["n"] > 0:
+            fails["n"] -= 1
+            raise kiwoom.KiwoomError("매도가능수량이 부족합니다")
+        return real(mode, code, qty)
+
+    monkeypatch.setattr(kw, "sell_market", flaky)
+    status = lambda: [p for p in a.positions() if p["id"] == pid][0]["status"]  # noqa: E731
+    a.tick(t0)
+    assert status() == "open" and a._state().get("expire_done") != "2026-11-11"  # 실패 → 끝난 것으로 치지 않는다
+    assert sum("매도 실패" in t for t, _ in sent) == 1
+    a.tick(t0 + dt.timedelta(seconds=20))
+    assert status() == "open" and sum("매도 실패" in t for t, _ in sent) == 1  # 알림은 한 번만
+    a.tick(t0 + dt.timedelta(seconds=40))
+    assert status() == "closing" and a._state()["expire_done"] == "2026-11-11"
+    assert any("기간만료 확인" in r["text"] for r in a.view()["log"])
