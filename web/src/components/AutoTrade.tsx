@@ -733,6 +733,7 @@ function Health({ v }: { v: AutoView }) {
       });
     const text = [
       `[자동 매매 진단] ${v.now} · 버전 ${v.version} · ${v.settings.enabled ? "켜짐" : "꺼짐"} · ${v.settings.mode}`,
+      `배포: ${v.deploy ?? "-"}`,
       `상태: ${JSON.stringify(st)}`,
       `보유 ${pos.length}:`,
       ...pos,
@@ -769,6 +770,7 @@ function Health({ v }: { v: AutoView }) {
         </button>
       </div>
       {errToday && <div className="text-warning">마지막 오류 {st.last_error!.slice(11)}</div>}
+      {v.deploy && v.deploy.includes("실패") && <div className="text-critical">⚠ 서버 업데이트 {v.deploy}</div>}
     </div>
   );
 }

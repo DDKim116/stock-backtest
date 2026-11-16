@@ -1827,6 +1827,10 @@ class AutoStrategyIn(BaseModel):
 def auto_view():
     v = _auto().view(_kst_now().date().isoformat())
     v["version"] = _version()
+    try:  # 마지막 배포 결과 (deploy/update.sh 가 남긴다): "2026-11-16 16:10:45 성공 · abc1234"
+        v["deploy"] = (Path(__file__).resolve().parents[3] / "data" / "deploy_status.txt").read_text().strip()[:300]
+    except OSError:
+        v["deploy"] = None
     v["now"] = _kst_now().replace(tzinfo=None).isoformat(timespec="seconds")
     return v
 

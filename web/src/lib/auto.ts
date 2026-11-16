@@ -74,6 +74,7 @@ export interface AutoView {
   log: { ts: string; text: string }[];
   state?: { last_tick?: string; last_error?: string; buy_done?: string; expire_done?: string; overdue_done?: string; close_done?: string };
   version?: string;
+  deploy?: string | null; // 마지막 배포 결과
   now?: string;
 }
 export interface Account {
