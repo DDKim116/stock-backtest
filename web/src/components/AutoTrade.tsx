@@ -762,7 +762,7 @@ function Health({ v }: { v: AutoView }) {
           ● {alive ? "작동 중" : "멈춤?"} {last ? `· 마지막 확인 ${st.last_tick!.slice(11, 19)}${ago != null ? ` (${ago}초 전)` : ""}` : "· 기록 없음"}
         </span>
         <span className="tabular text-muted">
-          오늘 매수 {mark(st.buy_done, "08:50")} · 기간만료 {mark(st.expire_done, "15:12")} · 마무리 {mark(st.close_done, "15:32")}
+          오늘 매수 {mark(st.buy_done, "08:50")} · 기간만료 {mark(st.expire_done, "14:32")} · 마무리 {mark(st.close_done, "15:32")}
         </span>
         {v.version && <span className="tabular text-faint">버전 {v.version}</span>}
         <button type="button" onClick={copy} className="rounded-md border border-border px-2 py-0.5 text-muted">

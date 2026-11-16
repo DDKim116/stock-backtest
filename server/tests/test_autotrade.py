@@ -524,3 +524,33 @@ def test_expiry_at_1510_retries_until_order_goes_in(env, monkeypatch):
     a.tick(t0 + dt.timedelta(seconds=40))
     assert status() == "closing" and a._state()["expire_done"] == "2026-11-11"
     assert any("기간만료 확인" in r["text"] for r in a.view()["log"])
+
+
+def test_partial_exit_fill_recorded_and_rest_sold_next_day(env):
+    """모의투자는 시장가도 일부만 체결될 수 있다: 판 만큼 기록하고 나머지는 다음 거래일 장 시작에."""
+    a, kw, runner, sent = env
+    runner.days = ["2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13"]
+    t0 = dt.datetime(2026, 11, 16, 14, 30, 5)
+    pid = a._x("""INSERT INTO at_positions (code, name, qty, entry_date, entry_price, target_price, stop_price, status,
+                  created_at, updated_at, hold_days) VALUES ('024880','케이피에프',1633,'2026-11-09',2948,3245,2742,'open',?,?,5)""",
+               (t0.isoformat(), t0.isoformat()))
+    kw.manual = {"024880": 1633}  # 키움 잔고에 있는 수량 (가짜 계좌)
+    get = lambda: [p for p in a.positions() if p["id"] == pid][0]  # noqa: E731
+    a.tick(t0)
+    assert get()["status"] == "closing"
+    no = kw.find(side="sell", kind="market", code="024880")[0]
+    kw.fill(no, 2900, qty=1000)  # 마감까지 1000주만
+    a.tick(dt.datetime(2026, 11, 16, 15, 31, 5))
+    p = get()
+    assert p["status"] == "open" and p["sold_qty"] == 1000 and p["sold_amount"] == 2_900_000
+    assert any("1000주만 체결" in r["text"] for r in a.view()["log"])
+    # 다음 거래일 장 시작: 남은 633주만 판다
+    runner.days.append("2026-11-16")
+    a.tick(dt.datetime(2026, 11, 17, 9, 0, 30))
+    no2 = [n for n in kw.find(side="sell", kind="market", code="024880") if n != no][0]
+    assert kw.orders[no2]["qty"] == 633
+    kw.fill(no2, 2950)
+    a.tick(dt.datetime(2026, 11, 17, 9, 1, 0))
+    p = get()
+    assert p["status"] == "closed" and p["sold_qty"] == 1633 and p["exit_reason"] == "기간만료"
+    assert abs(p["sold_amount"] - (2_900_000 + 633 * 2950)) < 1

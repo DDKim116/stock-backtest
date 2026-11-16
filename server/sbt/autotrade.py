@@ -9,7 +9,7 @@
   · '지정가' 전략 (예: 중간값): 그 지정가로, 유효기간 동안 매일 아침 다시 주문 (KRX 지정가는 그날만 유효).
   같은 시각, 보유 종목의 목표가 매도를 다시 건다. 목표·손절·보유기간은 그 종목을 산 전략의 규칙.
 - 09:00~15:19 체결 확인 (체결되면 목표가 매도 주문), 손절가 이하면 시장가 매도.
-- 15:10 보유기간이 끝난 종목은 시장가 매도 (장중 연속 매매). 못 팔면 15:29 까지 다시 시도, 그래도 남으면 다음 거래일 장 시작에.
+- 14:30 보유기간이 끝난 종목은 시장가 매도 (모의투자는 체결이 느려 한 시간 먼저). 마감까지 남은 수량은 다음 거래일 장 시작에 이어서.
 - 15:31 마무리: 안 된 매수 주문은 '미체결'로, 목표가 주문은 내일 다시.
 
 '전체 중지'(enabled=false)는 새 매수만 멈춘다. 이미 산 종목의 목표가·손절·기간 만료 매도는 계속한다.
@@ -55,9 +55,10 @@ BUY_AT = dt.time(8, 50)
 OPEN = dt.time(9, 0)
 LATE_BUY_UNTIL = dt.time(9, 30)
 STOP_UNTIL = dt.time(15, 19)
-# 기간만료 매도: 15:10 부터 시장가 (장중 연속 매매 — 손절과 같은 길이라 바로 체결).
-# 못 팔았으면 15:29 까지(마감 동시호가 포함) 20초마다 다시 시도, 그래도 남으면 다음 거래일 장 시작에.
-EXPIRE_AT = dt.time(15, 10)
+# 기간만료 매도: 14:30 부터 시장가. 키움 모의투자는 시장가도 실제 거래가 일어나는 만큼만 천천히 체결돼서
+# (거래가 적은 종목은 수천 주에 20분~1시간 반) 마감 직전에 내면 다 못 판다 → 한 시간 먼저 내고 마감 동시호가까지 걸어 둔다.
+# 주문이 안 들어가면 15:29 까지 20초마다 다시 시도. 마감까지 남은 수량은 다음 거래일 장 시작에 이어서 판다.
+EXPIRE_AT = dt.time(14, 30)
 REAL_FEE, REAL_TAX = 0.00015, 0.002  # 실제 계좌 수수료(사고팔 때) · 거래세(팔 때)
 EXPIRE_UNTIL = dt.time(15, 29)
 CLOSE_AT = dt.time(15, 31)
@@ -626,6 +627,10 @@ class Auto:
             except Exception as e:  # noqa: BLE001 — 이미 체결·취소됐을 수 있다
                 if self._once(now, f"cancel:{pos['id']}"):
                     self.log(now, f"목표가 주문 취소 실패 {pos['name']}: {e}")
+        tf = pos["target_filled"] if pos["target_date"] == now.date().isoformat() else 0
+        if tf:  # 오늘 목표가로 일부 팔린 수량은 이미 판 것으로
+            pos = {**pos, "sold_qty": pos["sold_qty"] + tf, "sold_amount": pos["sold_amount"] + tf * pos["target_price"]}
+            self._upd("at_positions", pos["id"], now, sold_qty=pos["sold_qty"], sold_amount=pos["sold_amount"], target_filled=0)
         left = pos["qty"] - pos["sold_qty"]
         if left <= 0:
             return True
@@ -850,6 +855,11 @@ class Auto:
         return ok
 
     def _finish_day(self, now: dt.datetime, today: str) -> None:
+        try:
+            ex = self.kw.executions(self.settings()["account"])
+        except Exception as e:  # noqa: BLE001
+            ex = {}
+            self.log(now, f"⚠ 마감 체결 조회 실패: {e}")
         for p in self._q("SELECT * FROM at_plans WHERE status IN ('ordered', 'partial')"):
             if p["status"] == "partial":
                 self._upd("at_plans", p["id"], now, status="filled", msg="일부만 체결")
@@ -868,8 +878,21 @@ class Auto:
                     self._upd("at_positions", pos["id"], now, sold_qty=pos["sold_qty"] + sold,
                               sold_amount=pos["sold_amount"] + sold * pos["target_price"], target_filled=0)
             if pos["status"] == "closing":
-                self.log(now, f"⚠ {pos['name']} {pos['exit_reason']} 매도가 아직 체결되지 않았습니다. 내일 다시 확인합니다")
-                self._upd("at_positions", pos["id"], now, status="open", exit_order=None)
+                e = ex.get(pos["exit_order"]) if pos["exit_order"] else None
+                done = int(e["qty"]) if e else 0
+                left = pos["qty"] - pos["sold_qty"] - done
+                if done and left <= 0:
+                    self._close(now, pos, pos["exit_reason"], pos["sold_qty"] + done, pos["sold_amount"] + done * e["price"])
+                    continue
+                if done:  # 일부만 체결 (모의투자는 실제 거래량만큼만 체결) → 판 만큼 기록, 나머지는 다음 거래일 장 시작에
+                    self._upd("at_positions", pos["id"], now, status="open", exit_order=None, sold_qty=pos["sold_qty"] + done,
+                              sold_amount=pos["sold_amount"] + done * e["price"])
+                    self.log(now, f"⚠ {pos['name']} {pos['exit_reason']} 매도 {done}주만 체결 ({e['price']:,.0f}원) · "
+                                  f"남은 {left}주는 다음 거래일 장 시작에 이어서 팝니다")
+                    self.notify(f"{pos['exit_reason']} 일부 체결 · {pos['name']}", f"{done}주 체결 · 남은 {left}주는 다음 거래일 장 시작에")
+                else:
+                    self.log(now, f"⚠ {pos['name']} {pos['exit_reason']} 매도가 체결되지 않았습니다 (거래 부족) · 다음 거래일 장 시작에 다시 팝니다")
+                    self._upd("at_positions", pos["id"], now, status="open", exit_order=None)
         n = len(self.positions("active"))
         self.log(now, f"장 마감 정리 · 보유 {n}종목")
 
