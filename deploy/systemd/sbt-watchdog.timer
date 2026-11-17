@@ -1,0 +1,9 @@
+[Unit]
+Description=자동 매매 지킴이 (평일 장중 2분마다 확인, 그 밖의 시각엔 바로 끝남)
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 08..15:00/2:00
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

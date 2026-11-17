@@ -16,10 +16,11 @@ fi
 if [ "${1:-}" != "--force" ] && grep -q "실패.*$short" "$status" 2>/dev/null && [ -n "$(find "$status" -mmin -55 2>/dev/null)" ]; then
   exit 0
 fi
-# 자동 매매 주문 시각(평일 08:40~09:05 매수, 15:05~15:35 기간만료 매도·마무리)에는 서버를 다시 켜지 않는다 → 다음 차례에
+# 평일 장 시간(08:30~15:40)에는 새 버전을 적용하지 않는다 → 장 마감 뒤 첫 차례에 (실제 돈이 걸린 시간에 코드가 바뀌지 않게).
+# 급할 때만: bash deploy/update.sh --force
 hm=$(TZ=Asia/Seoul date +%H%M); wd=$(TZ=Asia/Seoul date +%u)
-if [ "${1:-}" != "--force" ] && [ "$wd" -le 5 ] && { { [ "$hm" -ge 0840 ] && [ "$hm" -lt 0905 ]; } || { [ "$hm" -ge 1505 ] && [ "$hm" -lt 1535 ]; }; }; then
-  echo "주문 시각이라 다음에 적용 ($hm)"
+if [ "${1:-}" != "--force" ] && [ "$wd" -le 5 ] && [ "$hm" -ge 0830 ] && [ "$hm" -lt 1540 ]; then
+  echo "장 시간이라 마감 뒤에 적용 ($hm)"
   exit 0
 fi
 fail() {

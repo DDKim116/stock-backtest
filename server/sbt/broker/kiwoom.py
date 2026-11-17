@@ -180,6 +180,23 @@ def quote(mode: str, code: str) -> dict:
             "change_pct": num(d.get("flu_rt"))}
 
 
+RISK_WORDS = ("관리종목", "관리", "거래정지", "정지", "정리매매", "투자위험", "투자경고", "환기", "불성실", "단기과열")
+ORDER_WARN = {"2": "정리매매", "3": "단기과열", "4": "투자위험", "5": "투자경고"}
+
+
+def stock_risk(mode: str, code: str) -> str | None:
+    """종목정보 조회(ka10100): 관리종목·거래정지·정리매매·투자경고/위험·단기과열·투자주의환기면 그 이유, 아니면 None."""
+    d = call(mode, "/api/dostk/stkinfo", "ka10100", {"stk_cd": code})
+    warn = str(d.get("orderWarning", "")).strip()
+    if warn in ORDER_WARN:
+        return ORDER_WARN[warn]
+    text = " ".join(str(d.get(k, "")) for k in ("state", "auditInfo"))
+    for w in RISK_WORDS:
+        if w in text and "증거금" not in w:
+            return text.strip()[:40] or w
+    return None
+
+
 def test(mode: str) -> dict:
     q = quote(mode, "005930")
     return {"ok": True, "mode": mode, **q}

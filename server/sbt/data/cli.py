@@ -9,6 +9,7 @@
   python -m sbt.data.cli growth-test                # 매출 꾸준히 느는 코스피 상위 100 회사: 주가와의 관계, 언제 사고 팔지
   python -m sbt.data.cli profit-test                # 영업이익 증익·가속·흑자전환 공시 뒤 주가 (상위 100 / 101~300위)
   python -m sbt.data.cli third-touch                # 전고점 세 번째 돌파: 얼마나 먹나 (시총대별)
+  python -m sbt.data.cli watchdog                   # 장중 자동 매매가 멈췄으면 휴대폰 알림 (타이머가 2분마다)
   python -m sbt.data.cli fill-test                  # v2b 체결 현실성: 슬리피지 · 주문 크기 · 최소 거래대금
   python -m sbt.data.cli v2b-target                 # v2b 목표가를 날이 지날수록 낮추면 (3일째 5%·4일째 3% 등)
   python -m sbt.data.cli dart-events               # DART 공시 사건(자사주 매입·임원·주요주주 매매·잠정 실적) 받기, 이어받기
@@ -106,6 +107,7 @@ def main(argv: list[str] | None = None) -> None:
     pt = sub.add_parser("profit-test")
     pt.add_argument("--dataset", default="kr")
     sub.add_parser("dart-events")
+    sub.add_parser("watchdog")
     tt3 = sub.add_parser("third-touch")
     tt3.add_argument("--dataset", default="kr")
     ft = sub.add_parser("fill-test")
@@ -277,6 +279,9 @@ def main(argv: list[str] | None = None) -> None:
     elif a.cmd == "v2b-target":
         from .. import research26
         research26.run(a.dataset)
+    elif a.cmd == "watchdog":
+        from .. import watchdog
+        watchdog.run()
     elif a.cmd == "dart-events":
         from . import dart_events
         dart_events.run_collect()

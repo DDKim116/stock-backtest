@@ -11,6 +11,7 @@ interface Item {
   ret: number | null;
   pnl: number;
   entry_date: string;
+  slip?: number | null;
 }
 interface Day {
   date: string;
@@ -23,6 +24,7 @@ interface Daily {
   days: Day[];
   equity: { date: string; assets: number }[];
   start?: string | null; // 처음 산 날
+  slip?: { n: number; avg: number | null }; // 시장가 매도(손절·기간만료)의 기준가 대비 체결가
   buy_amount?: number; // 산 금액 합계
   sell_amount?: number; // 판 금액 합계
 }
@@ -233,6 +235,7 @@ export default function PnlChart({ assets, unrealized, colorOf }: { assets?: num
                   {it.name}
                   <span className="text-[11px] text-faint">
                     {it.reason} · {md(it.entry_date)} 매수
+                    {it.slip != null && ` · 밀림 ${it.slip > 0 ? "+" : ""}${it.slip.toFixed(2)}%`}
                   </span>
                 </span>
                 <span className={`tabular text-xs ${tone(it.ret ?? 0)}`}>{it.ret == null ? "–" : `${it.ret > 0 ? "+" : ""}${it.ret.toFixed(1)}%`}</span>
@@ -241,6 +244,11 @@ export default function PnlChart({ assets, unrealized, colorOf }: { assets?: num
             ))}
           </div>
         </div>
+      )}
+      {data.slip && data.slip.n > 0 && data.slip.avg != null && (
+        <p className="text-xs text-muted">
+          시장가 매도(손절·기간만료) 기준가 대비 체결가 평균 <b className={tone(data.slip.avg)}>{data.slip.avg > 0 ? "+" : ""}{data.slip.avg.toFixed(2)}%</b> ({data.slip.n}건) · 실투에서 −0.3% 보다 나쁘면 전략 수익이 크게 줄어요
+        </p>
       )}
       <p className="text-[11px] text-faint">모두 실제 계좌 기준 (수수료 0.015% · 거래세 0.20%를 뺀 손익) · 점선 = 시작 5,000만 · 오늘 금액은 들고 있는 종목 평가 포함</p>
     </section>

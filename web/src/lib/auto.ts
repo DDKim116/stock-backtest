@@ -63,7 +63,7 @@ export interface Position {
 }
 export interface AutoView {
   key_saved: boolean;
-  settings: { enabled: boolean; mode: "approve" | "auto" };
+  settings: { enabled: boolean; mode: "approve" | "auto"; order_cap?: number; daily_loss_pct?: number; skip_risky?: boolean };
   strategies: AutoStrategy[];
   plans: Plan[];
   plan_date: string | null;
@@ -72,7 +72,7 @@ export interface AutoView {
   stats_manual: { n: number; win: number; avg: number | null };
   last_plan: { trade_date: string; signal_date: string; count: number; per?: Record<string, number> } | null;
   log: { ts: string; text: string }[];
-  state?: { last_tick?: string; last_error?: string; buy_done?: string; expire_done?: string; overdue_done?: string; close_done?: string };
+  state?: { halted?: string | null; halted_why?: string | null; last_tick?: string; last_error?: string; buy_done?: string; expire_done?: string; overdue_done?: string; close_done?: string };
   version?: string;
   deploy?: string | null; // 마지막 배포 결과
   now?: string;

@@ -1800,6 +1800,9 @@ _AUTO = None
 class AutoSettingsIn(BaseModel):
     enabled: bool | None = None
     mode: str | None = None
+    order_cap: float | None = None
+    daily_loss_pct: float | None = None
+    skip_risky: bool | None = None
     strategy_id: int | None = None
     per_trade: float | None = None
     daily_max: int | None = None
@@ -1903,6 +1906,17 @@ def auto_settings(body: AutoSettingsIn):
     a = _auto()
     a.log(_kst_now().replace(tzinfo=None), "설정 변경: " + ", ".join(f"{k}={v}" for k, v in body.model_dump().items() if v is not None))
     return auto_view()
+
+
+class AutoEmergencyIn(BaseModel):
+    sell_all: bool = False
+
+
+@app.post("/api/auto/emergency", dependencies=[Depends(auth)])
+def auto_emergency(body: AutoEmergencyIn):
+    """비상 정지: 새 매수 끔 · 매수 주문·후보 취소 · (sell_all) 보유 전부 시장가."""
+    r = _auto().emergency(_kst_now().replace(tzinfo=None), body.sell_all)
+    return {**auto_view(), "result": r}
 
 
 @app.post("/api/auto/plans/{pid}", dependencies=[Depends(auth)])

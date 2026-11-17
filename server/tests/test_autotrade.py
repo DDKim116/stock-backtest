@@ -554,3 +554,73 @@ def test_partial_exit_fill_recorded_and_rest_sold_next_day(env):
     p = get()
     assert p["status"] == "closed" and p["sold_qty"] == 1633 and p["exit_reason"] == "기간만료"
     assert abs(p["sold_amount"] - (2_900_000 + 633 * 2950)) < 1
+
+
+def _pos(a, code, name, entry, qty=100, price=10_000, now=None):
+    now = now or dt.datetime(2026, 11, 16, 9, 0)
+    return a._x("""INSERT INTO at_positions (code, name, qty, entry_date, entry_price, target_price, stop_price, status,
+                   created_at, updated_at, hold_days) VALUES (?,?,?,?,?,?,?,'open',?,?,5)""",
+                (code, name, qty, entry, price, int(price * 1.1), price * 0.93, now.isoformat(), now.isoformat()))
+
+
+def test_order_cap_skips_big_orders(env):
+    a, kw, runner, sent = env
+    a.set_settings(order_cap=1_000_000)
+    runner.rows["2026-10-23"] = [{"code": "000001", "name": "가", "signal_date": "2026-10-23", "close": 10_000, "value": 5e9}]
+    a.tick(T(23, 17, 0))
+    a.approve(a.plans("2026-10-26")[0]["id"], True, T(23, 18, 0))
+    a.tick(T(26, 8, 50))
+    p = a.plans("2026-10-26")[0]
+    assert p["status"] == "skipped" and "상한" in p["msg"] and not kw.find(side="buy")
+
+
+def test_risky_stock_skipped_at_plan(env):
+    a, kw, runner, sent = env
+    kw.stock_risk = lambda mode, code: "관리종목" if code == "000002" else None
+    runner.rows["2026-10-23"] = [
+        {"code": "000001", "name": "가", "signal_date": "2026-10-23", "close": 10_000, "value": 5e9},
+        {"code": "000002", "name": "나", "signal_date": "2026-10-23", "close": 10_000, "value": 2e9}]
+    a.tick(T(23, 17, 0))
+    ps = {p["code"]: p for p in a.plans("2026-10-26")}
+    assert ps["000002"]["status"] == "skipped" and "관리종목" in ps["000002"]["msg"]
+    assert ps["000001"]["status"] == "proposed"
+
+
+def test_daily_loss_halts_new_buys(env):
+    a, kw, runner, sent = env
+    a._x("INSERT INTO at_equity (date, assets, pnl, ts) VALUES ('2026-11-13', 50000000, 0, 'x')")
+    kw.balance = lambda mode: {"assets": 48_000_000, "pnl": -2e6, "holdings": []}  # -4%
+    a.tick(dt.datetime(2026, 11, 16, 10, 0))
+    st = a._state()
+    assert st["halted"] == "2026-11-16" and not a.settings()["enabled"]
+    assert any("손실 한도" in t for t, _ in sent)
+    a.set_settings(enabled=True)  # 다시 켜면 멈춤 표시가 풀린다
+    assert not a._state().get("halted")
+
+
+def test_emergency_cancels_and_sells(env):
+    a, kw, runner, sent = env
+    runner.rows["2026-10-23"] = [{"code": "000001", "name": "가", "signal_date": "2026-10-23", "close": 10_000, "value": 5e9}]
+    a.tick(T(23, 17, 0))
+    a.approve(a.plans("2026-10-26")[0]["id"], True, T(23, 18, 0))
+    a.tick(T(26, 8, 50))
+    assert a.plans("2026-10-26")[0]["status"] == "ordered"
+    _pos(a, "000009", "다", "2026-10-22", now=T(26, 9, 30))
+    r = a.emergency(T(26, 9, 30), sell_all=True)
+    assert r["cancelled"] == 1 and r["sold"] == 1 and kw.cancelled
+    assert a.plans("2026-10-26")[0]["status"] == "cancelled" and not a.settings()["enabled"]
+    assert any(o["side"] == "sell" and o["kind"] == "market" and o["code"] == "000009" for o in kw.orders.values())
+
+
+def test_stop_records_reference_price(env):
+    a, kw, runner, sent = env
+    runner.days = ["2026-11-12", "2026-11-13"]
+    pid = _pos(a, "000007", "라", "2026-11-13", qty=10, price=10_000)
+    kw.prices["000007"] = 9_200
+    a.tick(dt.datetime(2026, 11, 16, 10, 0))
+    no = kw.find(side="sell", kind="market", code="000007")[0]
+    kw.fill(no, 9_154)
+    a.tick(dt.datetime(2026, 11, 16, 10, 1))
+    d = a.daily()
+    it = d["days"][-1]["items"][0]
+    assert it["slip"] == -0.5 and d["slip"]["n"] == 1

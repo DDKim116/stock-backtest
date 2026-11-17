@@ -40,6 +40,10 @@ DEFAULTS = {
     "buy_limit_pct": 5.0,
     "strategies": None,
     "migrated": 0,  # 1: 중간값 전략 색을 라임으로 바꿈  # [{id, enabled, per_trade, daily_max, rank, color}]
+    # 안전장치 (실투 대비)
+    "order_cap": 20_000_000,  # 1회 주문 금액 상한 (원) — 넘으면 그 후보는 사지 않음
+    "daily_loss_pct": 3.0,  # 하루 손실 한도: 전날 마감 계좌보다 이만큼(%) 줄면 새 매수 멈춤 (0 = 끔)
+    "skip_risky": True,  # 관리종목·거래정지·투자경고/위험·단기과열·정리매매 종목은 후보에서 뺌
 }
 # 전략 색 (차트·목록에서 같은 색). 상승 빨강·하락 파랑·강조 호박색과 겹치지 않게
 COLORS = ["#A99CF5", "#3CC4B4", "#F08A5D", "#7EC8F2", "#E3B341", "#B5E655", "#FF7AB8"]
@@ -48,7 +52,7 @@ NEW_STRATEGY = {"enabled": True, "per_trade": 3_000_000, "daily_max": 5, "rank":
 # 1회 금액: fixed = per_trade 원 고정, pct = 계좌(추정예탁자산)의 pct% (max_per_trade 원까지)
 SIZE_DEFAULTS = {"size_mode": "fixed", "pct": 10.0, "max_per_trade": 20_000_000}
 RANK_LABEL = {"value_asc": "거래대금 작은 순"}
-MANUAL = ("직접 매도", "키움에서 직접 매도")  # 전략 규칙이 아닌 매도 (통계 따로)
+MANUAL = ("직접 매도", "키움에서 직접 매도", "비상 정지")  # 전략 규칙이 아닌 매도 (통계 따로)
 RECONCILE_EVERY = 120  # 초: 키움 잔고와 맞춰 보는 간격
 APPROVE_UNTIL = dt.time(8, 45)
 BUY_AT = dt.time(8, 50)
@@ -59,6 +63,7 @@ STOP_UNTIL = dt.time(15, 19)
 # (거래가 적은 종목은 수천 주에 20분~1시간 반) 마감 직전에 내면 다 못 판다 → 한 시간 먼저 내고 마감 동시호가까지 걸어 둔다.
 # 주문이 안 들어가면 15:29 까지 20초마다 다시 시도. 마감까지 남은 수량은 다음 거래일 장 시작에 이어서 판다.
 EXPIRE_AT = dt.time(14, 30)
+EXPIRE_AT_REAL = dt.time(15, 20, 30)  # 실제 계좌: 마감 동시호가에서 한 번에 종가로 (백테스트와 같음)
 REAL_FEE, REAL_TAX = 0.00015, 0.002  # 실제 계좌 수수료(사고팔 때) · 거래세(팔 때)
 EXPIRE_UNTIL = dt.time(15, 29)
 CLOSE_AT = dt.time(15, 31)
@@ -110,7 +115,7 @@ class Auto:
                 id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, text TEXT NOT NULL)""")
             # 여러 전략용 칸 (예전 데이터는 첫 전략으로 본다)
             for table, cols in (("at_plans", {"strategy_id": "INTEGER", "valid_until": "TEXT", "entry_kind": "TEXT"}),
-                                ("at_positions", {"strategy_id": "INTEGER", "hold_days": "INTEGER"})):
+                                ("at_positions", {"strategy_id": "INTEGER", "hold_days": "INTEGER", "exit_ref": "REAL"})):
                 have = {r[1] for r in db.execute(f"PRAGMA table_info({table})").fetchall()}
                 for c, typ in cols.items():
                     if c not in have:
@@ -164,11 +169,19 @@ class Auto:
     def set_settings(self, **kw) -> dict:
         """전체 켜기·끄기와 주문 방식. (예전 호출 호환: strategy_id·per_trade·daily_max 는 첫 전략에)"""
         s = self.settings()
-        for k in ("enabled", "mode"):
+        for k in ("enabled", "mode", "order_cap", "daily_loss_pct", "skip_risky"):
             if kw.get(k) is not None:
                 s[k] = kw[k]
         if s["mode"] not in ("approve", "auto"):
             raise ValueError("mode 는 approve 또는 auto")
+        if not 100_000 <= float(s["order_cap"]) <= 1_000_000_000:
+            raise ValueError("1회 주문 상한은 10만~10억 원")
+        if not 0 <= float(s["daily_loss_pct"]) <= 50:
+            raise ValueError("하루 손실 한도는 0~50%")
+        if kw.get("enabled"):  # 다시 켜면 '오늘 멈춤' 표시를 지운다
+            st = self._state()
+            if st.get("halted"):
+                self._set_state(halted=None, halted_why=None)
         self._save(s)
         legacy = {k: kw[k] for k in ("per_trade", "daily_max") if kw.get(k) is not None}
         if kw.get("strategy_id"):
@@ -255,7 +268,7 @@ class Auto:
     def daily(self) -> dict:
         """날마다 실현 손익(판 종목들, 실제 계좌 수수료·세금을 뺀 값) + 장 마감 계좌 금액 기록."""
         rows = self._q("""SELECT id, code, name, strategy_id, exit_reason, exit_date, ret, qty, sold_qty, sold_amount,
-                          entry_price, entry_date FROM at_positions
+                          entry_price, entry_date, exit_price, exit_ref FROM at_positions
                           WHERE status = 'closed' AND exit_date IS NOT NULL AND sold_qty > 0 ORDER BY exit_date, id""")
         first = (self.settings()["strategies"] or [{"id": None}])[0]["id"]
         days: dict[str, dict] = {}
@@ -270,6 +283,7 @@ class Auto:
             d["gross"] += gross
             d["cost"] += cost
             d["items"].append({"code": r["code"], "name": r["name"], "strategy_id": r["strategy_id"] or first,
+                               "slip": round((r["exit_price"] / r["exit_ref"] - 1) * 100, 2) if r.get("exit_ref") and r.get("exit_price") else None,
                                "reason": r["exit_reason"], "ret": round(net / buy * 100, 2) if buy else r["ret"],
                                "pnl": round(net), "entry_date": r["entry_date"]})
         for d in days.values():
@@ -280,7 +294,9 @@ class Auto:
         # 거래 금액 합계 (수수료·세금 비교용): 산 금액은 아직 들고 있는 것까지, 판 금액은 판 것만
         tot = self._q("""SELECT COALESCE(SUM(entry_price * qty), 0) buy, COALESCE(SUM(sold_amount), 0) sell
                          FROM at_positions WHERE entry_price > 0""")[0]
+        slips = [x["slip"] for d in days.values() for x in d["items"] if x.get("slip") is not None]
         return {"days": sorted(days.values(), key=lambda x: x["date"]), "equity": eq, "start": start,
+                "slip": {"n": len(slips), "avg": round(sum(slips) / len(slips), 2) if slips else None},
                 "buy_amount": round(tot["buy"]), "sell_amount": round(tot["sell"])}
 
     def remove_strategy(self, sid: int) -> None:
@@ -538,6 +554,9 @@ class Auto:
                     limit = self.kw.round_tick(close * (1 + s["buy_limit_pct"] / 100), up=False)
                 qty = int(amount // (limit if r_["entry"] == "limit" else close))
                 st, msg = (status, "") if qty >= 1 else ("skipped", "1주 가격이 1회 매수금보다 큼")
+                risk = self._risk(r["code"], now) if s.get("skip_risky", True) and st == status else None
+                if risk:
+                    st, msg = "skipped", f"위험 종목 제외: {risk}"
                 if self._q("SELECT id FROM at_plans WHERE trade_date = ? AND code = ?", (t.isoformat(), r["code"])):
                     continue
                 self._x("""INSERT INTO at_plans (trade_date, code, name, signal_date, rank, value, close, limit_price,
@@ -581,10 +600,14 @@ class Auto:
         plans.sort(key=lambda p: (order.get(p["strategy_id"], 0), p["trade_date"], p["rank"]))
         if not plans:
             return
+        cap = float(self.settings().get("order_cap") or 0)
         orderable = (self.kw.cash(mode).get("orderable") or 0)
         placed = []
         for p in plans:
             need = p["qty"] * p["limit_price"] * 1.001
+            if cap and need > cap * 1.06:  # 지정가(+5%) 여유는 봐줌
+                self._upd("at_plans", p["id"], now, status="skipped", msg=f"1회 주문 상한({cap / 1e4:,.0f}만) 초과")
+                continue
             if orderable < need:
                 if today < (p["valid_until"] or p["trade_date"]):
                     self._upd("at_plans", p["id"], now, msg="주문가능금액 부족 · 내일 다시 시도")
@@ -619,7 +642,7 @@ class Auto:
             if pos["status"] == "open" and pos["target_date"] != today:
                 self._place_target(now, pos, mode, today)
 
-    def _sell_all(self, now: dt.datetime, pos: dict, mode: str, reason: str) -> bool:
+    def _sell_all(self, now: dt.datetime, pos: dict, mode: str, reason: str, ref: float | None = None) -> bool:
         """목표가 주문 취소 → 시장가 매도. 주문이 들어갔으면 True. 실패 기록·알림은 종목·사유마다 10분에 한 번."""
         if pos["target_order"] and pos["target_date"] == now.date().isoformat():
             try:
@@ -642,8 +665,10 @@ class Auto:
                 self.notify(f"⚠ {reason} 매도 실패", f"{pos['name']}: {e}")
             self._set_state(last_error=f"{now.isoformat(timespec='seconds')} {reason} 매도 {pos['name']}: {str(e)[:200]}")
             return False
-        self._upd("at_positions", pos["id"], now, status="closing", exit_order=no, exit_reason=reason, target_order=None)
-        self.log(now, f"{reason} 매도 주문 {pos['name']} {left}주 (시장가) · 주문번호 {no}")
+        self._upd("at_positions", pos["id"], now, status="closing", exit_order=no, exit_reason=reason, target_order=None,
+                  exit_ref=ref)
+        self.log(now, f"{reason} 매도 주문 {pos['name']} {left}주 (시장가)" + (f" · 기준가 {ref:,.0f}원" if ref else "")
+                 + f" · 주문번호 {no}")
         return True
 
     def _once(self, now: dt.datetime, key: str, every: int = 600) -> bool:
@@ -721,7 +746,9 @@ class Auto:
         ret = (sold_amount / (pos["entry_price"] * pos["qty"]) - 1) * 100 if sold_qty else None
         self._upd("at_positions", pos["id"], now, status="closed", sold_qty=sold_qty, sold_amount=sold_amount,
                   exit_date=now.date().isoformat(), exit_price=price, ret=ret, exit_reason=reason, target_order=None)
-        self.log(now, f"{reason} 매도 체결 {pos['name']} {price:,.0f}원 · {ret:+.2f}%")
+        slip = (price / pos["exit_ref"] - 1) * 100 if price and pos.get("exit_ref") else None
+        self.log(now, f"{reason} 매도 체결 {pos['name']} {price:,.0f}원 · {ret:+.2f}%"
+                 + (f" · 기준가 대비 {slip:+.2f}%" if slip is not None else ""))
         self.notify(f"{reason} · {pos['name']} {ret:+.2f}%", f"{sold_qty}주 {price:,.0f}원에 매도 (수수료·세금 전)")
 
     def sync(self, now: dt.datetime, mode: str) -> None:
@@ -784,7 +811,7 @@ class Auto:
         for pos in opens:
             v = px.get(pos["code"])
             if v and pos["stop_price"] and v <= pos["stop_price"]:
-                self._sell_all(now, pos, mode, "손절")
+                self._sell_all(now, pos, mode, "손절", ref=v)
 
     def _held_days(self, entry_date: str, today: dt.date) -> int:
         """체결일 다음부터 오늘까지 거래일 수 (오늘이 거래일이면 오늘 포함).
@@ -821,6 +848,77 @@ class Auto:
             self.log(now, f"⚠ {name} 오류: {e}")
         self._set_state(last_error=f"{now.isoformat(timespec='seconds')} {name}: {str(e)[:200]}")
 
+    def _risk(self, code: str, now: dt.datetime) -> str | None:
+        """관리종목·거래정지 등 이유 (키움 종목정보). 조회가 안 되면 None (후보는 그대로)."""
+        fn = getattr(self.kw, "stock_risk", None)
+        if fn is None:
+            return None
+        try:
+            return fn(self.settings()["account"], code)
+        except Exception as e:  # noqa: BLE001
+            if self._once(now, f"risk:{str(e)[:40]}"):
+                self.log(now, f"위험 종목 확인 실패 ({code}): {e} — 후보는 그대로 둡니다")
+            return None
+
+    # ------------------------------------------------------------ 안전장치
+    def _loss_guard(self, now: dt.datetime, mode: str) -> None:
+        """하루 손실 한도: 전날 마감 계좌 금액보다 daily_loss_pct% 이상 줄면 새 매수를 멈춘다 (보유 종목 규칙은 계속)."""
+        s = self.settings()
+        pct = float(s.get("daily_loss_pct") or 0)
+        st = self._state()
+        today = now.date().isoformat()
+        if pct <= 0 or not s["enabled"] or st.get("halted") == today:
+            return
+        if st.get("loss_check") and (now - dt.datetime.fromisoformat(st["loss_check"])).total_seconds() < 300:
+            return
+        self._set_state(loss_check=now.isoformat(timespec="seconds"))
+        prev = self._q("SELECT assets FROM at_equity WHERE date < ? ORDER BY date DESC LIMIT 1", (today,))
+        if not prev:
+            return
+        base = float(prev[0]["assets"])
+        assets = self.kw.balance(mode).get("assets")
+        if not assets or base <= 0:
+            return
+        chg = (float(assets) / base - 1) * 100
+        if chg <= -pct:
+            why = f"전날 마감 {base / 1e4:,.0f}만 → 지금 {float(assets) / 1e4:,.0f}만 ({chg:+.1f}%)"
+            self._save({**s, "enabled": False})
+            self._set_state(halted=today, halted_why=why)
+            self.log(now, f"⚠ 하루 손실 한도({pct:g}%) 도달 · {why} → 새 매수를 멈췄습니다 (보유 종목의 목표·손절·기간만료는 계속)")
+            self.notify("⚠ 하루 손실 한도 도달 · 자동 매수 멈춤", f"{why}\n보유 종목 규칙은 계속 · 다시 켜려면 앱에서 '켜기'")
+
+    def emergency(self, now: dt.datetime, sell_all: bool = False) -> dict:
+        """비상 정지: 새 매수 끔 · 오늘 낸 매수 주문 취소 · 대기 후보 취소 · (sell_all) 보유 전부 시장가."""
+        with self.lock:
+            s = self.settings()
+            mode = s["account"]
+            self._save({**s, "enabled": False})
+            self._set_state(halted=now.date().isoformat(), halted_why="비상 정지 버튼")
+            cancelled = failed = sold = 0
+            for p in self._q("SELECT * FROM at_plans WHERE status IN ('proposed','approved','ordered','partial')"):
+                if p["status"] in ("ordered", "partial") and p["order_no"]:
+                    try:
+                        self.kw.cancel(mode, p["code"], p["order_no"])
+                    except Exception as e:  # noqa: BLE001
+                        failed += 1
+                        self.log(now, f"⚠ 매수 주문 취소 실패 {p['name']}: {e}")
+                        continue
+                self._upd("at_plans", p["id"], now, status="cancelled", msg="비상 정지로 취소")
+                cancelled += 1
+            if sell_all:
+                if not (is_trading_day(now.date()) and dt.time(9, 0) <= now.time() < EXPIRE_UNTIL):
+                    self.log(now, "비상 정지: 장중(09:00~15:29)이 아니라 전부 팔기는 하지 않았습니다")
+                else:
+                    for pos in self.positions("active"):
+                        if pos["status"] == "open" and self._sell_all(now, pos, mode, "비상 정지"):
+                            sold += 1
+            msg = f"비상 정지 · 새 매수 끔 · 매수 주문·후보 {cancelled}건 취소" + (f" · {sold}종목 시장가 매도" if sell_all else "")
+            if failed:
+                msg += f" · 취소 실패 {failed}건"
+            self.log(now, "⚠ " + msg)
+            self.notify("⚠ 자동 매매 비상 정지", msg)
+            return {"cancelled": cancelled, "sold": sold, "failed": failed}
+
     def _due(self, now: dt.datetime, overdue: bool) -> list[dict]:
         """기간이 찬(overdue=True 면 이미 지난) 보유 종목. held 에 보유 거래일 수를 붙여 준다."""
         out = []
@@ -841,8 +939,14 @@ class Auto:
             days = ", ".join(f"{p['name']} {self._held_days(p['entry_date'], now.date())}일째" for p in opens) or "없음"
             self.log(now, f"기간만료 확인 · 보유 {days} → 팔 것 {len(due)}종목")
         ok = True
+        px = {}
+        if due:
+            try:
+                px = self.kw.quotes(mode, sorted({p["code"] for p in due}))
+            except Exception:  # noqa: BLE001 — 기준가는 기록용
+                px = {}
         for pos in due:
-            ok &= self._sell_all(now, pos, mode, "기간만료")
+            ok &= self._sell_all(now, pos, mode, "기간만료", ref=px.get(pos["code"]))
         return ok
 
     def _overdue(self, now: dt.datetime, mode: str) -> bool:
@@ -955,17 +1059,18 @@ class Auto:
         # 2) 08:50 매수 + 목표가 주문 다시 걸기 (늦게 켜졌으면 09:30 까지)
         if BUY_AT <= t < LATE_BUY_UNTIL and st.get("buy_done") != tstr:
             self._set_state(buy_done=tstr)
-            if s["enabled"]:
+            if s["enabled"] and st.get("halted") != tstr:
                 step("매수 주문", lambda: self._place_buys(now, tstr, mode))
             step("잔고 확인", lambda: self._reconcile(now, mode, ex={}, force=True))  # 밤사이(시간외 등) 직접 판 것
             step("목표가 주문", lambda: self._refresh_targets(now, tstr, mode))
         # 3) 기간만료를 놓친 종목 → 장 시작에 (성공할 때까지 장중에 다시 시도)
         res: dict[str, bool] = {}
-        if OPEN <= t < EXPIRE_AT and st.get("overdue_done") != tstr:
+        if OPEN <= t < (EXPIRE_AT if mode == "mock" else EXPIRE_AT_REAL) and st.get("overdue_done") != tstr:
             if step("놓친 기간만료 매도", lambda: res.update(ok=self._overdue(now, mode))) and res.get("ok"):
                 self._set_state(overdue_done=tstr)
         # 4) 보유기간 만료 (15:10~15:29, 모두 주문이 들어갈 때까지 그 안에서 다시 시도)
-        if EXPIRE_AT <= t < EXPIRE_UNTIL and st.get("expire_done") != tstr:
+        exp_at = EXPIRE_AT if mode == "mock" else EXPIRE_AT_REAL
+        if exp_at <= t < EXPIRE_UNTIL and st.get("expire_done") != tstr:
             if step("기간만료 매도", lambda: res.update(ok=self._expire(now, mode))) and res.get("ok"):
                 self._set_state(expire_done=tstr)
         # 5) 장중: 체결 확인 · 잔고 · 손절
@@ -974,6 +1079,7 @@ class Auto:
             step("잔고 확인", lambda: self._reconcile(now, mode))
             if t < STOP_UNTIL:
                 step("손절 감시", lambda: self._check_stops(now, mode))
+            step("하루 손실 한도", lambda: self._loss_guard(now, mode))
         # 6) 마무리
         if t >= CLOSE_AT and st.get("close_done") != tstr:
             step("체결 확인", lambda: self.sync(now, mode))

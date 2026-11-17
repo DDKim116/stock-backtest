@@ -116,6 +116,7 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
           <p className="rounded-lg bg-background p-3 text-sm text-warning">설정 → 키움 연결에서 모의투자 키를 먼저 넣어 주세요.</p>
         )}
         <Health v={v} />
+        <Safety v={v} run={run} busy={busy} />
         <div className="flex justify-between gap-2 text-sm">
           <span className="text-muted">계좌 사용</span>
           <span className="tabular">
@@ -772,5 +773,65 @@ function Health({ v }: { v: AutoView }) {
       {errToday && <div className="text-warning">마지막 오류 {st.last_error!.slice(11)}</div>}
       {v.deploy && v.deploy.includes("실패") && <div className="text-critical">⚠ 서버 업데이트 {v.deploy}</div>}
     </div>
+  );
+}
+
+// 안전장치: 1회 주문 상한 · 하루 손실 한도 · 위험 종목 제외 · 비상 정지
+function Safety({ v, run, busy }: { v: AutoView; run: Run; busy: boolean }) {
+  const s = v.settings;
+  const [cap, setCap] = useState(String(s.order_cap ?? 20000000));
+  const [loss, setLoss] = useState(String(s.daily_loss_pct ?? 3));
+  const [risky, setRisky] = useState(s.skip_risky ?? true);
+  const st = v.state ?? {};
+  const today = (v.now ?? "").slice(0, 10);
+  const save = () =>
+    run(
+      () => api("/api/auto/settings", { method: "PUT", body: { order_cap: Number(cap), daily_loss_pct: Number(loss), skip_risky: risky } }),
+      "안전장치를 저장했습니다",
+    );
+  const stop = (sellAll: boolean) => {
+    const msg = sellAll
+      ? "비상 정지: 새 매수를 끄고, 매수 주문·후보를 취소하고, 보유 종목을 전부 시장가로 팝니다. 계속할까요?"
+      : "비상 정지: 새 매수를 끄고, 오늘 매수 주문·대기 후보를 취소합니다 (보유 종목은 목표·손절·기간만료 그대로). 계속할까요?";
+    if (!confirm(msg)) return;
+    run(() => api("/api/auto/emergency", { body: { sell_all: sellAll } }), sellAll ? "비상 정지 · 전부 팔기 주문" : "비상 정지 · 새 매수 멈춤");
+  };
+  return (
+    <details className="rounded-lg bg-background p-2.5 text-xs" open={st.halted === today ? true : undefined}>
+      <summary className="cursor-pointer font-semibold">
+        안전장치 · 비상 정지
+        {st.halted === today && <span className="ml-2 text-critical">오늘 멈춤: {st.halted_why}</span>}
+      </summary>
+      <div className="mt-2 space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block">
+            <span className="text-muted">1회 주문 상한 (원)</span>
+            <NumInput value={cap} onChange={setCap} className="mt-1" />
+          </label>
+          <label className="block">
+            <span className="text-muted">하루 손실 한도 (%, 0 = 끔)</span>
+            <NumInput value={loss} onChange={setLoss} decimal className="mt-1" />
+          </label>
+        </div>
+        <label className="flex items-start gap-2">
+          <input type="checkbox" checked={risky} onChange={(e) => setRisky(e.target.checked)} className="mt-0.5 !w-auto" />
+          <span>관리종목·거래정지·투자경고/위험·단기과열·정리매매 종목은 매수 후보에서 빼기</span>
+        </label>
+        <p className="text-faint">
+          하루 손실 한도: 전날 마감 계좌보다 이만큼 줄면 그날은 새 매수를 멈추고 알림 (보유 종목의 목표·손절·기간만료는 계속). 다시 켜려면 위의 켜기.
+        </p>
+        <button type="button" disabled={busy} onClick={save} className="rounded-lg border border-accent px-3 py-1.5 font-semibold text-accent disabled:opacity-50">
+          저장
+        </button>
+        <div className="flex flex-wrap gap-2 border-t border-border pt-2">
+          <button type="button" disabled={busy} onClick={() => stop(false)} className="rounded-lg bg-critical/15 px-3 py-1.5 font-semibold text-critical disabled:opacity-50">
+            비상 정지 (새 매수 멈춤)
+          </button>
+          <button type="button" disabled={busy} onClick={() => stop(true)} className="rounded-lg border border-critical px-3 py-1.5 text-critical disabled:opacity-50">
+            비상 정지 + 전부 팔기
+          </button>
+        </div>
+      </div>
+    </details>
   );
 }

@@ -1,0 +1,10 @@
+[Unit]
+Description=stock-backtest 자동 매매 지킴이 (장중 멈추면 휴대폰 알림)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=__USER__
+WorkingDirectory=__REPO__/server
+EnvironmentFile=__REPO__/.env
+ExecStart=__REPO__/.venv/bin/python -m sbt.data.cli watchdog
