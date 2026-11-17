@@ -95,6 +95,8 @@ def _post(mode: str, path: str, body: dict, headers: dict | None = None) -> dict
     try:
         data = r.json()
     except ValueError:
+        if r.status_code >= 500:  # 키움 서버 쪽 일시 오류 (HTML 페이지가 온다)
+            raise KiwoomError(f"키움 응답 오류 {r.status_code}: 키움 서버 일시 오류 (잠시 뒤 저절로 풀림)")
         raise KiwoomError(f"키움 응답 오류 {r.status_code}: {r.text[:200]}")
     if r.status_code >= 400 or data.get("return_code", 0) not in (0, "0"):
         raise KiwoomError(_explain(data.get("return_msg") or f"HTTP {r.status_code}"))
