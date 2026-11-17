@@ -770,7 +770,18 @@ function Health({ v }: { v: AutoView }) {
           {copied ? "복사됨 ✓" : "진단 복사"}
         </button>
       </div>
-      {errToday && <div className="text-warning">마지막 오류 {st.last_error!.slice(11)}</div>}
+      {errToday && (() => {
+        // HTML 오류 페이지(키움 502 등)는 태그를 빼고 짧게 · 30분 넘게 지난 오류는 '지나간 오류'로 흐리게
+        const raw = st.last_error!.slice(11);
+        const msg = raw.includes("<") ? raw.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 80) : raw;
+        const at = new Date(st.last_error!.slice(0, 19));
+        const old = now ? (now.getTime() - at.getTime()) / 60000 > 30 : false;
+        return old ? (
+          <div className="text-faint">지나간 오류 {msg} · 지금은 정상</div>
+        ) : (
+          <div className="text-warning">마지막 오류 {msg}</div>
+        );
+      })()}
       {v.deploy && v.deploy.includes("실패") && <div className="text-critical">⚠ 서버 업데이트 {v.deploy}</div>}
     </div>
   );
