@@ -156,6 +156,9 @@ def call(mode: str, path: str, api_id: str, body: dict) -> dict:
             if attempt < 2 and ("1700" in msg or "1701" in msg or "1702" in msg or "초과" in msg):
                 time.sleep(1.2)  # 요청 개수 제한 → 잠시 뒤 다시
                 continue
+            if attempt < 2 and ("응답 오류 5" in msg or "연결하지 못했습니다" in msg):
+                time.sleep(1.0 + attempt)  # 키움 서버 일시 오류(502·503·504)·끊김 → 잠시 뒤 다시
+                continue
             if attempt < 2 and ("8005" in msg or "Token이 유효하지" in msg):
                 with _lock:
                     _tokens.pop(mode, None)
