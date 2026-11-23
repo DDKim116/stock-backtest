@@ -167,27 +167,39 @@ def us_fear() -> dict:
 
 
 def _caps(panel, rows: np.ndarray) -> np.ndarray:
-    """그 줄의 시총. 비어 있으면(저녁 야후 임시 시세 등) 가장 가까운 앞날 시총 × 그동안의 종가 변화로 채운다."""
-    if "mktcap" not in panel.cols:
+    """그 줄의 시총. 비어 있으면(저녁 야후 임시 시세 등) 같은 종목의 가장 최근 시총 × 그동안의 종가 변화로 채운다."""
+    if "mktcap" not in panel.cols or not len(rows):
         return np.full(len(rows), np.nan)
     cap, close, pos = panel.cols["mktcap"], panel.cols["close"], panel.pos
     out = cap[rows].astype(float).copy()
-    for k in range(1, 6):
-        miss = ~(np.isfinite(out) & (out > 0)) & (pos[rows] >= k)
-        if not miss.any():
-            break
-        r = rows[miss]
-        out[miss] = cap[r - k] * close[r] / close[r - k]
+    miss = np.flatnonzero(~(np.isfinite(out) & (out > 0)))
+    for i in miss:  # 빈 종목만 뒤로 거슬러 (보통 몇 개 ~ 수백 개)
+        r = int(rows[i])
+        lo = r - int(pos[r])
+        seg = cap[lo:r]
+        ok = np.flatnonzero(np.isfinite(seg) & (seg > 0))
+        if len(ok):
+            j = lo + int(ok[-1])
+            if close[j] > 0:
+                out[i] = cap[j] * close[r] / close[j]
     return out
 
 
-def treemap(panel, market: str, top: int) -> dict:
-    """마지막 날 시총 상위 top 종목: 시총·1일/1주/1달 등락."""
+def _latest_rows(panel, market: str, days: int = 7) -> tuple[pd.DataFrame, np.datetime64 | None]:
+    """종목마다 가장 최근 줄 (마지막 날에서 days 일 안). 마지막 날에 일부 종목만 들어온 날에도 시장 전체가 보이게."""
     df = _stock_frame(panel, market)
-    if df.empty or "mktcap" not in panel.cols:
-        return {"market": market, "items": []}
+    if df.empty:
+        return df, None
     last = df["date"].max()
-    now = df[df["date"] == last].copy()
+    rec = df[df["date"] >= last - np.timedelta64(days, "D")]
+    return rec.groupby("code", sort=False).tail(1).copy(), last
+
+
+def treemap(panel, market: str, top: int) -> dict:
+    """시총 상위 top 종목: 시총·1일/1주/1달 등락."""
+    now, last = _latest_rows(panel, market)
+    if now.empty or "mktcap" not in panel.cols:
+        return {"market": market, "items": []}
     now["cap"] = _caps(panel, now["row"].to_numpy())
     now = now[np.isfinite(now["cap"]) & (now["cap"] > 0)].nlargest(top, "cap")
     close, pos = panel.cols["close"], panel.pos
@@ -207,9 +219,7 @@ def gauge(panel, runner) -> dict:
     hi, lo = float(k.iloc[-250:].max()), float(k.iloc[-250:].min())
     ma200 = float(k.rolling(200).mean().iloc[-1])
     # 대형주 쏠림: 최근 60거래일, 지금 시총 상위 10(시총 가중) vs 101위 아래(동일 가중)
-    df = _stock_frame(panel, "KOSPI")
-    last = df["date"].max()
-    now = df[df["date"] == last].copy()
+    now, _ = _latest_rows(panel, "KOSPI")
     now["cap"] = _caps(panel, now["row"].to_numpy())
     rows = now["row"].to_numpy()
     ok = panel.pos[rows] >= 60
