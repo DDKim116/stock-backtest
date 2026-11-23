@@ -142,8 +142,10 @@ def update_today(root: Path, day: dt.date | None = None, min_cover: float = 0.8,
     y["diff"] = y["close"] - pc  # 권리락 등은 다음 날 아침 공식 값에서 바로잡힌다
     y["chg_rt"] = (y["diff"] / pc * 100).round(2)
     y["value"] = ((y["high"] + y["low"] + y["close"]) / 3 * y["volume"]).round()  # 거래대금 추정
-    y["shares"] = y["code"].map(p["shares"]) if "shares" in p else None
-    y["mktcap"] = y["shares"] * y["close"] if "shares" in p else None
+    y["shares"] = y["code"].map(p["shares"]) if "shares" in p else np.nan
+    y["mktcap"] = y["shares"] * y["close"]
+    if "mktcap" in p:  # 상장주식수가 없으면 전날 시총 × 종가 변화
+        y["mktcap"] = y["mktcap"].where(y["mktcap"] > 0, y["code"].map(p["mktcap"]) * y["close"] / pc)
     y["date"] = pd.Timestamp(day)
     y["src"] = "yahoo"
     out = raw / str(day.year) / f"{day.strftime('%Y%m%d')}.parquet"

@@ -166,6 +166,21 @@ def us_fear() -> dict:
             "history": {"dates": [str(d.date()) for d in y.index], "value": [round(float(x), 2) for x in y]}}
 
 
+def _caps(panel, rows: np.ndarray) -> np.ndarray:
+    """그 줄의 시총. 비어 있으면(저녁 야후 임시 시세 등) 가장 가까운 앞날 시총 × 그동안의 종가 변화로 채운다."""
+    if "mktcap" not in panel.cols:
+        return np.full(len(rows), np.nan)
+    cap, close, pos = panel.cols["mktcap"], panel.cols["close"], panel.pos
+    out = cap[rows].astype(float).copy()
+    for k in range(1, 6):
+        miss = ~(np.isfinite(out) & (out > 0)) & (pos[rows] >= k)
+        if not miss.any():
+            break
+        r = rows[miss]
+        out[miss] = cap[r - k] * close[r] / close[r - k]
+    return out
+
+
 def treemap(panel, market: str, top: int) -> dict:
     """마지막 날 시총 상위 top 종목: 시총·1일/1주/1달 등락."""
     df = _stock_frame(panel, market)
@@ -173,7 +188,7 @@ def treemap(panel, market: str, top: int) -> dict:
         return {"market": market, "items": []}
     last = df["date"].max()
     now = df[df["date"] == last].copy()
-    now["cap"] = panel.cols["mktcap"][now["row"].to_numpy()]
+    now["cap"] = _caps(panel, now["row"].to_numpy())
     now = now[np.isfinite(now["cap"]) & (now["cap"] > 0)].nlargest(top, "cap")
     close, pos = panel.cols["close"], panel.pos
     items = []
@@ -195,7 +210,7 @@ def gauge(panel, runner) -> dict:
     df = _stock_frame(panel, "KOSPI")
     last = df["date"].max()
     now = df[df["date"] == last].copy()
-    now["cap"] = panel.cols["mktcap"][now["row"].to_numpy()] if "mktcap" in panel.cols else np.nan
+    now["cap"] = _caps(panel, now["row"].to_numpy())
     rows = now["row"].to_numpy()
     ok = panel.pos[rows] >= 60
     now = now[ok]

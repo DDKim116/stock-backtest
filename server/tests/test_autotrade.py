@@ -586,16 +586,45 @@ def test_risky_stock_skipped_at_plan(env):
     assert ps["000001"]["status"] == "proposed"
 
 
-def test_daily_loss_halts_new_buys(env):
+def test_daily_loss_pauses_next_day_buy_only(env):
+    a, kw, runner, sent = env
+    a._x("INSERT INTO at_equity (date, assets, pnl, ts) VALUES ('2026-11-13', 50000000, 0, 'x')")
+    kw.balance = lambda mode: {"assets": 45_000_000, "pnl": -5e6, "holdings": []}  # -10% (기본 한도 8%)
+    a.tick(dt.datetime(2026, 11, 16, 10, 0))
+    st = a._state()
+    assert st["halted"] == "2026-11-16" and a.settings()["enabled"]  # 끄지 않는다
+    assert any("손실 한도" in t for t, _ in sent)
+    # 다음 거래일 후보는 하루 쉼
+    runner.days = ["2026-11-13", "2026-11-16"]
+    runner.rows["2026-11-16"] = [{"code": "000001", "name": "가", "signal_date": "2026-11-16", "close": 10_000, "value": 5e9}]
+    a.tick(dt.datetime(2026, 11, 16, 17, 0))
+    a.approve(a.plans("2026-11-17")[0]["id"], True, dt.datetime(2026, 11, 16, 18, 0))
+    a.tick(dt.datetime(2026, 11, 17, 8, 50))
+    p = a.plans("2026-11-17")[0]
+    assert p["status"] == "skipped" and "하루 쉼" in p["msg"] and not kw.find(side="buy")
+    # 그다음 거래일은 저절로 다시 산다
+    runner.days = ["2026-11-16", "2026-11-17"]
+    runner.rows["2026-11-17"] = [{"code": "000002", "name": "나", "signal_date": "2026-11-17", "close": 10_000, "value": 5e9}]
+    a.tick(dt.datetime(2026, 11, 17, 17, 0))
+    a.approve(a.plans("2026-11-18")[0]["id"], True, dt.datetime(2026, 11, 17, 18, 0))
+    a.tick(dt.datetime(2026, 11, 18, 8, 50))
+    assert kw.find(side="buy")
+
+
+def test_small_daily_loss_does_not_pause(env):
     a, kw, runner, sent = env
     a._x("INSERT INTO at_equity (date, assets, pnl, ts) VALUES ('2026-11-13', 50000000, 0, 'x')")
     kw.balance = lambda mode: {"assets": 48_000_000, "pnl": -2e6, "holdings": []}  # -4%
     a.tick(dt.datetime(2026, 11, 16, 10, 0))
-    st = a._state()
-    assert st["halted"] == "2026-11-16" and not a.settings()["enabled"]
-    assert any("손실 한도" in t for t, _ in sent)
-    a.set_settings(enabled=True)  # 다시 켜면 멈춤 표시가 풀린다
     assert not a._state().get("halted")
+
+
+def test_migrate_loss_limit_and_reenable(env):
+    a, kw, runner, sent = env
+    a.store.set_setting("autotrade", {**a.settings(), "daily_loss_pct": 3.0, "enabled": False, "migrated": 1})
+    a._set_state(halted="2026-11-16", halted_why="전날 마감 4,930만 → 지금 4,770만 (-3.2%)")
+    s = a.settings()
+    assert s["daily_loss_pct"] == 8.0 and s["enabled"] and not a._state().get("halted")
 
 
 def test_emergency_cancels_and_sells(env):

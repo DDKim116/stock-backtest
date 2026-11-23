@@ -42,7 +42,7 @@ DEFAULTS = {
     "migrated": 0,  # 1: 중간값 전략 색을 라임으로 바꿈  # [{id, enabled, per_trade, daily_max, rank, color}]
     # 안전장치 (실투 대비)
     "order_cap": 20_000_000,  # 1회 주문 금액 상한 (원) — 넘으면 그 후보는 사지 않음
-    "daily_loss_pct": 3.0,  # 하루 손실 한도: 전날 마감 계좌보다 이만큼(%) 줄면 새 매수 멈춤 (0 = 끔)
+    "daily_loss_pct": 8.0,  # 하루 손실 한도: 전날 마감 계좌보다 이만큼(%) 줄면 다음 거래일 매수 하루 쉼 (0 = 끔)
     "skip_risky": True,  # 관리종목·거래정지·투자경고/위험·단기과열·정리매매 종목은 후보에서 뺌
 }
 # 전략 색 (차트·목록에서 같은 색). 상승 빨강·하락 파랑·강조 호박색과 겹치지 않게
@@ -158,6 +158,15 @@ class Auto:
                 if x["color"] == "#3CC4B4" and self._is_midpoint(x["id"]):
                     x["color"] = LIME
             s["migrated"] = 1
+            self._save(s)
+        if s["migrated"] < 2:  # 손실 한도 3% → 8% (v2b 는 하루 3% 출렁임이 흔함) · 3% 로 꺼졌던 자동매매 다시 켬
+            if float(s.get("daily_loss_pct") or 0) == 3.0:
+                s["daily_loss_pct"] = 8.0
+            st = self._state()
+            if str(st.get("halted_why") or "").startswith("전날 마감"):
+                s["enabled"] = True
+                self._set_state(halted=None, halted_why=None)
+            s["migrated"] = 2
             self._save(s)
         for k in ("strategy_id", "per_trade", "daily_max", "rank"):
             s.pop(k, None)
@@ -862,7 +871,10 @@ class Auto:
 
     # ------------------------------------------------------------ 안전장치
     def _loss_guard(self, now: dt.datetime, mode: str) -> None:
-        """하루 손실 한도: 전날 마감 계좌 금액보다 daily_loss_pct% 이상 줄면 새 매수를 멈춘다 (보유 종목 규칙은 계속)."""
+        """하루 손실 한도: 전날 마감 계좌 금액보다 daily_loss_pct% 이상 줄면 다음 거래일 매수를 하루 쉰다.
+
+        자동매매를 끄지는 않는다 (보유 종목 규칙·후보 만들기는 계속, 하루 쉰 뒤 저절로 다시 산다).
+        """
         s = self.settings()
         pct = float(s.get("daily_loss_pct") or 0)
         st = self._state()
@@ -882,10 +894,25 @@ class Auto:
         chg = (float(assets) / base - 1) * 100
         if chg <= -pct:
             why = f"전날 마감 {base / 1e4:,.0f}만 → 지금 {float(assets) / 1e4:,.0f}만 ({chg:+.1f}%)"
-            self._save({**s, "enabled": False})
             self._set_state(halted=today, halted_why=why)
-            self.log(now, f"⚠ 하루 손실 한도({pct:g}%) 도달 · {why} → 새 매수를 멈췄습니다 (보유 종목의 목표·손절·기간만료는 계속)")
-            self.notify("⚠ 하루 손실 한도 도달 · 자동 매수 멈춤", f"{why}\n보유 종목 규칙은 계속 · 다시 켜려면 앱에서 '켜기'")
+            self.log(now, f"⚠ 하루 손실 한도({pct:g}%) 도달 · {why} → 다음 거래일 매수를 하루 쉽니다 "
+                          "(보유 종목의 목표·손절·기간만료는 계속, 그다음 날부터 저절로 다시 삽니다)")
+            self.notify("⚠ 하루 손실 한도 도달 · 다음 거래일 매수 쉼",
+                        f"{why}\n보유 종목 규칙은 계속 · 하루 쉰 뒤 저절로 다시 삽니다 (바로 다시 사려면 앱에서 '켜기')")
+
+    def _buy_paused(self, now: dt.datetime, tstr: str) -> bool:
+        """손실 한도로 오늘 매수를 쉬어야 하면 후보를 '건너뜀'으로 표시하고 True (멈춘 뒤 첫 매수 시각 한 번만)."""
+        st = self._state()
+        h = st.get("halted")
+        if not h or h > tstr or st.get("halt_skipped") == h:
+            return False
+        self._set_state(halt_skipped=h)
+        why = st.get("halted_why") or ""
+        for p in self.live_plans(tstr) + [x for x in self.plans(tstr) if x["status"] == "proposed"]:
+            if p["status"] in ("proposed", "approved"):
+                self._upd("at_plans", p["id"], now, status="skipped", msg=f"손실 한도로 하루 쉼 ({why})"[:200])
+        self.log(now, f"손실 한도로 오늘 매수는 쉽니다 ({why}) · 내일부터 다시 삽니다")
+        return True
 
     def emergency(self, now: dt.datetime, sell_all: bool = False) -> dict:
         """비상 정지: 새 매수 끔 · 오늘 낸 매수 주문 취소 · 대기 후보 취소 · (sell_all) 보유 전부 시장가."""
@@ -1059,7 +1086,7 @@ class Auto:
         # 2) 08:50 매수 + 목표가 주문 다시 걸기 (늦게 켜졌으면 09:30 까지)
         if BUY_AT <= t < LATE_BUY_UNTIL and st.get("buy_done") != tstr:
             self._set_state(buy_done=tstr)
-            if s["enabled"] and st.get("halted") != tstr:
+            if s["enabled"] and not self._buy_paused(now, tstr):
                 step("매수 주문", lambda: self._place_buys(now, tstr, mode))
             step("잔고 확인", lambda: self._reconcile(now, mode, ex={}, force=True))  # 밤사이(시간외 등) 직접 판 것
             step("목표가 주문", lambda: self._refresh_targets(now, tstr, mode))

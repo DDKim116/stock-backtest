@@ -791,7 +791,7 @@ function Health({ v }: { v: AutoView }) {
 function Safety({ v, run, busy }: { v: AutoView; run: Run; busy: boolean }) {
   const s = v.settings;
   const [cap, setCap] = useState(String(s.order_cap ?? 20000000));
-  const [loss, setLoss] = useState(String(s.daily_loss_pct ?? 3));
+  const [loss, setLoss] = useState(String(s.daily_loss_pct ?? 8));
   const [risky, setRisky] = useState(s.skip_risky ?? true);
   const st = v.state ?? {};
   const today = (v.now ?? "").slice(0, 10);
@@ -807,11 +807,16 @@ function Safety({ v, run, busy }: { v: AutoView; run: Run; busy: boolean }) {
     if (!confirm(msg)) return;
     run(() => api("/api/auto/emergency", { body: { sell_all: sellAll } }), sellAll ? "비상 정지 · 전부 팔기 주문" : "비상 정지 · 새 매수 멈춤");
   };
+  const paused = !!st.halted && (st.halted === today || st.halt_skipped !== st.halted);
   return (
-    <details className="rounded-lg bg-background p-2.5 text-xs" open={st.halted === today ? true : undefined}>
+    <details className="rounded-lg bg-background p-2.5 text-xs" open={paused ? true : undefined}>
       <summary className="cursor-pointer font-semibold">
         안전장치 · 비상 정지
-        {st.halted === today && <span className="ml-2 text-critical">오늘 멈춤: {st.halted_why}</span>}
+        {paused && (
+          <span className="ml-2 text-critical">
+            {st.halted_why === "비상 정지 버튼" ? "비상 정지" : st.halted === today ? "다음 거래일 매수 쉼" : "오늘 매수 쉼"}: {st.halted_why}
+          </span>
+        )}
       </summary>
       <div className="mt-2 space-y-2">
         <div className="grid grid-cols-2 gap-2">
@@ -829,7 +834,7 @@ function Safety({ v, run, busy }: { v: AutoView; run: Run; busy: boolean }) {
           <span>관리종목·거래정지·투자경고/위험·단기과열·정리매매 종목은 매수 후보에서 빼기</span>
         </label>
         <p className="text-faint">
-          하루 손실 한도: 전날 마감 계좌보다 이만큼 줄면 그날은 새 매수를 멈추고 알림 (보유 종목의 목표·손절·기간만료는 계속). 다시 켜려면 위의 켜기.
+          하루 손실 한도: 장중 계좌가 전날 마감보다 이만큼 줄면 알림 + 다음 거래일 매수를 하루 쉬고, 그다음 날부터 저절로 다시 삽니다 (보유 종목의 목표·손절·기간만료는 계속 · 자동매매는 꺼지지 않음). v2b 는 하루 3~5% 출렁임이 흔해서 8% 정도를 권장 · 바로 다시 사려면 위의 켜기.
         </p>
         <button type="button" disabled={busy} onClick={save} className="rounded-lg border border-accent px-3 py-1.5 font-semibold text-accent disabled:opacity-50">
           저장
