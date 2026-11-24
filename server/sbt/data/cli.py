@@ -10,6 +10,7 @@
   python -m sbt.data.cli profit-test                # 영업이익 증익·가속·흑자전환 공시 뒤 주가 (상위 100 / 101~300위)
   python -m sbt.data.cli third-touch                # 전고점 세 번째 돌파: 얼마나 먹나 (시총대별)
   python -m sbt.data.cli top30-patterns             # 코스피 시총 30위권 단타: 차트 패턴별 성적
+  python -m sbt.data.cli top30-fear                 # 코스피 시총 30위권 급락 × 공포 구간
   python -m sbt.data.cli watchdog                   # 장중 자동 매매가 멈췄으면 휴대폰 알림 (타이머가 2분마다)
   python -m sbt.data.cli fill-test                  # v2b 체결 현실성: 슬리피지 · 주문 크기 · 최소 거래대금
   python -m sbt.data.cli v2b-target                 # v2b 목표가를 날이 지날수록 낮추면 (3일째 5%·4일째 3% 등)
@@ -113,6 +114,8 @@ def main(argv: list[str] | None = None) -> None:
     tt3.add_argument("--dataset", default="kr")
     t30 = sub.add_parser("top30-patterns")
     t30.add_argument("--dataset", default="kr")
+    t30f = sub.add_parser("top30-fear")
+    t30f.add_argument("--dataset", default="kr")
     ft = sub.add_parser("fill-test")
     ft.add_argument("--dataset", default="kr")
     vt = sub.add_parser("v2b-target")
@@ -279,6 +282,9 @@ def main(argv: list[str] | None = None) -> None:
     elif a.cmd == "top30-patterns":
         from .. import research30
         research30.run(a.dataset)
+    elif a.cmd == "top30-fear":
+        from .. import research31
+        research31.run(a.dataset)
     elif a.cmd == "fill-test":
         from .. import research29
         research29.run(a.dataset)

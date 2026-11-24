@@ -102,15 +102,17 @@ def highs_lows(panel, market: str = "KOSPI") -> pd.Series:
     return (net.sum() / net.count() * 100).rename(index=lambda d: pd.Timestamp(d))
 
 
-def kr_fear(panel) -> dict:
+def _fear_parts(panel, use_vkospi: bool = True):
+    """(코스피, 구성 지표들, 지표별 점수, 종합 점수, VKOSPI) — 없으면 None."""
     k = indices.load("KOSPI")
     b = getattr(panel, "breadth", None) or {}
     if k is None or "KOSPI" not in b:
-        return {"available": False}
+        return None
     x = b["KOSPI"]
     adv = pd.Series(x["adv"], index=pd.DatetimeIndex(x["dates"])).rolling(20, min_periods=10).mean()
     vk = indices.load("VKOSPI")
-    vol = vk if vk is not None and len(vk) > 200 else k.pct_change().rolling(20).std() * np.sqrt(252) * 100
+    use_vk = use_vkospi and vk is not None and len(vk) > 200
+    vol = vk if use_vk else k.pct_change().rolling(20).std() * np.sqrt(252) * 100
     comps = {
         "모멘텀": (k / k.rolling(125).mean() - 1) * 100,
         "시장 폭": adv,
@@ -126,11 +128,26 @@ def kr_fear(panel) -> dict:
         scores[name] = 100 - r if name == "변동성" else r
     sc = pd.DataFrame(scores)
     total = sc.mean(axis=1, skipna=True).dropna()
+    return k, comps, sc, total, vk if use_vk else None
+
+
+def fear_series(panel, use_vkospi: bool = False) -> pd.Series:
+    """날마다 국장 공포·탐욕 점수 (0~100, 그날까지 자료만 사용). 연구용 기본은 VKOSPI 대신 20일 실제 변동성 (과거가 길어서)."""
+    parts = _fear_parts(panel, use_vkospi)
+    return pd.Series(dtype=float) if parts is None else parts[3]
+
+
+def kr_fear(panel) -> dict:
+    parts = _fear_parts(panel)
+    if parts is None:
+        return {"available": False}
+    k, comps, sc, total, vk_used = parts
+    vk = indices.load("VKOSPI")
     if total.empty:
         return {"available": False}
     last = total.index[-1]
     unit = {"모멘텀": "% (125일선 대비)", "시장 폭": "% (20일 평균 오른 종목)", "신고가-신저가": "% (종목 수 대비)",
-            "변동성": " (VKOSPI)" if vk is not None and len(vk) > 200 else "% (20일 실제 변동성, 연)", "고점 대비": "%"}
+            "변동성": " (VKOSPI)" if vk_used is not None else "% (20일 실제 변동성, 연)", "고점 대비": "%"}
     hist = total.iloc[-250:]
     return {
         "available": True, "as_of": str(last.date()), "score": round(float(total.iloc[-1]), 1),
