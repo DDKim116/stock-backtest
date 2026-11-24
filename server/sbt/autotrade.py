@@ -518,6 +518,34 @@ class Auto:
         return n
 
     # ------------------------------------------------------------ 매수 후보
+    @staticmethod
+    def _data_stamp() -> str:
+        """국내 시세·지수 파일이 바뀌었는지 (저녁 임시 → 아침 공식으로 바뀌면 후보를 다시 본다)."""
+        from . import config
+        from .data import indices
+
+        p = config.dataset_dir("kr") / "prices.parquet"
+        try:
+            m = p.stat().st_mtime
+        except OSError:
+            m = 0.0
+        return f"{m:.0f}|{indices.mtime('kr'):.0f}"
+
+    @staticmethod
+    def _index_note(runner, as_of: str) -> str:
+        """지수가 데이터 날짜보다 늦으면 기록에 남긴다 (v2b 의 '시장 하락' 조건이 옛 지수로 계산됨)."""
+        try:
+            from .data import indices
+
+            late = []
+            for key in ("KOSPI", "KOSDAQ"):
+                x = indices.load(key)
+                if x is not None and len(x) and str(x.index[-1].date()) < as_of:
+                    late.append(f"{key} {x.index[-1].month}/{x.index[-1].day}")
+            return f" · ⚠ 지수가 옛날 값: {', '.join(late)}" if late else ""
+        except Exception:  # noqa: BLE001
+            return ""
+
     def make_plans(self, now: dt.datetime, force: bool = False, only: set[int] | None = None) -> list[dict]:
         """다음 거래일 매수 후보. only 를 주면 그 전략만 (전략을 막 추가했을 때)."""
         s = self.settings()
@@ -528,9 +556,14 @@ class Auto:
         runner = self.get_runner("kr")
         as_of = str(runner.panel.dates.max())
         t = next_trading_day(dt.date.fromisoformat(as_of))
-        if not force and now >= dt.datetime.combine(t, APPROVE_UNTIL):
+        if now >= dt.datetime.combine(t, APPROVE_UNTIL):
+            if force:
+                raise ValueError(f"지금 데이터({as_of[5:7]}/{as_of[8:]})로는 {t.month}/{t.day} 매수 후보인데 승인 시간(08:45)이 지났어요. "
+                                 "장 마감 뒤 저녁 데이터가 들어오면(16:40쯤) 다음 날 후보가 자동으로 만들어져요")
             return []  # 이미 늦음
         status = "approved" if s["mode"] == "auto" else "proposed"
+        again = only is None and (self._state().get("last_plan") or {}).get("trade_date") == t.isoformat()
+        ix = self._index_note(runner, as_of)
         taken = {p["code"] for p in self.positions("active")} | {
             p["code"] for p in self._q("""SELECT code FROM at_plans WHERE status IN ('proposed','approved','ordered','partial')
                                           AND COALESCE(valid_until, trade_date) >= ?""", (t.isoformat(),))}
@@ -577,11 +610,21 @@ class Auto:
                 out.append({**r, "strategy": strat["name"]})
                 n += 1
             per[strat["name"]] = n
-            self.log(now, f"{t.month}/{t.day} 매수 후보 {n}종목 ({strat['name']}, 데이터 {as_of})")
+            if again and n:
+                self.log(now, f"{t.month}/{t.day} 매수 후보 {n}종목 추가 — 데이터가 바뀌어 다시 봄 ({strat['name']}, 데이터 {as_of}{ix})")
+            elif not again:
+                self.log(now, f"{t.month}/{t.day} 매수 후보 {n}종목 ({strat['name']}, 데이터 {as_of}{ix})")
         n = len(out)
-        if only is None:
+        lp = self._state().get("last_plan") or {}
+        if only is None and not again:
             self._set_state(planned_asof=as_of, last_plan={"trade_date": t.isoformat(), "signal_date": as_of, "count": n,
                                                            "per": per})
+        elif only is None:  # 다시 본 몫만 더한다
+            old_per = lp.get("per", {}) if lp.get("trade_date") == t.isoformat() else {}
+            self._set_state(planned_asof=as_of, last_plan={
+                "trade_date": t.isoformat(), "signal_date": as_of,
+                "count": (lp.get("count", 0) if lp.get("trade_date") == t.isoformat() else 0) + n,
+                "per": {k: old_per.get(k, 0) + per.get(k, 0) for k in {**old_per, **per}}})
         else:  # 추가한 전략 몫만 더한다
             lp = self._state().get("last_plan") or {}
             if lp.get("trade_date") == t.isoformat():
@@ -1059,19 +1102,22 @@ class Auto:
                 as_of = str(self.get_runner("kr").panel.dates.max())
             except Exception:  # noqa: BLE001
                 as_of = None
-            if as_of and as_of != st.get("planned_asof"):
+            stamp = self._data_stamp() if as_of else None
+            if as_of and (as_of != st.get("planned_asof") or stamp != st.get("planned_stamp")):
                 tgt = next_trading_day(dt.date.fromisoformat(as_of))
                 if now < dt.datetime.combine(tgt, APPROVE_UNTIL):
-                    if not self.plans(tgt.isoformat()):
-                        self.make_plans(now)
-                    else:
-                        self._set_state(planned_asof=as_of)
+                    # 처음이거나, 데이터가 바뀌었으면(저녁 임시 → 아침 공식) 다시 본다 — 이미 있는 후보는 건너뛰고 새 신호만 더함
+                    self.make_plans(now)
+                self._set_state(planned_asof=as_of, planned_stamp=stamp)
             if (s["mode"] == "approve" and is_trading_day(today) and dt.time(8, 25) <= t < APPROVE_UNTIL
                     and st.get("remind") != tstr):
                 waiting = [p for p in self.plans(tstr) if p["status"] == "proposed"]
                 if waiting:
                     self.notify(f"승인 대기 {len(waiting)}종목", "08:45 까지 승인하지 않으면 오늘은 사지 않습니다")
                 self._set_state(remind=tstr)
+        if t >= APPROVE_UNTIL:  # 승인 시간이 지난 '승인 대기' 후보 정리 (늦게 만든 후보 포함)
+            for p in self._q("SELECT id FROM at_plans WHERE status = 'proposed' AND trade_date <= ?", (tstr,)):
+                self._upd("at_plans", p["id"], now, status="expired", msg="승인 시간(08:45)이 지나 사지 않음")
         if not is_trading_day(today):
             return
         # 단계마다 따로: 한 단계(예: 키움 체결 조회)가 오류여도 다른 단계(기간만료 매도 등)는 그대로 한다

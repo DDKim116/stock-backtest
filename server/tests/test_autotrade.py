@@ -653,3 +653,37 @@ def test_stop_records_reference_price(env):
     d = a.daily()
     it = d["days"][-1]["items"][0]
     assert it["slip"] == -0.5 and d["slip"]["n"] == 1
+
+
+def test_replan_when_official_data_arrives(env):
+    a, kw, runner, sent = env
+    stamp = ["night"]
+    a._data_stamp = lambda: stamp[0]
+    a.tick(T(23, 21, 44))  # 저녁 임시 데이터: 신호 없음
+    assert not a.plans("2026-10-26")
+    runner.rows["2026-10-23"] = [{"code": "000001", "name": "가", "signal_date": "2026-10-23", "close": 10_000, "value": 5e9}]
+    a.tick(T(26, 8, 21))  # 같은 데이터 → 다시 안 봄
+    assert not a.plans("2026-10-26")
+    stamp[0] = "morning"  # 아침 공식 데이터로 바뀜
+    a.tick(T(26, 8, 22))
+    ps = a.plans("2026-10-26")
+    assert len(ps) == 1 and ps[0]["status"] == "proposed"
+    assert any("추가" in r["text"] for r in a._q("SELECT text FROM at_log"))
+    a.tick(T(26, 8, 23))  # 또 바뀌어도 같은 종목은 다시 안 넣음
+    stamp[0] = "again"
+    a.tick(T(26, 8, 24))
+    assert len(a.plans("2026-10-26")) == 1
+
+
+def test_plan_now_after_deadline_refused_and_stale_expired(env):
+    a, kw, runner, sent = env
+    runner.rows["2026-10-23"] = [{"code": "000001", "name": "가", "signal_date": "2026-10-23", "close": 10_000, "value": 5e9}]
+    with pytest.raises(ValueError, match="승인 시간"):
+        a.make_plans(T(26, 9, 16), force=True)
+    # 예전 방식으로 늦게 만들어진 후보가 남아 있으면 정리
+    a.make_plans(T(26, 8, 0), force=True)
+    a._upd("at_plans", a.plans("2026-10-26")[0]["id"], T(26, 9, 16), status="proposed")
+    a._set_state(buy_done="2026-10-26")  # 08:50 매수는 이미 지나간 상태에서 늦게 생긴 후보
+    a.tick(T(26, 9, 30))
+    p = a.plans("2026-10-26")[0]
+    assert p["status"] == "expired" and "승인 시간" in p["msg"]

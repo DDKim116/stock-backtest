@@ -153,7 +153,41 @@ def update_today(root: Path, day: dt.date | None = None, min_cover: float = 0.8,
     y.to_parquet(out, index=False)
     provisional_path(root).write_text(json.dumps(
         {"date": day.isoformat(), "at": dt.datetime.now().isoformat(timespec="seconds"), "codes": len(y)}))
+    try:
+        fill_index(y, p, day, pd.Timestamp(official[-1].stem), log)
+    except Exception as e:  # noqa: BLE001 — 지수 추정 실패해도 종목 갱신은 그대로
+        log(f"지수 추정 실패: {e}")
     return True
+
+
+def fill_index(y: pd.DataFrame, prev: pd.DataFrame, day: dt.date, prev_day: pd.Timestamp, log=print) -> None:
+    """야후에서 오늘 지수(코스피·코스닥)를 못 받았으면, 그 시장 종목들의 시총 합계 변화로 오늘 지수를 추정해 채운다.
+
+    v2b 의 '지수 5일 -3%' 조건이 옛날 지수로 계산돼 저녁 후보가 통째로 빠지는 걸 막는다. 다음 날 아침 KRX 공식 값이 덮어쓴다.
+    """
+    from . import indices
+
+    if "mktcap" not in prev:
+        return
+    for mk in ("KOSPI", "KOSDAQ"):
+        s = indices.load(mk)
+        if s is None or not len(s) or s.index[-1] >= pd.Timestamp(day):
+            continue  # 이미 있음
+        if s.index[-1] != prev_day:
+            log(f"{mk} 지수: 마지막 값({s.index[-1].date()})이 전 거래일({prev_day.date()})이 아니라 추정하지 않음")
+            continue
+        m = (y["market"] == mk) & (y["mktcap"] > 0)
+        before = y.loc[m, "code"].map(prev["mktcap"])
+        ok = before > 0
+        if ok.sum() < 100:
+            continue
+        ratio = float(y.loc[m, "mktcap"][ok].sum() / before[ok].sum())
+        if not 0.85 < ratio < 1.15:
+            log(f"{mk} 지수: 추정 변화 {ratio - 1:+.1%} 가 이상해서 넣지 않음")
+            continue
+        v = float(s.iloc[-1]) * ratio
+        indices._save(mk, pd.concat([s, pd.Series([v], index=[pd.Timestamp(day)])]))
+        log(f"{mk} 지수: 야후에 없어 종목 시총 합으로 추정 {v:,.2f} ({ratio - 1:+.2%}) — 내일 아침 공식 값으로 바뀜")
 
 
 def clear_if_official(root: Path) -> None:
