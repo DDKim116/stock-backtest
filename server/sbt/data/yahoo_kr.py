@@ -114,6 +114,9 @@ def update_today(root: Path, day: dt.date | None = None, min_cover: float = 0.8,
         if "src" not in cur.columns:
             log(f"{day} 공식 자료가 이미 있습니다")
             return False
+        if len(cur) and str(cur["src"].iloc[0]) == "kiwoom":
+            log(f"{day} 키움 자료가 이미 있습니다 (야후보다 정확해서 그대로 둠)")
+            return False
     prev = pd.read_parquet(official[-1])
     prev = prev[prev["market"].isin(SUFFIX) & (prev["volume"].fillna(0) > 0)].drop_duplicates("code")
     tickers = {c + SUFFIX[m]: c for c, m in zip(prev["code"], prev["market"])}

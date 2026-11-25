@@ -559,7 +559,7 @@ class Auto:
         if now >= dt.datetime.combine(t, APPROVE_UNTIL):
             if force:
                 raise ValueError(f"지금 데이터({as_of[5:7]}/{as_of[8:]})로는 {t.month}/{t.day} 매수 후보인데 승인 시간(08:45)이 지났어요. "
-                                 "장 마감 뒤 저녁 데이터가 들어오면(16:40쯤) 다음 날 후보가 자동으로 만들어져요")
+                                 "장 마감 뒤 데이터가 들어오면(15:50쯤) 다음 날 후보가 자동으로 만들어져요")
             return []  # 이미 늦음
         status = "approved" if s["mode"] == "auto" else "proposed"
         again = only is None and (self._state().get("last_plan") or {}).get("trade_date") == t.isoformat()

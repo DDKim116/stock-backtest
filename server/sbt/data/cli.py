@@ -43,7 +43,7 @@
   python -m sbt.data.cli breadth-test               # v2b 시장 하락 조건: 지수 vs 상승비율·동일가중 비교
   python -m sbt.data.cli recommend --save          # 지수 조건을 붙인 추천 전략 검증 + 전략 탭에 저장
   python -m sbt.data.cli rank                      # 하루 신호가 많을 때 고르는 순서 비교 (급락 반등 v2b, 하루 5종목·1회 500만원)
-  python -m sbt.data.cli kr-evening                # 오늘 국내 시세를 야후로 임시 갱신 (다음 날 아침 공식 값으로 교체)
+  python -m sbt.data.cli kr-evening                # 오늘 국내 시세 임시 갱신: 15:31~16:00 키움, 그 뒤엔 야후 (다음 날 아침 공식 값으로 교체)
   python -m sbt.data.cli kr-build                  # 원본 → prices.parquet
   python -m sbt.data.cli us-collect                # 미국 전 종목 첫 수집 (야후)
   python -m sbt.data.cli us-update                 # 미국 최근 한 달 갱신 + 빌드 (매일 자동 실행용)
@@ -61,7 +61,7 @@ import sys
 import pandas as pd
 
 from .. import config, krx_status
-from . import build, indices, krx, krx_web, synthetic, us, yahoo_kr
+from . import build, indices, kiwoom_kr, krx, krx_web, synthetic, us, yahoo_kr
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -353,6 +353,17 @@ def main(argv: list[str] | None = None) -> None:
         research.run(a.dataset, [m.strip() for m in a.markets.split(",") if m.strip()], a.save)
     elif a.cmd == "kr-evening":
         root = config.dataset_dir("kr")
+        today = dt.date.today()
+        if kiwoom_kr.today_src(root, today) in ("official", "kiwoom"):
+            print(f"{today} 이미 {'공식' if kiwoom_kr.today_src(root, today) == 'official' else '키움'} 자료가 있어 건너뜁니다")
+            return
+        # 1) 키움 (15:31~16:00, 거래소 값 그대로) → 2) 안 되면 야후 (16:40·18:10·20:10)
+        try:
+            if kiwoom_kr.update_today(root):
+                build.build(root)
+                return
+        except Exception as e:  # noqa: BLE001 — 키움이 안 되면 야후로
+            print(f"키움 종가 실패: {e} → 야후로")
         try:
             indices.update_kr_evening()
             indices.update_ohlc(keys=["KOSPI", "KOSDAQ"])

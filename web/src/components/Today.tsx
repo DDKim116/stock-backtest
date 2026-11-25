@@ -58,7 +58,7 @@ function nextEvent(hm: string, wd: string, approve: boolean): [string, string] {
     ["08:50", "매수 주문 · 목표가 다시 걸기"],
     ["09:00", "장 시작 · 손절 감시"],
     ["14:30", "보유기간 만료 매도"],
-    ["16:40", "다음 거래일 매수 후보 계산"],
+    ["15:50", "다음 거래일 매수 후보 계산"],
   ];
   const n = ev.find(([t]) => t > hm);
   return n ?? [wd === "Fri" ? "월 08:50" : "내일 08:50", "매수 주문 · 목표가 다시 걸기"];
@@ -152,7 +152,7 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "auto" | "paper
     <div className="rounded-xl border border-border bg-card px-4 py-3">
       <div className="font-semibold">{md(auto.last_plan.trade_date)} 매수 후보 없음</div>
       <div className="text-sm text-muted">
-        {md(auto.last_plan.signal_date)} 장 마감 기준으로 v2b 신호가 없었어요 · 다음 후보는 장 마감 뒤 16:40쯤
+        {md(auto.last_plan.signal_date)} 장 마감 기준으로 v2b 신호가 없었어요 · 다음 후보는 장 마감 뒤 15:50쯤
       </div>
     </div>
   );
