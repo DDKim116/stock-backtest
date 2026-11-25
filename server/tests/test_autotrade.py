@@ -687,3 +687,14 @@ def test_plan_now_after_deadline_refused_and_stale_expired(env):
     a.tick(T(26, 9, 30))
     p = a.plans("2026-10-26")[0]
     assert p["status"] == "expired" and "승인 시간" in p["msg"]
+
+
+def test_view_shows_no_candidates_instead_of_old_list(env):
+    a, kw, runner, sent = env
+    runner.rows["2026-10-23"] = [{"code": "000001", "name": "가", "signal_date": "2026-10-23", "close": 10_000, "value": 5e9}]
+    a.tick(T(23, 17, 0))
+    assert a.view("2026-10-23")["plan_date"] == "2026-10-26"
+    runner.days = ["2026-10-23", "2026-10-26"]  # 다음 날 데이터: 신호 없음
+    a.tick(T(26, 17, 0))
+    v = a.view("2026-10-26")
+    assert v["plan_date"] == "2026-10-27" and not [p for p in v["plans"] if p["trade_date"] == "2026-10-26"]

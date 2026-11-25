@@ -149,7 +149,7 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
         )}
       </section>
 
-      {v.last_plan && v.last_plan.count === 0 && v.last_plan.trade_date !== v.plan_date && (
+      {v.last_plan && v.last_plan.count === 0 && v.last_plan.trade_date >= (v.plan_date ?? "") && (
         <p className="rounded-lg bg-card p-3 text-xs text-muted">
           {md(v.last_plan.trade_date)} 매수 후보 없음 · {md(v.last_plan.signal_date)}에는 켜진 전략의 신호가 없었습니다.
         </p>
@@ -370,7 +370,7 @@ function StrategyCard({
             }
           />
           {plans.length === 0 ? (
-            <p className="py-1.5 text-xs text-faint">지금 후보 없음 · 저녁에 새 데이터가 들어오면 다음 거래일 후보를 만듭니다</p>
+            <p className="py-1.5 text-xs text-faint">지금 후보 없음 · 장 마감 뒤(15:50쯤, 늦으면 16:40) 새 데이터가 들어오면 다음 거래일 후보를 만듭니다</p>
           ) : (
             <>
             {r.entry === "limit" && (

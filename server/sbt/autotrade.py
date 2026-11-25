@@ -453,6 +453,9 @@ class Auto:
         s = self.settings()
         first = s["strategies"][0]["id"] if s["strategies"] else None
         latest = self._q("SELECT MAX(trade_date) d FROM at_plans")[0]["d"]
+        lp_date = (self._state().get("last_plan") or {}).get("trade_date")
+        if lp_date and (not latest or lp_date > latest):
+            latest = lp_date  # 최근 계산에서 후보가 0종목이면 옛날 날짜 목록 대신 '후보 없음'
         today = today or dt.date.today().isoformat()
         closed = self._q("SELECT ret, exit_reason, strategy_id FROM at_positions WHERE status = 'closed' AND ret IS NOT NULL")
 
