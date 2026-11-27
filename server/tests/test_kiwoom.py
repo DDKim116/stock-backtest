@@ -229,3 +229,32 @@ def test_real_orders_still_blocked():
     assert kiwoom.ORDER_MODES == {"mock"}
     with pytest.raises(kiwoom.KiwoomError, match="실전 주문"):
         kiwoom.sell_market("real", "005930", 1)
+
+
+def test_query_continuation_headers_sent(net):
+    """연속조회: 다음 페이지 요청에 cont-yn=Y · next-key 를 실어 보낸다 (주문 TR 은 연속조회 안 함)."""
+    class _H(_Resp):
+        def __init__(self, data, headers):
+            super().__init__(data)
+            self.headers = headers
+
+    sent_headers = []
+    orig = kiwoom.requests.post
+
+    def post(url, json=None, headers=None, timeout=None):
+        if not url.endswith("/oauth2/token"):
+            sent_headers.append((headers.get("cont-yn"), headers.get("next-key")))
+        return orig(url, json=json, headers=headers, timeout=timeout)
+
+    kiwoom.requests.post = post
+    try:
+        net["api"] = [_H({"return_code": 0, "oso": [{"ord_no": "1", "stk_cd": "A000001", "io_tp_nm": "-매도", "ord_qty": "3",
+                                                    "oso_qty": "3", "cntr_qty": "0"}]}, {"cont-yn": "Y", "next-key": "abc"}),
+                      _H({"return_code": 0, "oso": [{"ord_no": "2", "stk_cd": "A000002", "io_tp_nm": "-매도", "ord_qty": "1",
+                                                    "oso_qty": "1", "cntr_qty": "0"}]}, {"cont-yn": "N"})]
+        assert set(kiwoom.open_orders("mock")) == {"1", "2"}
+    finally:
+        kiwoom.requests.post = orig
+    assert sent_headers == [("N", ""), ("Y", "abc")]
+    with pytest.raises(kiwoom.KiwoomError):
+        kiwoom.call_rows("mock", "/api/dostk/ordr", "kt10001", {}, "x")

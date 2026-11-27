@@ -108,9 +108,13 @@ class FakeKw:
     def open_orders(self, mode):
         if not self.list_open:  # 미체결 조회가 안 되는 경우 (응답 모양이 다르면 kiwoom.open_orders 도 오류를 올린다)
             raise kiwoom.KiwoomError("미체결 조회 응답에 oso 가 없습니다")
-        return {no: {"qty": 0, "price": 0, "left": o["qty"], "ordered": o["qty"], "code": o["code"], "side": o["side"],
-                     "kind": "order"}
-                for no, o in self.orders.items() if no not in self.fills and no not in self.dead}
+        out = {}
+        for no, o in self.orders.items():  # 살아 있는 주문 (일부 체결돼 남은 것 포함)
+            f = self.fills.get(no, {}).get("qty", 0)
+            if no not in self.dead and f < o["qty"]:
+                out[no] = {"qty": f, "price": self.fills.get(no, {}).get("price", 0), "left": o["qty"] - f,
+                           "ordered": o["qty"], "code": o["code"], "side": o["side"], "kind": "order"}
+        return out
 
     def balance(self, mode):
         q = dict(self.manual)
@@ -838,8 +842,9 @@ def test_1029_old_parser_does_not_close_while_shares_remain(env):
     a.tick(T(29, 9, 30))
     kw.dead.add(tno)  # 사용자가 키움 앱에서 목표가 주문을 취소 → 예전 파서는 286주 전부 체결로 보여 줌
     a.tick(T(29, 9, 40))
-    assert a.positions("active")[0]["status"] == "open"  # 한 번 본 것으로는 판단하지 않는다
-    a.tick(T(29, 9, 40, 20))
+    a.tick(T(29, 9, 40, 40))
+    assert a.positions("active")[0]["status"] == "open"  # 잔고 반영이 늦을 수 있어 90초는 기다린다
+    a.tick(T(29, 9, 41, 30))
     p = a.positions("active")[0]
     assert p["status"] == "check" and p["sold_qty"] == 50 and p["sold_amount"] == pytest.approx(50 * tp)
     assert "50주만 줄었" in p["check_msg"] and any("확인 필요" in t for t, _ in sent)
@@ -1027,7 +1032,11 @@ def test_unknown_sell_not_resent_even_with_user_shares(env):
         raise kiwoom.KiwoomUncertain("Read timed out")
 
     kw.sell_market = accepted_but_silent
+    kw.list_open = True  # 개인 보유분이 있으면 목표가 취소가 '확인'돼야 판다 (미체결 조회로 확인)
+    orig_open = kw.open_orders
+    kw.open_orders = lambda mode: {k: v for k, v in orig_open(mode).items() if k not in hidden}  # 접수된 매도는 안 보인다고 치자
     a.manual_sell(pos["id"], T(29, 10, 0))
+    kw.open_orders = lambda mode: (_ for _ in ()).throw(kiwoom.KiwoomError("미체결 조회 안 됨"))
     for t in (T(29, 10, 0, 30), T(29, 10, 1, 40), T(29, 10, 5)):
         a.tick(t)
     assert len(kw.find(side="sell", kind="market")) == 1
@@ -1344,7 +1353,7 @@ def test_settle_with_user_shares_does_not_close(env):
     kw.fills[tno] = {"qty": 0, "price": pos["target_price"]}
     kw.dead.add(tno)  # 체결 0인데 예전 파서는 '전부 체결'로 보여 줌
     a.tick(T(29, 9, 40))
-    a.tick(T(29, 9, 40, 20))
+    a.tick(T(29, 9, 41, 30))
     p = [x for x in a.positions() if x["id"] == pos["id"]][0]
     assert p["status"] == "check" and p["sold_qty"] == 0 and kw.held("200710") == 296
 
@@ -1512,7 +1521,7 @@ def test_hold_counter_cleared_when_balance_catches_up(env):
     kw.balance = lambda mode: ({"assets": 5e7, "holdings": [{"code": "200710", "qty": 286}]} if lag["on"] else real(mode))
     kw.fill(pos["target_order"], pos["target_price"])
     a.tick(T(29, 10, 0))
-    assert a._hold.get(pos["id"]) == 1
+    assert a._hold.get(pos["id"]) == T(29, 10, 0)
     lag["on"] = False
     a.tick(T(29, 10, 0, 20))
     assert pos["id"] not in a._hold
@@ -1555,3 +1564,224 @@ def test_resolve_close_and_errors(env):
     a.resolve(pos["id"], "close", T(29, 10, 2))
     p = [x for x in a.positions() if x["id"] == pos["id"]][0]
     assert p["status"] == "closed" and p["exit_reason"] == "키움에서 직접 매도" and p["exit_price"] == 10_500
+
+
+# ---------------------------------------------------------------- 3차: 돌돌이 재현을 '고쳐졌으면 통과'로
+def test_cancel_not_confirmed_with_user_shares_waits(env):
+    """[돌돌이 N1] 같은 종목 개인 보유분이 있으면 목표가 취소가 '확인'될 때까지 시장가를 내지 않는다
+    (취소 접수 후 처리 전 시장가가 접수되면 살아 있는 목표가와 겹쳐 개인 주식이 팔린다). 2분 넘게 확인 안 되면 알림."""
+    a, kw, runner, sent = env
+    kw.strict, kw.cancel_delay = True, 3  # 미체결 조회 안 됨 (list_open False)
+    kw.manual = {"200710": 500}
+    pos = _bought(a, kw, runner, close=10_000, fill=10_000)
+    tno = pos["target_order"]
+    kw.prices["200710"] = 9_000
+    a.tick(T(29, 10, 0))
+    assert not kw.find(side="sell", kind="market")
+    p = a.positions("active")[0]
+    assert p["status"] == "open" and p["old_target"] == tno
+    assert not any("목표가 주문을 확인" in b for _, b in sent)
+    a.tick(T(29, 10, 1))
+    a.tick(T(29, 10, 2, 10))  # 2분 지남 → 매도 멈춤 알림 (팔지 않음)
+    assert not kw.find(side="sell", kind="market")
+    assert sum("매도 멈춤" in t for t, _ in sent) == 1
+    kw.pending.clear()
+    kw.dead.add(tno)  # 키움이 취소 처리
+    kw.list_open = True  # 미체결 조회로 '없음' 확인
+    a.tick(T(29, 10, 3))
+    m = kw.find(side="sell", kind="market")
+    assert len(m) == 1 and kw.orders[m[0]]["qty"] == 500
+    kw.fill(m[0], 9_000)
+    a.tick(T(29, 10, 4))
+    assert [x for x in a.positions() if x["id"] == pos["id"]][0]["status"] == "closed" and kw.held("200710") == 500
+
+
+def test_cancel_confirmed_by_open_orders_then_sells(env):
+    """[3차-7d] 미체결 조회가 되면 처리 대기 중인 취소(목록에 남음)는 기다리고, 목록에서 빠지면 바로 판다 (개인 보유분 있음).
+    일부 체결된 살아 있는 목표가도 목록에 보인다."""
+    a, kw, runner, sent = env
+    kw.strict, kw.cancel_delay, kw.list_open = True, 99, True
+    kw.manual = {"200710": 300}
+    pos = _bought(a, kw, runner, close=10_000, fill=10_000)
+    tno, tp = pos["target_order"], pos["target_price"]
+    kw.fill(tno, tp, qty=100)
+    assert tno in kw.open_orders("mock") and kw.open_orders("mock")[tno]["left"] == 400
+    a.tick(T(29, 9, 30))
+    kw.prices["200710"] = 9_000
+    a.tick(T(29, 10, 0))
+    assert not kw.find(side="sell", kind="market")  # 취소가 아직 처리 안 됨 (미체결 목록에 있음)
+    kw.pending.clear()
+    kw.dead.add(tno)
+    a.tick(T(29, 10, 0, 20))
+    m = kw.find(side="sell", kind="market")
+    p = a.positions("active")[0]
+    assert len(m) == 1 and kw.orders[m[0]]["qty"] == 400 and p["sold_qty"] == 100 and not p["old_target"]
+
+
+def test_balance_lag_40s_closes_normally(env):
+    """[돌돌이 N3] 잔고 반영이 40초 늦어도 '확인 필요'로 멈추지 않고 정상으로 닫는다 (90초 기준)."""
+    a, kw, runner, sent = env
+    pos = _bought(a, kw, runner, close=10_000, fill=10_000)
+    real = kw.balance
+    lag = {"on": True}
+    kw.balance = lambda mode: ({"assets": 5e7, "holdings": [{"code": "200710", "qty": 500}]} if lag["on"] else real(mode))
+    kw.fill(pos["target_order"], pos["target_price"])
+    a.tick(T(29, 10, 0))
+    a.tick(T(29, 10, 0, 20))
+    lag["on"] = False
+    a.tick(T(29, 10, 0, 40))
+    p = [x for x in a.positions() if x["id"] == pos["id"]][0]
+    assert p["status"] == "closed" and p["exit_reason"] == "목표" and not any("확인 필요" in t for t, _ in sent)
+
+
+def test_check_from_long_lag_releases_itself(env):
+    """[돌돌이 N3·3차-1] 잔고 반영이 90초 넘게 늦어 '확인 필요'가 됐어도, 잔고가 따라오면 스스로 닫힌다."""
+    a, kw, runner, sent = env
+    pos = _bought(a, kw, runner, close=10_000, fill=10_000)
+    real = kw.balance
+    lag = {"on": True}
+    kw.balance = lambda mode: ({"assets": 5e7, "holdings": [{"code": "200710", "qty": 500}]} if lag["on"] else real(mode))
+    kw.fill(pos["target_order"], pos["target_price"])
+    a.tick(T(29, 10, 0))
+    a.tick(T(29, 10, 1, 40))
+    p = a.positions("active")[0]
+    assert p["status"] == "check" and p["claim_qty"] == 500 and p["base_qty"] == 500
+    lag["on"] = False
+    a.tick(T(29, 10, 3))
+    p = [x for x in a.positions() if x["id"] == pos["id"]][0]
+    assert p["status"] == "closed" and p["exit_reason"] == "목표" and p["sold_qty"] == 500
+    assert p["sold_amount"] == pytest.approx(500 * pos["target_price"])
+
+
+def test_stop_waits_for_balance_lag_instead_of_partial(env):
+    """[돌돌이 N4] 손절 때 잔고가 우리 몫보다 조금 적게 보이면(반영 지연) 일부만 팔지 않고 미룬다."""
+    a, kw, runner, sent = env
+    pos = _bought(a, kw, runner, close=10_000, fill=10_000)
+    real = kw.balance
+    lag = {"on": True}
+    kw.balance = lambda mode: ({"assets": 5e7, "holdings": [{"code": "200710", "qty": 450}]} if lag["on"] else real(mode))
+    kw.prices["200710"] = 9_000
+    a.tick(T(29, 10, 0))
+    assert not kw.find(side="sell", kind="market")
+    lag["on"] = False
+    a.tick(T(29, 10, 0, 20))
+    m = kw.find(side="sell", kind="market")
+    assert len(m) == 1 and kw.orders[m[0]]["qty"] == 500
+    kw.fill(m[0], 9_000)
+    a.tick(T(29, 10, 0, 40))
+    p = [x for x in a.positions() if x["id"] == pos["id"]][0]
+    assert p["status"] == "closed" and p["exit_reason"] == "손절"
+
+
+def _short_balance(kw, n=50):
+    real = kw.balance
+
+    def short(mode):  # 키움 잔고가 계속 n주 적게 보임 (키움 앱에서 직접 판 경우 등)
+        b = real(mode)
+        q = next((h["qty"] for h in b["holdings"] if h["code"] == "200710"), 0)
+        return {**b, "holdings": [{"code": "200710", "qty": max(0, q - n)}]}
+
+    kw.balance = short
+
+
+def test_stop_short_balance_fixed_by_reconcile(env):
+    """[3차-5] 잔고가 계속 적으면 2분 간격 잔고 확인이 '키움에서 직접 일부 매도'로 기록을 맞추고, 손절은 남은 만큼 판다."""
+    a, kw, runner, sent = env
+    _bought(a, kw, runner, close=10_000, fill=10_000)
+    _short_balance(kw)
+    kw.prices["200710"] = 9_000
+    a.tick(T(29, 10, 0))
+    a.tick(T(29, 10, 1))
+    assert not kw.find(side="sell", kind="market")
+    a.tick(T(29, 10, 2))
+    m = kw.find(side="sell", kind="market")
+    assert len(m) == 1 and kw.orders[m[0]]["qty"] == 450 and any("직접 일부 매도" in t for t in _logs(a))
+
+
+def test_stop_sells_balance_limit_after_3min(env, monkeypatch):
+    """[3차-5] 잔고가 3분 넘게 적게 보이면 손절을 더 미루지 않고 잔고 한도로 팔고 기록한다."""
+    a, kw, runner, sent = env
+    pos = _bought(a, kw, runner, close=10_000, fill=10_000)
+    monkeypatch.setattr(a, "_reconcile", lambda *x, **k: None)  # 잔고 확인이 기록을 못 맞추는 경우만 따로 본다
+    _short_balance(kw)
+    kw.prices["200710"] = 9_000
+    for ss in (0, 60, 120, 170):
+        a.tick(T(29, 10, 0) + dt.timedelta(seconds=ss))
+    assert not kw.find(side="sell", kind="market")
+    a.tick(T(29, 10, 3, 10))
+    m = kw.find(side="sell", kind="market")
+    assert len(m) == 1 and kw.orders[m[0]]["qty"] == 450
+    kw.fill(m[0], 9_000)
+    a.tick(T(29, 10, 3, 30))
+    p = [x for x in a.positions() if x["id"] == pos["id"]][0]
+    assert p["status"] == "closed" and p["sold_qty"] == 450 and p["ret"] == pytest.approx(-10.0)
+    assert any("모자란 50주" in t for t in _logs(a))
+
+
+def test_check_position_alerts_below_stop_and_reminds(env):
+    """[돌돌이 N5·3차-2] '확인 필요' 종목은 자동으로 팔지 않지만, 손절선 아래면 바로 알리고(하루 한 번)
+    08:50·12:00·14:00 에 '확인 필요 N종목' 을 다시 알린다."""
+    a, kw, runner, sent = env
+    pos = _bought(a, kw, runner, close=10_000, fill=10_000)
+    a._need_check(T(29, 9, 10), a.positions("active")[0], "시험")
+    kw.prices["200710"] = 7_000
+    for hh, mm in ((10, 0), (11, 0), (12, 0), (12, 5), (13, 0), (14, 0), (15, 0)):
+        a.tick(T(29, hh, mm))
+    assert not kw.find(side="sell", kind="market")
+    assert sum("손절선 아래" in t for t, _ in sent) == 1
+    assert sum("확인 필요 1종목" in t for t, _ in sent) == 2  # 12:00 · 14:00
+    runner.days.append("2026-10-29")
+    a.tick(T(30, 8, 50))
+    assert sum("확인 필요 1종목" in t for t, _ in sent) == 3
+
+
+def test_resolve_resume_and_refuse_when_order_alive(env):
+    """[3차-7c·7e] 다시 관리: 키움에 그 종목 주문이 아직 살아 있으면 거절, 없으면 open 으로 돌아가 목표가를 다시 건다."""
+    a, kw, runner, sent = env
+    kw.list_open = True
+    pos = _bought(a, kw, runner, close=10_000, fill=10_000)
+    tno = pos["target_order"]
+    a._need_check(T(29, 9, 10), a.positions("active")[0], "시험", old_target=tno, target_order=None)
+    with pytest.raises(ValueError, match="아직 걸려"):
+        a.resolve(pos["id"], "resume", T(29, 9, 11))
+    kw.dead.add(tno)  # 사용자가 키움 앱에서 취소
+    a.resolve(pos["id"], "resume", T(29, 9, 12))
+    p = a.positions("active")[0]
+    assert p["status"] == "open" and not p["old_target"] and not p["check_msg"] and p["base_qty"] is None
+    a.tick(T(29, 9, 13))
+    new = [n for n in kw.find(side="sell", kind="limit") if n != tno]
+    assert len(new) == 1 and kw.orders[new[0]]["qty"] == 500
+
+
+def test_resolve_check_plan(env):
+    """[3차-7a] '확인 필요' 매수 후보: 키움 앱에서 확인한 대로 '샀음(수량·가격)' 또는 '안 샀음'."""
+    a, kw, runner, sent = env
+    runner.rows["2026-10-23"] = [{"code": "000001", "name": "가", "signal_date": "2026-10-23", "close": 10_000, "value": 5e9},
+                                 {"code": "000002", "name": "나", "signal_date": "2026-10-23", "close": 10_000, "value": 6e9}]
+    a.tick(T(23, 17, 0))
+    for p in a.plans("2026-10-26"):
+        a.approve(p["id"], True, T(23, 18, 0))
+    p1, p2 = a.plans("2026-10-26")
+    for p in (p1, p2):
+        a._upd("at_plans", p["id"], T(26, 15, 32), status="check")
+    with pytest.raises(ValueError):
+        a.resolve_plan(p1["id"], "bought", T(26, 16, 0), qty=9_999, price=10_000)
+    a.resolve_plan(p1["id"], "bought", T(26, 16, 0), qty=300, price=10_050)
+    a.resolve_plan(p2["id"], "not_bought", T(26, 16, 0))
+    pos = a.positions("active")
+    assert len(pos) == 1 and pos[0]["qty"] == 300 and pos[0]["entry_price"] == 10_050 and pos[0]["entry_date"] == "2026-10-26"
+    st = {p["code"]: p["status"] for p in a.plans("2026-10-26")}
+    assert st == {"000001": "filled", "000002": "failed"}
+    with pytest.raises(ValueError):
+        a.resolve_plan(p2["id"], "not_bought", T(26, 16, 1))
+
+
+def test_manual_sell_deferred_shows_reason(env):
+    """개인 보유분이 있고 목표가 취소가 확인 안 되면 '지금 팔기'는 이유를 알려 주고 팔지 않는다 (잠시 뒤 다시)."""
+    a, kw, runner, sent = env
+    kw.strict, kw.cancel_delay = True, 5
+    kw.manual = {"200710": 500}
+    pos = _bought(a, kw, runner, close=10_000, fill=10_000)
+    with pytest.raises(ValueError, match="취소가 아직 확인되지"):
+        a.manual_sell(pos["id"], T(29, 10, 0))
+    assert not kw.find(side="sell", kind="market")

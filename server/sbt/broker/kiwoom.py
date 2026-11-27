@@ -94,7 +94,8 @@ def view() -> dict:
 
 
 # ---------------------------------------------------------------- 호출
-def _post(mode: str, path: str, body: dict, headers: dict | None = None) -> dict:
+def _post(mode: str, path: str, body: dict, headers: dict | None = None, with_headers: bool = False):
+    """키움 POST. with_headers=True 면 (응답, 응답 헤더) — 연속조회(cont-yn·next-key)용."""
     try:
         r = requests.post(BASES[mode] + path, json=body, headers={**_HEADERS, **(headers or {})}, timeout=15)
     except requests.RequestException as e:
@@ -112,6 +113,8 @@ def _post(mode: str, path: str, body: dict, headers: dict | None = None) -> dict
         raise KiwoomUncertain(f"키움 응답 오류 {r.status_code}: {_explain(data.get('return_msg') or '키움 서버 일시 오류')}")
     if r.status_code >= 400 or data.get("return_code", 0) not in (0, "0"):
         raise KiwoomError(_explain(data.get("return_msg") or f"HTTP {r.status_code}"))
+    if with_headers:
+        return data, dict(getattr(r, "headers", None) or {})
     return data
 
 
@@ -184,7 +187,35 @@ def _rate_limited(msg: str) -> bool:
 
 
 def call(mode: str, path: str, api_id: str, body: dict) -> dict:
-    """키움 호출. 일시 오류는 잠시 뒤 다시 (최대 3번).
+    """키움 호출 (첫 페이지). 자세한 재시도 규칙은 _call."""
+    return _call(mode, path, api_id, body)[0]
+
+
+def call_rows(mode: str, path: str, api_id: str, body: dict, key: str, required: bool = False,
+              max_pages: int = 20) -> list[dict]:
+    """조회 TR 의 목록 칸(key)을 연속조회로 끝 페이지까지 모은다 (응답 헤더 cont-yn='Y' 면 next-key 로 다음 페이지).
+    required: 목록 칸이 없으면 오류 ('없음'과 '모름'을 구분해야 할 때). 다음 페이지를 다 못 읽으면 오류 (일부만 보고 판단하지 않게)."""
+    if path == ORDER_PATH:
+        raise KiwoomError("주문 TR 은 연속조회하지 않습니다")
+    rows: list[dict] = []
+    cont, nxt = "N", ""
+    for _ in range(max_pages):
+        d, h = _call(mode, path, api_id, body, cont, nxt)
+        part = d.get(key)
+        if required and not isinstance(part, list):
+            raise KiwoomError(f"{api_id} 응답에 목록({key})이 없습니다")
+        rows += part or []
+        hl = {str(k).lower(): v for k, v in h.items()}
+        if str(hl.get("cont-yn", "N")).upper() != "Y":
+            return rows
+        cont, nxt = "Y", str(hl.get("next-key", "") or "")
+        if not nxt:
+            raise KiwoomError(f"{api_id} 다음 페이지 키(next-key)가 없습니다")
+    raise KiwoomError(f"{api_id} 페이지가 너무 많습니다 ({max_pages}쪽 넘음)")
+
+
+def _call(mode: str, path: str, api_id: str, body: dict, cont: str = "N", nxt: str = "") -> tuple[dict, dict]:
+    """키움 호출. (응답, 응답 헤더). 일시 오류는 잠시 뒤 다시 (최대 3번).
 
     주문·정정·취소(/api/dostk/ordr)는 요청이 키움에 닿았을 수 있는 오류(응답 시간 초과·5xx·응답 중 끊김)에서
     다시 보내지 않고 KiwoomUncertain 을 올린다 — 다시 보내면 같은 주문이 두 번 나갈 수 있다.
@@ -202,7 +233,8 @@ def call(mode: str, path: str, api_id: str, body: dict) -> dict:
                 continue
             raise KiwoomError(msg) from e
         try:
-            return _post(mode, path, body, {"api-id": api_id, "authorization": auth, "cont-yn": "N", "next-key": ""})
+            return _post(mode, path, body, {"api-id": api_id, "authorization": auth, "cont-yn": cont, "next-key": nxt},
+                         with_headers=True)
         except KiwoomUncertain as e:
             if order:
                 raise  # 주문은 결과를 모르면 다시 보내지 않는다
@@ -357,9 +389,10 @@ def _kind(io_tp_nm) -> str:
 
 def executions(mode: str) -> dict[str, dict]:
     """체결요청(ka10076) 오늘 체결을 주문번호별로 모은다: {ord_no: {qty, price, left, ordered, code, side, kind}}."""
-    d = call(mode, "/api/dostk/acnt", "ka10076", {"qry_tp": "0", "sell_tp": "0", "stex_tp": "0"})
+    # 체결마다 한 줄이면 첫 페이지만 읽을 때 뒤 체결이 빠진다 → 끝 페이지까지
+    rows = call_rows(mode, "/api/dostk/acnt", "ka10076", {"qry_tp": "0", "sell_tp": "0", "stex_tp": "0"}, "cntr")
     by: dict[str, list[dict]] = {}
-    for r in d.get("cntr") or []:
+    for r in rows:
         by.setdefault(str(r.get("ord_no", "")).lstrip("0") or "0", []).append(r)
     out = {}
     for no, rs in by.items():
@@ -386,12 +419,12 @@ def open_orders(mode: str) -> dict[str, dict]:
     """미체결요청(ka10075): 아직 체결이 안 끝난 주문 {ord_no: {qty, price, left, ordered, code, side}} (executions 와 같은 모양).
     체결요청(ka10076)에는 체결이 하나도 없는 주문이 안 보일 수 있어, 결과 모르는 주문을 찾을 때만 같이 본다.
     ※ 응답 칸 이름(oso·ord_no·ord_qty·oso_qty·cntr_qty)은 실제 응답으로 한 번 확인 필요.
-    목록 칸(oso)이 없으면 '미체결 없음'과 구분할 수 없으니 오류로 올린다 (조용히 빈 결과를 주면 '주문 없음'으로 오인)."""
-    d = call(mode, "/api/dostk/acnt", "ka10075", {"all_stk_tp": "0", "trde_tp": "0", "stk_cd": "", "stex_tp": "0"})
-    if not isinstance(d.get("oso"), list):
-        raise KiwoomError("미체결 조회 응답에 주문 목록(oso)이 없습니다")
+    목록 칸(oso)이 없거나, 줄이 있는데 하나도 해석 못 하거나, 다음 페이지를 다 못 읽으면 오류로 올린다
+    (조용히 빈 결과를 주면 '주문 없음 = 취소 확인됨'으로 오인할 수 있다)."""
+    rows = call_rows(mode, "/api/dostk/acnt", "ka10075", {"all_stk_tp": "0", "trde_tp": "0", "stk_cd": "", "stex_tp": "0"},
+                     "oso", required=True)
     out = {}
-    for r in d["oso"]:
+    for r in rows:
         no = str(r.get("ord_no", "")).lstrip("0")
         ordered = abs(num(r.get("ord_qty")) or 0)
         if not no or not ordered:
@@ -400,6 +433,8 @@ def open_orders(mode: str) -> dict[str, dict]:
                    "left": int(abs(num(r.get("oso_qty")) or 0)), "ordered": int(ordered),
                    "code": str(r.get("stk_cd", ""))[-6:],
                    "side": "sell" if "매도" in str(r.get("io_tp_nm", "")) else "buy", "kind": _kind(r.get("io_tp_nm"))}
+    if rows and not out:
+        raise KiwoomError("미체결 조회 응답을 해석하지 못했습니다 (칸 이름이 다름)")
     return out
 
 

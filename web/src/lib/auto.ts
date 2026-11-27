@@ -112,20 +112,25 @@ export const untracked = (acct: Account | null, positions: { code: string; statu
   return (acct?.balance.holdings ?? []).filter((h) => !ours.has(h.code));
 };
 
-// 화면 경고용: 지금 계좌 조회로 본 '앱 기록에 없는 종목' + 서버 잔고 확인 기록(앱 기록보다 많은 종목 포함)을 종목별로 하나로
-export const holdingIssues = (acct: Account | null, positions: { code: string; status: string }[], server?: HoldingIssue[]) => {
-  const out = new Map<string, HoldingIssue>();
-  for (const h of untracked(acct, positions))
-    out.set(h.code, { code: h.code, name: h.name, kind: "untracked", qty: h.qty, held: h.qty, avg_price: h.avg_price, ret: h.ret });
-  for (const h of server ?? []) {
-    if (acct) {
-      // 지금 계좌 조회가 있으면 그것을 믿는다: 이미 정리된 종목 · 이제 앱이 관리하는 종목의 옛 기록은 뺀다
-      if (!acct.balance.holdings.some((x) => x.code === h.code)) continue;
-      if (h.kind === "untracked" && !out.has(h.code)) continue;
-    }
-    out.set(h.code, { ...out.get(h.code), ...h });
+// 화면 경고용: 키움에만 있는 종목 · 앱 기록보다 많은 종목.
+// 지금 계좌 조회가 있으면 수량·종류는 화면에서 바로 계산한 값을 쓰고(최신), 없을 때만 서버 잔고 확인 기록을 쓴다.
+export const holdingIssues = (
+  acct: Account | null,
+  positions: { code: string; status: string; qty?: number; sold_qty?: number }[],
+  server?: HoldingIssue[],
+): HoldingIssue[] => {
+  if (!acct) return server ?? [];
+  const ours = new Map<string, number>();
+  for (const p of positions)
+    if (p.status !== "closed") ours.set(p.code, (ours.get(p.code) ?? 0) + Math.max(0, (p.qty ?? 0) - (p.sold_qty ?? 0)));
+  const out: HoldingIssue[] = [];
+  for (const h of acct.balance.holdings) {
+    const mine = ours.get(h.code);
+    const base = { code: h.code, name: h.name, held: h.qty, avg_price: h.avg_price, ret: h.ret };
+    if (mine === undefined) out.push({ ...base, kind: "untracked", qty: h.qty });
+    else if (h.qty > mine) out.push({ ...base, kind: "extra", qty: h.qty - mine });
   }
-  return [...out.values()];
+  return out;
 };
 
 export const won = (v: number | null | undefined) => (v == null ? "–" : `${Math.round(v).toLocaleString("ko-KR")}원`);

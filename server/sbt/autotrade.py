@@ -71,6 +71,10 @@ EXPIRE_UNTIL = dt.time(15, 29)
 CLOSE_AT = dt.time(15, 31)
 FINISH_GIVE_UP = dt.time(23, 0)  # 마감 체결 조회가 계속 안 되면 이때부터는 체결 확인 없이 마무리
 UNSURE_CHECK = 600  # 초: 결과 모르는 매도가 이만큼 체결도 잔고 변화도 없으면 '확인 필요'
+SETTLE_WAIT = 90  # 초: 체결로 보이는데 잔고가 덜 줄었을 때 이만큼 기다린 뒤에야 '확인 필요' (잔고 반영 지연)
+CANCEL_WAIT = 120  # 초: 같은 종목 다른 주식이 있을 때 목표가 취소 확인을 이만큼 기다려도 안 되면 '매도 멈춤' 알림
+SHORT_WAIT = 180  # 초: 키움 잔고가 앱 기록보다 적게 보일 때(반영 지연) 매도를 미루는 최대 시간 — 지나면 잔고만큼 판다
+CHECK_REMIND = (dt.time(8, 50), dt.time(12, 0), dt.time(14, 0))  # '확인 필요'가 남아 있으면 다시 알리는 때
 RETARGET_EVERY = 300  # 초: 목표가 주문이 빠진 보유 종목에 다시 거는 간격
 
 
@@ -96,12 +100,14 @@ class Auto:
         self._errs: dict[str, dt.datetime] = {}  # 단계 오류 → 마지막으로 기록한 때
         self.retry_wait = 1.5  # 목표가 취소 뒤 매도 다시 시도 간격(초)
         self._miss: dict[int, int] = {}  # 포지션 id → 잔고가 모자란 것을 본 횟수 (두 번 연속이면 직접 매도로 본다)
-        self._hold: dict[int, int] = {}  # 포지션 id → '체결로 보이는데 잔고가 남은 것'을 본 횟수 (두 번 연속이면 닫지 않음)
+        self._hold: dict[int, dt.datetime] = {}  # 포지션 id → '체결로 보이는데 잔고가 덜 줄어든 것'을 처음 본 때
         self._odd: dict[str, int] = {}  # '종목:종류' → 잔고 불일치(키움에만 있음·더 많음)를 연속으로 본 횟수
         self._bal: tuple | None = None  # (now, mode, 잔고) — 한 번의 확인 안에서는 잔고를 한 번만 읽는다
         self._retgt: dict[int, dt.datetime] = {}  # 포지션 id → 목표가 주문을 다시 걸어 본 때
         self._sellfail: dict[int, str] = {}  # 포지션 id → 매도 주문이 실패한 날 (그날은 목표가를 다시 걸지 않는다)
         self._checked: set[int] = set()  # 이번 체결 확인에서 닫기 전 잔고 확인을 한 포지션
+        self._wait: dict[tuple, dt.datetime] = {}  # (포지션 id, 'cancel'|'short') → 매도를 처음 미룬 때
+        self._why: str | None = None  # 마지막으로 매도를 미룬 이유 ('지금 팔기' 오류 문구용)
         db = store.db
         with _lock:
             db.execute("""CREATE TABLE IF NOT EXISTS at_plans (
@@ -134,7 +140,9 @@ class Auto:
                                 ("at_positions", {"strategy_id": "INTEGER", "hold_days": "INTEGER", "exit_ref": "REAL",
                                                   "unsure": "TEXT", "unsure_qty": "INTEGER", "unsure_at": "TEXT",
                                                   "unsure_seen": "INTEGER", "base_qty": "INTEGER", "base_sold": "INTEGER",
-                                                  "old_target": "TEXT", "carry": "TEXT", "check_msg": "TEXT"})):
+                                                  "old_target": "TEXT", "carry": "TEXT", "check_msg": "TEXT",
+                                                  # claim_*: '확인 필요'가 된 체결 (잔고가 따라오면 이대로 스스로 닫는다)
+                                                  "claim_qty": "INTEGER", "claim_amount": "REAL", "claim_reason": "TEXT"})):
                 have = {r[1] for r in db.execute(f"PRAGMA table_info({table})").fetchall()}
                 for c, typ in cols.items():
                     if c not in have:
@@ -844,8 +852,11 @@ class Auto:
         self.log(now, f"{p['name']} 남은 매수 주문 취소 (팔기 시작)")
 
     def _finished(self, mode: str, no: str, code: str) -> tuple[bool, int | None]:
-        """주문이 끝났는지(취소·전부 체결) 와 지금까지 체결 수량. 체결 내역에 '미체결 0'으로 보이거나,
-        미체결 조회가 되는데 거기에 없으면 끝난 것. 확인이 안 되면 (False, 체결 수량 또는 None)."""
+        """주문이 끝났는지(취소·전부 체결) 와 지금까지 체결 수량. 근거는 둘뿐:
+        (i) 미체결 조회(ka10075)가 정상 해석됐는데 그 원주문이 없음, (ii) 체결 내역(ka10076)에 그 원주문이 '미체결 0'.
+        미체결을 먼저 읽고 체결 내역을 나중에 읽는다 (그사이 끝난 주문의 체결 수량을 놓치지 않게).
+        확인이 안 되면 (False, 체결 수량 또는 None)."""
+        live = self._live_orders(mode)
         try:
             e = self._ex_for(self.kw.executions(mode), no, code, "sell")
         except Exception:  # noqa: BLE001
@@ -853,7 +864,6 @@ class Auto:
         f = int(e["qty"]) if e else None
         if e and e["left"] == 0:
             return True, f
-        live = self._live_orders(mode)
         if live is not None and no not in live:
             return True, f
         return False, f
@@ -899,27 +909,54 @@ class Auto:
             return True
         held = self._qty(now, mode, code, fresh=True)  # 체결 내역을 먼저 읽고 잔고를 나중에 (기준값이 커지지 않게)
         others = self._others(pos, today)
-        safe = held is not None and held <= others + mine()  # 우리 몫보다 많은 주식이 없다 → 키움이 두 번 팔기를 막아 준다
-        why = None
-        # 취소 결과를 모르면(연결 실패 포함) 목표가 주문이 살아 있을 수 있다. 키움이 취소를 거절한 것은 이미 끝난 주문이라 괜찮다.
-        if not safe and (hidden or (tno and not done and cancel is None)):
-            why = ("결과 모르는 목표가 주문이 걸려 있을 수 있는데" if hidden else "목표가 주문 취소 결과를 모르는데") + \
-                  (" 잔고를 못 읽어" if held is None else " 키움에 같은 종목 다른 주식이 있어")
-        elif held is not None and held - others < mine() and not tno:
-            why = f"키움 잔고({max(0, held - others)}주)가 앱 기록({mine()}주)보다 적어"
-        elif held is not None and held - others <= 0:
-            why = "키움 잔고에 팔 주식이 아직 안 보여"
+
+        def exclusive() -> bool:  # 이 종목은 이 포지션 몫뿐 (다른 포지션·개인분 없음) → 키움이 두 번 팔기를 막아 준다
+            return held is not None and others == 0 and held <= mine()
+
+        why, alert = None, None
+        if not exclusive() and hidden:
+            why = "결과 모르는 목표가 주문이 걸려 있을 수 있는데 " + ("잔고를 못 읽어" if held is None else "키움에 같은 종목 다른 주식이 있어")
+            alert = self._warn(now, f"block:{pos['id']}")
+        elif not exclusive() and tno and not done:
+            # 같은 종목 다른 주식이 있으면 취소가 '확인'될 때까지 팔지 않는다 (살아 있는 목표가와 겹쳐 남의 주식이 팔리지 않게)
+            for _ in range(4):
+                time.sleep(self.retry_wait)
+                done, f = self._finished(mode, tno, code)
+                tf = max(tf, f or 0)
+                if done:
+                    break
+            if mine() <= 0:  # 기다리는 사이 목표가로 다 팔렸다 → 체결 확인이 '목표'로 닫는다
+                self._upd("at_positions", pos["id"], now, target_filled=tf)
+                return True
+            if done:
+                held = self._qty(now, mode, code, fresh=True)
+                self._wait.pop((pos["id"], "cancel"), None)
+            else:
+                first = self._wait.setdefault((pos["id"], "cancel"), now)
+                why = "목표가 주문 취소가 아직 확인되지 않았고 키움에 같은 종목 다른 주식이 있어"
+                if (now - first).total_seconds() >= CANCEL_WAIT and self._warn(now, f"cancel-wait:{pos['id']}"):
+                    alert = True
+        if not why and held is not None and held - others < mine():
+            first = self._wait.setdefault((pos["id"], "short"), now)
+            if held - others <= 0:
+                why = "키움 잔고에 팔 주식이 아직 안 보여"
+            elif (now - first).total_seconds() < SHORT_WAIT:  # 잔고 반영이 늦을 수 있다 → 일부만 팔지 말고 잠깐 미룬다
+                why = f"키움 잔고({held - others}주)가 앱 기록({mine()}주)보다 적어"
         if why:
+            self._why = why
             self._upd("at_positions", pos["id"], now, **track())
             if reason not in MANUAL:
                 self._sellfail[pos["id"]] = today
             if self._once(now, f"defer:{pos['id']}"):
                 self.log(now, f"⚠ {reason} 매도 미룸 {name}: {why} 팔지 않았습니다")
-            if not why.startswith("키움 잔고") and self._warn(now, f"block:{pos['id']}"):
+            if alert:
+                self.log(now, f"⚠ {reason} 매도 멈춤 {name}: {why} — 키움 앱에서 이 종목의 미체결 목표가 주문을 확인·취소해 주세요")
                 self.notify(f"⚠ {reason} 매도 멈춤 · {name}",
-                            f"{why} 팔지 않았습니다 (다른 주식까지 팔리지 않게). 키움 앱에서 미체결 목표가 주문을 취소해 주세요")
+                            f"{why} 팔지 않았습니다 (다른 주식까지 팔리지 않게). 키움 앱에서 목표가 주문을 확인·취소해 주세요")
             self._set_state(last_error=f"{now.isoformat(timespec='seconds')} {reason} 매도 미룸 {name}: {why}")
             return False
+        for k in ("cancel", "short"):
+            self._wait.pop((pos["id"], k), None)
 
         def size() -> int:  # 시장가 수량 = 앱 기록 남은 수량, 키움 잔고(다른 포지션 몫 뺀 것)보다 많게는 안 냄
             return mine() if held is None else min(mine(), max(0, held - others))
@@ -1002,7 +1039,10 @@ class Auto:
                 raise ValueError("이미 매도 중이거나 끝난 종목입니다")
             if not is_trading_day(now.date()) or not (dt.time(9, 0) <= now.time() < EXPIRE_UNTIL):
                 raise ValueError("장중(09:00~15:29)에만 팔 수 있습니다")
+            self._why = None
             if not self._sell_all(now, pos, self.settings()["account"], "직접 매도"):
+                if self._why:  # 일부러 미룬 것 (예: 목표가 취소 확인 전) → 이유를 그대로
+                    raise ValueError(f"지금은 팔지 않았습니다: {self._why} — 잠시 뒤 다시 눌러 주세요")
                 raise ValueError("매도 주문을 내지 못했습니다. 기록을 확인하세요")
 
     def resolve(self, pid: int, action: str, now: dt.datetime) -> None:
@@ -1018,7 +1058,12 @@ class Auto:
                      "old_target": None, "exit_order": None, "target_order": None, "target_filled": 0, "target_date": None,
                      "base_qty": None, "base_sold": None, "carry": None}
             left = pos["qty"] - pos["sold_qty"]
+            clear.update(claim_qty=None, claim_amount=None, claim_reason=None)
             if action == "resume":
+                mode = self.settings()["account"]
+                for no in {pos.get("old_target"), pos.get("exit_order"), pos.get("target_order")} - {None}:
+                    if self._alive(mode, no, pos["code"]):  # 키움에 아직 걸려 있으면 다시 관리하지 않는다 (두 번 팔리지 않게)
+                        raise ValueError(f"키움에 이 종목 매도 주문(주문번호 {no})이 아직 걸려 있습니다. 키움 앱에서 취소한 뒤 다시 눌러 주세요")
                 self._upd("at_positions", pos["id"], now, status="open", **clear)
                 self.log(now, f"확인 후 다시 관리 · {pos['name']} 남은 {left}주")
             elif action == "close":
@@ -1032,6 +1077,37 @@ class Auto:
                 self.log(now, f"확인 후 정리 · {pos['name']} (남은 {left}주는 {price:,.0f}원으로 기록)")
             else:
                 raise ValueError("action 은 resume 또는 close")
+
+    def resolve_plan(self, pid: int, action: str, now: dt.datetime, qty: int | None = None,
+                     price: float | None = None) -> None:
+        """'확인 필요' 매수 후보를 사람이 키움 앱에서 확인한 뒤 정리한다.
+        bought: 실제로 샀음 → 입력한 수량·가격으로 포지션을 연다 (목표가는 장중이면 곧, 아니면 다음 거래일 아침)
+        not_bought: 안 샀음 → 실패로."""
+        with self.lock:
+            p = self._q("SELECT * FROM at_plans WHERE id = ?", (pid,))
+            if not p or p[0]["status"] != "check":
+                raise ValueError("확인 필요 상태인 매수 후보가 아닙니다")
+            p = p[0]
+            if action == "not_bought":
+                self._upd("at_plans", p["id"], now, status="failed", msg="확인 후: 사지 않음")
+                self.log(now, f"확인 후 정리 · {p['name']} 매수 안 됨")
+            elif action == "bought":
+                if not qty or not 1 <= int(qty) <= int(p["qty"]) or not price or float(price) <= 0:
+                    raise ValueError(f"수량(1~{p['qty']}주)과 가격을 확인해 주세요")
+                first = (self.settings()["strategies"] or [{"id": None}])[0]["id"]
+                self._open_pos(now, self.settings()["account"], p, int(qty), float(price), p["strategy_id"] or first,
+                               p["trade_date"], target=False)
+                self._upd("at_plans", p["id"], now, status="filled", msg=f"확인 후: {int(qty)}주 {float(price):,.0f}원 매수 기록")
+            else:
+                raise ValueError("action 은 bought 또는 not_bought")
+
+    def _alive(self, mode: str, no: str, code: str) -> bool:
+        """그 주문이 키움에 아직 살아 있다는 근거가 있는지 (미체결 목록에 있음, 또는 체결 내역에 미체결이 남음)."""
+        live = self._live_orders(mode)
+        if live is not None and no in live:
+            return True
+        e = self._ex_for(self._ex_or_empty(mode), no, code, "sell")
+        return bool(e and e["left"] > 0)
 
     # ------------------------------------------------------------ 키움 잔고 · 결과 모르는 주문
     def _balance(self, now: dt.datetime, mode: str) -> dict:
@@ -1231,7 +1307,8 @@ class Auto:
         """체결로 보이는 포지션을 닫기 전에 키움 잔고를 본다: 이 매도 직전 잔고(기준값)에서 실제로 줄어든 수량이
         체결로 보인 수량보다 적으면 닫지 않고 실제로 줄어든 만큼만 반영해 '확인 필요'로 둔다.
         (10/29: 취소된 목표가 주문을 '전부 체결'로 읽고 닫았는데 키움엔 236주가 남아 규칙 없이 방치됐다)
-        잔고 반영이 늦을 수 있어 두 번 연속 볼 때만 (decisive=True 면 한 번에 — 장 마감 정리)."""
+        잔고 반영이 늦을 수 있어 처음 본 뒤 90초가 지나야 (decisive=True 면 한 번에 — 장 마감 정리).
+        '확인 필요'가 되어도 기준값과 체결로 보인 수량(claim)을 남겨, 나중에 잔고가 따라오면 스스로 닫힌다 (_recheck)."""
         self._checked.add(pos["id"])
         held = self._qty(now, mode, pos["code"])
         if held is None:
@@ -1251,9 +1328,9 @@ class Auto:
             self._hold.pop(pos["id"], None)
             self._close(now, pos, reason, total, amount)
             return True
-        self._hold[pos["id"]] = self._hold.get(pos["id"], 0) + 1
-        if self._hold[pos["id"]] < 2 and not decisive:
-            return False  # 잔고 반영이 늦을 수 있어 한 번 더 본다
+        first = self._hold.setdefault(pos["id"], now)
+        if not decisive and (now - first).total_seconds() < SETTLE_WAIT:
+            return False  # 잔고 반영이 늦을 수 있어 조금 더 본다
         self._hold.pop(pos["id"], None)
         tf = self._tf(pos, today)
         before = pos["sold_qty"]
@@ -1265,10 +1342,27 @@ class Auto:
             why = f"{reason} 체결로 보였지만 키움 잔고가 {max(0, drop)}주만 줄었습니다 (체결로 보인 것 {claimed}주) · 실제로 줄어든 만큼만 기록"
         avg = (amount - pos["sold_amount"]) / (total - before) if total > before else 0
         self._need_check(now, pos, why, sold_qty=real, sold_amount=pos["sold_amount"] + (real - before) * avg,
-                         target_filled=0, old_target=None, target_order=None, exit_order=None)
+                         target_filled=0, old_target=None, target_order=None, exit_order=None,
+                         claim_qty=total, claim_amount=amount, claim_reason=reason)
         if tf and real == before:
             self.log(now, f"({pos['name']} 오늘 목표가 체결로 보인 {tf}주도 반영하지 않았습니다)")
         return False
+
+    def _recheck(self, now: dt.datetime, mode: str, today: str) -> None:
+        """체결 오인 의심으로 '확인 필요'가 된 포지션: 잔고가 체결로 보인 만큼 줄었으면 (반영이 늦었던 것) 스스로 닫는다."""
+        for pos in self.positions("active"):
+            if pos["status"] != "check" or pos.get("claim_qty") is None or pos.get("unsure"):
+                continue
+            held = self._qty(now, mode, pos["code"])
+            if held is None:
+                continue
+            if pos.get("base_qty") is None:
+                ok = held - self._others(pos, today) <= 0
+            else:
+                ok = pos["base_qty"] - held >= pos["claim_qty"] - (pos["base_sold"] or 0)
+            if ok:
+                self.log(now, f"{pos['name']} 키움 잔고가 체결만큼 줄어 '확인 필요'를 풀고 정리합니다 (잔고 반영이 늦었던 것)")
+                self._close(now, pos, pos["claim_reason"] or pos["exit_reason"] or "목표", pos["claim_qty"], pos["claim_amount"])
 
     def _watch_holdings(self, now: dt.datetime, holdings: list[dict], actives: list[dict]) -> None:
         """키움 잔고에만 있는 종목 · 앱 기록보다 많은 종목 → 기록·알림 (같은 종목은 하루 한 번). 화면용 목록도 남긴다."""
@@ -1365,7 +1459,7 @@ class Auto:
         self._upd("at_positions", pos["id"], now, status="closed", sold_qty=sold_qty, sold_amount=sold_amount,
                   exit_date=now.date().isoformat(), exit_price=price, ret=ret, exit_reason=reason, target_order=None,
                   target_filled=0, old_target=None, unsure=None, unsure_qty=None, unsure_at=None, unsure_seen=None,
-                  check_msg=None, carry=None)
+                  check_msg=None, carry=None, claim_qty=None, claim_amount=None, claim_reason=None)
         self._hold.pop(pos["id"], None)
         slip = (price / pos["exit_ref"] - 1) * 100 if price and pos.get("exit_ref") else None
         self.log(now, f"{reason} 매도 체결 {pos['name']} {price:,.0f}원 · {ret:+.2f}%"
@@ -1450,6 +1544,7 @@ class Auto:
         self._resolve_buys(now, seen, today)
         self._track_old_targets(now, mode, ex, today)
         self._resolve_unsure(now, mode, seen, today, decisive)
+        self._recheck(now, mode, today)
         # 매수 체결 (여러 날 유효한 지정가 주문도 있으니 날짜가 아니라 상태로 찾는다)
         first = (self.settings()["strategies"] or [{"id": None}])[0]["id"]
         for p in self._q("SELECT * FROM at_plans WHERE status IN ('ordered', 'partial')"):
@@ -1468,7 +1563,9 @@ class Auto:
                     continue
                 need = pos["qty"] - pos["sold_qty"] - tf
                 total, amount = pos["sold_qty"] + tf + e["qty"], pos["sold_amount"] + tf * tp + e["qty"] * e["price"]
-                if e["qty"] >= need:
+                if e["qty"] >= need or e["qty"] >= int(e.get("ordered") or need):  # 낸 주문은 다 체결 (잔고 한도로 덜 낸 경우 포함)
+                    if e["qty"] < need:
+                        self.log(now, f"{pos['name']} 키움 잔고 한도로 {e['qty']}주만 팔았고 다 체결 · 모자란 {need - e['qty']}주는 키움에 없어 판 것으로 치지 않음")
                     self._settle(now, mode, pos, pos["exit_reason"], total, amount, decisive)
                 elif not decisive:  # 매도 주문이 덜 팔고 끝났다 (취소 등) → 판 만큼만 기록하고 사람에게
                     self._need_check(now, pos, f"{pos['exit_reason']} 매도 주문이 {e['qty']}주만 체결되고 끝남 · 남은 {need - e['qty']}주",
@@ -1487,14 +1584,21 @@ class Auto:
         self._ensure_targets(now, mode, today)
 
     def _check_stops(self, now: dt.datetime, mode: str) -> None:
-        opens = [p for p in self.positions("active") if p["status"] == "open"]
+        """손절. '확인 필요' 종목은 팔지 않고(무엇이 내 주식인지 확실치 않음) 손절선 아래면 바로 알린다 (종목당 하루 한 번)."""
+        opens = [p for p in self.positions("active") if p["status"] in ("open", "check")]
         if not opens:
             return
         px = self.kw.quotes(mode, sorted({p["code"] for p in opens}))
         for pos in opens:
             v = px.get(pos["code"])
-            if v and pos["stop_price"] and v <= pos["stop_price"]:
+            if not (v and pos["stop_price"] and v <= pos["stop_price"]):
+                continue
+            if pos["status"] == "open":
                 self._sell_all(now, pos, mode, "손절", ref=v)
+            elif self._warn(now, f"check-stop:{pos['code']}"):
+                self.log(now, f"⚠ 확인 필요 종목 {pos['name']}이 손절선 아래 ({v:,.0f}원 ≤ {pos['stop_price']:,.0f}원) — 자동으로 팔지 않습니다")
+                self.notify(f"⚠ 손절선 아래 · 확인 필요 {pos['name']}",
+                            f"지금 {v:,.0f}원 (손절 {pos['stop_price']:,.0f}원). 확인 필요 상태라 자동으로 팔지 않습니다 — 키움 앱에서 확인해 직접 정리해 주세요")
 
     def _held_days(self, entry_date: str, today: dt.date) -> int:
         """체결일 다음부터 오늘까지 거래일 수 (오늘이 거래일이면 오늘 포함).
@@ -1630,6 +1734,17 @@ class Auto:
             self.log(now, "⚠ " + msg)
             self.notify("⚠ 자동 매매 비상 정지", msg)
             return {"cancelled": cancelled, "sold": sold, "failed": failed, "unsure": unsure}
+
+    def _remind_checks(self, now: dt.datetime) -> None:
+        """'확인 필요'가 남아 있으면 08:50·12:00·14:00 에 다시 알린다 (방치 방지). 그 시각부터 10분 안에 한 번."""
+        slot = next((x for x in reversed(CHECK_REMIND) if x <= now.time()), None)
+        if slot is None or now > dt.datetime.combine(now.date(), slot) + dt.timedelta(minutes=10):
+            return
+        names = [p["name"] for p in self.positions("active") if p["status"] == "check"]
+        names += [p["name"] for p in self._q("SELECT name FROM at_plans WHERE status = 'check'")]
+        if names and self._warn(now, f"check-remind:{slot}"):
+            self.notify(f"⚠ 확인 필요 {len(names)}종목 — 앱에서 정리해 주세요",
+                        ", ".join(names[:6]) + " · 키움 앱에서 확인한 뒤 앱(매매 → 키움 자동)에서 정리 버튼을 눌러 주세요")
 
     def _due(self, now: dt.datetime, overdue: bool) -> list[dict]:
         """기간이 찬(overdue=True 면 이미 지난) 보유 종목. held 에 보유 거래일 수를 붙여 준다."""
@@ -1873,6 +1988,7 @@ class Auto:
                 self._err(now, name, e)
                 return False
 
+        step("확인 필요 알림", lambda: self._remind_checks(now))
         # 2) 08:50 매수 + 목표가 주문 다시 걸기 (늦게 켜졌으면 09:30 까지)
         if BUY_AT <= t < LATE_BUY_UNTIL and st.get("buy_done") != tstr:
             self._set_state(buy_done=tstr)

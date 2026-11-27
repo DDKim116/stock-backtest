@@ -421,7 +421,36 @@ function StrategyCard({
                         {p.msg && <span className="text-faint"> · {p.msg}</span>}
                       </div>
                     </button>
-                    {canApprove ? (
+                    {p.status === "check" ? (
+                      // 결과 모르는 매수: 키움 앱에서 확인한 대로 정리 (앱은 스스로 받지 않음)
+                      <div className="flex shrink-0 gap-1">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => {
+                            const q = window.prompt(`${p.name}: 키움 앱에서 확인한 체결 수량 (1~${p.qty}주)`, String(p.qty));
+                            if (!q) return;
+                            const pr = window.prompt(`${p.name}: 체결 평균가 (원)`, String(p.limit_price));
+                            if (!pr) return;
+                            run(
+                              () => api(`/api/auto/plans/${p.id}/resolve`, { body: { action: "bought", qty: Number(q), price: Number(pr) } }),
+                              `${p.name} 매수를 기록했습니다`,
+                            );
+                          }}
+                          className="rounded-lg border border-border px-2 py-1 text-xs"
+                        >
+                          샀음
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => run(() => api(`/api/auto/plans/${p.id}/resolve`, { body: { action: "not_bought" } }), `${p.name} 안 산 것으로 정리했습니다`)}
+                          className="rounded-lg border border-border px-2 py-1 text-xs"
+                        >
+                          안 샀음
+                        </button>
+                      </div>
+                    ) : canApprove ? (
                       <div className="flex shrink-0 gap-1">
                         <button
                           type="button"
@@ -526,7 +555,10 @@ function StrategyCard({
                   {p.status === "check" && (
                     <div className="mt-1 rounded-md bg-critical/10 p-2 text-xs text-critical">
                       ⚠ {p.check_msg ?? "확인 필요"}
-                      <span className="block text-faint">키움 앱에서 이 종목 주문·잔고를 확인한 뒤 골라 주세요 (그전까지 자동 매매가 손대지 않아요)</span>
+                      <span className="block text-faint">
+                        키움 앱에서 이 종목 주문·잔고를 확인한 뒤 골라 주세요 (그전까지 자동 매매가 손대지 않아요) · &apos;다시 관리&apos;는 키움에 걸린
+                        매도 주문이 없을 때만
+                      </span>
                       <div className="mt-1 flex gap-2">
                         <button
                           type="button"
@@ -534,7 +566,7 @@ function StrategyCard({
                           onClick={() => run(() => api(`/api/auto/positions/${p.id}/resolve`, { body: { action: "resume" } }), `${p.name} 다시 관리합니다`)}
                           className="rounded-lg border border-border px-2 py-0.5 text-foreground"
                         >
-                          남은 주식 다시 관리
+                          걸린 주문 없음 · 다시 관리
                         </button>
                         <button
                           type="button"

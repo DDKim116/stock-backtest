@@ -1960,6 +1960,22 @@ def auto_resolve(pid: int, body: AutoResolveIn):
     return auto_view()
 
 
+class AutoPlanResolveIn(BaseModel):
+    action: str  # bought: 실제로 샀음 · not_bought: 안 샀음
+    qty: int | None = None
+    price: float | None = None
+
+
+@app.post("/api/auto/plans/{pid}/resolve", dependencies=[Depends(auth)])
+def auto_plan_resolve(pid: int, body: AutoPlanResolveIn):
+    """'확인 필요' 매수 후보를 키움 앱에서 확인한 뒤 정리."""
+    try:
+        _auto().resolve_plan(pid, body.action, _kst_now().replace(tzinfo=None), body.qty, body.price)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    return auto_view()
+
+
 @app.post("/api/auto/plan-now", dependencies=[Depends(auth)])
 def auto_plan_now():
     """지금 데이터로 다음 거래일 후보를 다시 만든다 (시험용: 주말에도 됨)."""
