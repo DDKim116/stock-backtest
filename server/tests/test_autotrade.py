@@ -698,3 +698,28 @@ def test_view_shows_no_candidates_instead_of_old_list(env):
     a.tick(T(26, 17, 0))
     v = a.view("2026-10-26")
     assert v["plan_date"] == "2026-10-27" and not [p for p in v["plans"] if p["trade_date"] == "2026-10-26"]
+
+
+def test_manual_sell_retries_after_cancel(env):
+    a, kw, runner, sent = env
+    a.retry_wait = 0
+    runner.rows["2026-10-23"] = [{"code": "000001", "name": "가", "signal_date": "2026-10-23", "close": 10_000, "value": 5e9}]
+    a.tick(T(23, 17, 0))
+    a.approve(a.plans("2026-10-26")[0]["id"], True, T(23, 18, 0))
+    a.tick(T(26, 8, 50))
+    kw.fill(kw.find(side="buy")[0], 10_000)
+    a.tick(T(26, 9, 1))
+    pos = a.positions("active")[0]
+    assert pos["target_order"]
+    real = kw.sell_market
+    calls = []
+
+    def flaky(mode, code, qty):
+        calls.append(qty)
+        if len(calls) == 1:
+            raise RuntimeError("[2000](800033:모의투자 매도가능수량이 부족합니다.)")
+        return real(mode, code, qty)
+
+    kw.sell_market = flaky
+    a.manual_sell(pos["id"], T(26, 9, 39))
+    assert len(calls) == 2 and a.positions("active")[0]["status"] == "closing"

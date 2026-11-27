@@ -302,13 +302,17 @@ def executions(mode: str) -> dict[str, dict]:
     for no, rs in by.items():
         ordered = max(abs(num(r.get("ord_qty")) or 0) for r in rs)
         left = min(abs(num(r.get("oso_qty")) or 0) for r in rs)
-        filled = ordered - left
         q = [abs(num(r.get("cntr_qty")) or 0) for r in rs]
         p = [abs(num(r.get("cntr_pric")) or 0) for r in rs]
-        if sum(q) and abs(sum(q) - filled) < 0.5:  # 체결마다 한 줄
-            price = sum(a * b for a, b in zip(q, p)) / sum(q)
-        else:  # 주문마다 누적 한 줄
-            price = p[-1]
+        # 체결 수량은 실제 체결(cntr_qty)로 센다. '주문 - 미체결'은 취소된 주문이면 미체결이 0 이 돼서
+        # 취소한 수량까지 체결로 잘못 센다 (10/29 에이디테크놀로지: 목표가 주문 취소 → '목표 매도 체결'로 오인).
+        sq = sum(q)
+        real = sq if sq <= ordered + 0.5 else max(q)  # 체결마다 한 줄이면 합, 누적 줄이 여러 개면 가장 큰 값
+        filled = min(ordered - left, real)
+        if sq and abs(sq - real) < 0.5:  # 체결마다 한 줄 (또는 누적 한 줄)
+            price = sum(a * b for a, b in zip(q, p)) / sq
+        else:
+            price = p[q.index(max(q))] if q else 0
         out[no] = {"qty": int(filled), "price": price, "left": int(left), "ordered": int(ordered),
                    "code": str(rs[0].get("stk_cd", ""))[-6:],
                    "side": "sell" if "매도" in str(rs[0].get("io_tp_nm", "")) else "buy"}

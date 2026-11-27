@@ -20,6 +20,7 @@ from __future__ import annotations
 import datetime as dt
 import re
 import threading
+import time
 from typing import Callable
 
 from .api.store import _lock
@@ -89,6 +90,7 @@ class Auto:
         self._expect: dict = {}
         self._last_rec: dt.datetime | None = None
         self._errs: dict[str, dt.datetime] = {}  # 단계 오류 → 마지막으로 기록한 때
+        self.retry_wait = 1.5  # 목표가 취소 뒤 매도 다시 시도 간격(초)
         self._miss: dict[int, int] = {}  # 포지션 id → 잔고가 모자란 것을 본 횟수 (두 번 연속이면 직접 매도로 본다)
         db = store.db
         with _lock:
@@ -699,9 +701,11 @@ class Auto:
 
     def _sell_all(self, now: dt.datetime, pos: dict, mode: str, reason: str, ref: float | None = None) -> bool:
         """목표가 주문 취소 → 시장가 매도. 주문이 들어갔으면 True. 실패 기록·알림은 종목·사유마다 10분에 한 번."""
+        cancelled = False
         if pos["target_order"] and pos["target_date"] == now.date().isoformat():
             try:
                 self.kw.cancel(mode, pos["code"], pos["target_order"])
+                cancelled = True
             except Exception as e:  # noqa: BLE001 — 이미 체결·취소됐을 수 있다
                 if self._once(now, f"cancel:{pos['id']}"):
                     self.log(now, f"목표가 주문 취소 실패 {pos['name']}: {e}")
@@ -713,7 +717,7 @@ class Auto:
         if left <= 0:
             return True
         try:
-            no = self.kw.sell_market(mode, pos["code"], left)
+            no = self._sell_retry(mode, pos["code"], left, cancelled)
         except Exception as e:  # noqa: BLE001
             if self._once(now, f"sell:{pos['id']}:{reason}"):
                 self.log(now, f"{reason} 매도 주문 실패 {pos['name']}: {e}")
@@ -725,6 +729,17 @@ class Auto:
         self.log(now, f"{reason} 매도 주문 {pos['name']} {left}주 (시장가)" + (f" · 기준가 {ref:,.0f}원" if ref else "")
                  + f" · 주문번호 {no}")
         return True
+
+    def _sell_retry(self, mode: str, code: str, qty: int, cancelled: bool) -> str:
+        """목표가 주문을 막 취소했으면 키움이 취소를 처리하기 전엔 '매도가능수량 부족'이 난다 → 잠깐 기다렸다 다시."""
+        for k in range(4):
+            try:
+                return self.kw.sell_market(mode, code, qty)
+            except Exception as e:  # noqa: BLE001
+                if not (cancelled and "매도가능수량" in str(e) and k < 3):
+                    raise
+                time.sleep(self.retry_wait)
+        raise RuntimeError("unreachable")
 
     def _once(self, now: dt.datetime, key: str, every: int = 600) -> bool:
         last = self._errs.get(key)
