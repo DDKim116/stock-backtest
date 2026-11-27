@@ -101,3 +101,131 @@ def test_throttle(monkeypatch):
     kiwoom._throttle("kt00018")
     kiwoom._throttle("kt00018")
     assert slept == [0.4]  # 같은 순간 두 번째 호출은 0.4초 기다린다
+
+
+# ---------------------------------------------------------------- 주문 중복 방지 (결과 모르면 다시 보내지 않는다)
+import requests  # noqa: E402
+from urllib3.exceptions import MaxRetryError, NewConnectionError, ProtocolError  # noqa: E402
+
+
+@pytest.fixture
+def net(tmp_path, monkeypatch):
+    """가짜 키움: 경로별로 응답(또는 예외)을 차례로 돌려준다. 실제 네트워크는 쓰지 않는다."""
+    monkeypatch.setattr(kiwoom.config, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(kiwoom.time, "sleep", lambda s: None)
+    kiwoom._tokens.clear()
+    kiwoom.set_keys("mock", "APPKEY123456789", "SECRET123456789")
+    st = {"calls": [], "token": [], "api": []}
+
+    def post(url, json=None, headers=None, timeout=None):
+        path = url.split("kiwoom.com", 1)[1]
+        st["calls"].append((path, (headers or {}).get("api-id")))
+        q = st["token"] if path == "/oauth2/token" else st["api"]
+        r = q.pop(0) if q else (_Resp({"return_code": 0, "token": "TOK"}) if path == "/oauth2/token"
+                                else _Resp({"return_code": 0, "ord_no": "0001234"}))
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+    monkeypatch.setattr(kiwoom.requests, "post", post)
+    return st
+
+
+class _Html:
+    def __init__(self, status):
+        self.status_code, self.text = status, "<html>Bad Gateway</html>"
+
+    def json(self):
+        raise ValueError("not json")
+
+
+def _refused():
+    return requests.exceptions.ConnectionError(MaxRetryError(None, "/x", reason=NewConnectionError(None, "refused")))
+
+
+def _aborted():
+    return requests.exceptions.ConnectionError(ProtocolError("Connection aborted.", ConnectionResetError(104, "reset")))
+
+
+def _orders(st):
+    return [c for c in st["calls"] if c[0] == "/api/dostk/ordr"]
+
+
+@pytest.mark.parametrize("err", [requests.exceptions.ReadTimeout("Read timed out"), _aborted(), _Html(502),
+                                 _Resp({"return_code": 1, "return_msg": "서버 내부 오류"}, status=500)])
+def test_order_not_retried_when_result_unknown(net, err):
+    net["api"] = [err]
+    with pytest.raises(kiwoom.KiwoomUncertain):
+        kiwoom.buy_limit("mock", "005930", 1, 70000)
+    assert len(_orders(net)) == 1  # 두 번 보내지 않는다
+
+
+@pytest.mark.parametrize("err", [requests.exceptions.ConnectTimeout("connect timeout"), _refused(),
+                                 _Resp({"return_code": 1700, "return_msg": "[1700] 허용된 요청 개수를 초과하였습니다"})])
+def test_order_retried_when_surely_not_sent(net, err):
+    net["api"] = [err]
+    assert kiwoom.sell_market("mock", "005930", 3) == "1234"
+    assert len(_orders(net)) == 2
+
+
+def test_order_retried_after_token_expired(net):
+    net["api"] = [_Resp({"return_code": 3, "return_msg": "[8005] Token이 유효하지 않습니다"})]
+    assert kiwoom.cancel("mock", "005930", "77") == "1234"
+    assert len(_orders(net)) == 2 and sum(1 for c in net["calls"] if c[0] == "/oauth2/token") == 2
+
+
+def test_order_rejected_is_plain_error(net):
+    net["api"] = [_Resp({"return_code": 20, "return_msg": "[2000](800033:모의투자 매도가능수량이 부족합니다.)"})]
+    with pytest.raises(kiwoom.KiwoomError) as ei:
+        kiwoom.sell_market("mock", "005930", 3)
+    assert not isinstance(ei.value, kiwoom.KiwoomUncertain) and len(_orders(net)) == 1
+
+
+def test_order_ok_without_order_no_is_unknown(net):
+    net["api"] = [_Resp({"return_code": 0, "return_msg": "정상"})]
+    with pytest.raises(kiwoom.KiwoomUncertain):
+        kiwoom.sell_limit("mock", "005930", 3, 71000)
+
+
+def test_token_failure_is_not_unknown(net):
+    """토큰 받기에서 끊긴 것은 주문이 안 나간 것 → '결과 모름'이 아니다."""
+    net["token"] = [requests.exceptions.ReadTimeout("t")] * 3
+    with pytest.raises(kiwoom.KiwoomError) as ei:
+        kiwoom.buy_limit("mock", "005930", 1, 70000)
+    assert not isinstance(ei.value, kiwoom.KiwoomUncertain) and not _orders(net)
+
+
+def test_query_still_retried_on_timeout_and_5xx(net):
+    net["api"] = [requests.exceptions.ReadTimeout("t"), _Html(502), _Resp({"return_code": 0, "cntr": []})]
+    assert kiwoom.executions("mock") == {}
+    assert len([c for c in net["calls"] if c[0] == "/api/dostk/acnt"]) == 3
+    net["api"] = [requests.exceptions.ReadTimeout("t")] * 3
+    with pytest.raises(kiwoom.KiwoomError) as ei:
+        kiwoom.balance("mock")
+    assert not isinstance(ei.value, kiwoom.KiwoomUncertain)  # 조회 오류는 '결과 모름'으로 올리지 않는다
+
+
+def test_not_sent_classifier_with_real_sockets():
+    """실제 예외 모양 확인 (이 컴퓨터 안에서만, 프록시 설정은 무시): 연결 거부는 '안 보냄', 응답 대기 중 시간 초과는 '모름'."""
+    import socket
+
+    sess = requests.Session()
+    sess.trust_env = False
+    with pytest.raises(requests.RequestException) as ei:
+        sess.post("http://127.0.0.1:1/x", json={}, timeout=2)
+    assert kiwoom._not_sent(ei.value)
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    try:
+        with pytest.raises(requests.exceptions.ReadTimeout) as ei:
+            sess.post(f"http://127.0.0.1:{srv.getsockname()[1]}/x", json={}, timeout=0.3)
+        assert not kiwoom._not_sent(ei.value)
+    finally:
+        srv.close()
+
+
+def test_real_orders_still_blocked():
+    assert kiwoom.ORDER_MODES == {"mock"}
+    with pytest.raises(kiwoom.KiwoomError, match="실전 주문"):
+        kiwoom.sell_market("real", "005930", 1)

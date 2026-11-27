@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 
 import requests
+from urllib3.exceptions import ConnectTimeoutError, MaxRetryError
 
 from .. import config
 
@@ -24,6 +26,11 @@ _tokens: dict[str, tuple[str, float]] = {}  # mode → (token, 만료 시각)
 
 class KiwoomError(Exception):
     pass
+
+
+class KiwoomUncertain(KiwoomError):
+    """주문이 키움에 들어갔는지 알 수 없는 오류 (응답 시간 초과·키움 서버 오류·응답 중 끊김).
+    다시 보내면 같은 주문이 두 번 나갈 수 있으니 자동으로 다시 보내지 않는다. 주문(/api/dostk/ordr)에서만 올린다."""
 
 
 # ---------------------------------------------------------------- 키 보관
@@ -91,16 +98,36 @@ def _post(mode: str, path: str, body: dict, headers: dict | None = None) -> dict
     try:
         r = requests.post(BASES[mode] + path, json=body, headers={**_HEADERS, **(headers or {})}, timeout=15)
     except requests.RequestException as e:
-        raise KiwoomError(f"키움 서버에 연결하지 못했습니다: {e}") from e
+        if _not_sent(e):
+            raise KiwoomError(f"키움 서버에 연결하지 못했습니다: {e}") from e
+        # 응답 시간 초과·응답 중 끊김: 요청은 키움에 닿았을 수 있다
+        raise KiwoomUncertain(f"키움 응답을 받지 못했습니다 (결과 모름): {e}") from e
     try:
         data = r.json()
     except ValueError:
-        if r.status_code >= 500:  # 키움 서버 쪽 일시 오류 (HTML 페이지가 온다)
-            raise KiwoomError(f"키움 응답 오류 {r.status_code}: 키움 서버 일시 오류 (잠시 뒤 저절로 풀림)")
+        if r.status_code >= 500:  # 키움 서버 쪽 일시 오류 (HTML 페이지가 온다) — 요청이 처리됐는지는 모른다
+            raise KiwoomUncertain(f"키움 응답 오류 {r.status_code}: 키움 서버 일시 오류 (잠시 뒤 저절로 풀림)")
         raise KiwoomError(f"키움 응답 오류 {r.status_code}: {r.text[:200]}")
+    if r.status_code >= 500:
+        raise KiwoomUncertain(f"키움 응답 오류 {r.status_code}: {_explain(data.get('return_msg') or '키움 서버 일시 오류')}")
     if r.status_code >= 400 or data.get("return_code", 0) not in (0, "0"):
         raise KiwoomError(_explain(data.get("return_msg") or f"HTTP {r.status_code}"))
     return data
+
+
+def _not_sent(e: requests.RequestException) -> bool:
+    """연결을 맺지 못해 요청이 키움에 닿지 않은 게 확실한 오류 (연결 시간 초과·연결 거부·주소 못 찾음)."""
+    if isinstance(e, requests.exceptions.ConnectTimeout):
+        return True
+    if isinstance(e, (requests.exceptions.ProxyError, requests.exceptions.SSLError)):
+        return False
+    if isinstance(e, requests.exceptions.ConnectionError):
+        r = e.args[0] if e.args else None
+        # 연결 단계 실패는 MaxRetryError(reason=NewConnectionError·ConnectTimeoutError) 로 온다.
+        # 보낸 뒤 끊긴 것은 ProtocolError('Connection aborted.') 라서 여기 해당하지 않는다.
+        return isinstance(r, MaxRetryError) and isinstance(r.reason, ConnectTimeoutError)
+    return isinstance(e, (requests.exceptions.URLRequired, requests.exceptions.MissingSchema,
+                          requests.exceptions.InvalidSchema, requests.exceptions.InvalidURL))
 
 
 def _explain(msg: str) -> str:
@@ -147,19 +174,49 @@ def _throttle(api_id: str, path: str = "") -> None:
         _last_call[key] = time.monotonic()
 
 
+ORDER_PATH = "/api/dostk/ordr"
+
+
+def _rate_limited(msg: str) -> bool:
+    """요청 개수 제한 거절인지: 오류 코드 1700~1702 나 '요청 개수·호출 횟수' 문구만.
+    '매도가능수량을 초과' 같은 확정 거절은 아니다 (다시 보내도 소용없음)."""
+    return bool(re.search(r"(?<!\d)170[0-2](?!\d)", msg)) or any(w in msg for w in ("요청 개수", "요청개수", "호출 횟수", "호출횟수"))
+
+
 def call(mode: str, path: str, api_id: str, body: dict) -> dict:
+    """키움 호출. 일시 오류는 잠시 뒤 다시 (최대 3번).
+
+    주문·정정·취소(/api/dostk/ordr)는 요청이 키움에 닿았을 수 있는 오류(응답 시간 초과·5xx·응답 중 끊김)에서
+    다시 보내지 않고 KiwoomUncertain 을 올린다 — 다시 보내면 같은 주문이 두 번 나갈 수 있다.
+    확실히 안 나간 경우(연결 실패·요청 개수 제한 거절·토큰 만료 거절)만 다시 보낸다. 조회는 전처럼 다시 시도한다.
+    """
+    order = path == ORDER_PATH
     for attempt in range(3):
         _throttle(api_id, path)
         try:
-            return _post(mode, path, body, {"api-id": api_id, "authorization": f"Bearer {token(mode)}",
-                                            "cont-yn": "N", "next-key": ""})
+            auth = f"Bearer {token(mode)}"
+        except KiwoomError as e:  # 토큰 받기 단계: 주문은 아직 안 나갔다
+            msg = str(e)
+            if attempt < 2 and (isinstance(e, KiwoomUncertain) or "연결하지 못했습니다" in msg or _rate_limited(msg)):
+                time.sleep(1.0 + attempt)
+                continue
+            raise KiwoomError(msg) from e
+        try:
+            return _post(mode, path, body, {"api-id": api_id, "authorization": auth, "cont-yn": "N", "next-key": ""})
+        except KiwoomUncertain as e:
+            if order:
+                raise  # 주문은 결과를 모르면 다시 보내지 않는다
+            if attempt < 2:
+                time.sleep(1.0 + attempt)  # 조회: 키움 서버 일시 오류(502·503·504)·끊김 → 잠시 뒤 다시
+                continue
+            raise KiwoomError(str(e)) from e  # 조회 오류는 '결과 모름'으로 올리지 않는다
         except KiwoomError as e:
             msg = str(e)
-            if attempt < 2 and ("1700" in msg or "1701" in msg or "1702" in msg or "초과" in msg):
+            if attempt < 2 and _rate_limited(msg):
                 time.sleep(1.2)  # 요청 개수 제한 → 잠시 뒤 다시
                 continue
-            if attempt < 2 and ("응답 오류 5" in msg or "연결하지 못했습니다" in msg):
-                time.sleep(1.0 + attempt)  # 키움 서버 일시 오류(502·503·504)·끊김 → 잠시 뒤 다시
+            if attempt < 2 and "연결하지 못했습니다" in msg:
+                time.sleep(1.0 + attempt)  # 연결 자체가 안 됨 → 요청이 안 나갔으니 다시
                 continue
             if attempt < 2 and ("8005" in msg or "Token이 유효하지" in msg):
                 with _lock:
@@ -292,8 +349,14 @@ def balance(mode: str) -> dict:
             "assets": num(d.get("prsm_dpst_aset_amt")), "holdings": rows}
 
 
+def _kind(io_tp_nm) -> str:
+    """주문 구분: 원주문(order) · 취소 주문(cancel) · 정정 주문(modify). 취소·정정 줄을 원주문으로 오인하지 않게."""
+    t = str(io_tp_nm or "")
+    return "cancel" if "취소" in t else "modify" if "정정" in t else "order"
+
+
 def executions(mode: str) -> dict[str, dict]:
-    """체결요청(ka10076) 오늘 체결을 주문번호별로 모은다: {ord_no: {qty, price, left}}."""
+    """체결요청(ka10076) 오늘 체결을 주문번호별로 모은다: {ord_no: {qty, price, left, ordered, code, side, kind}}."""
     d = call(mode, "/api/dostk/acnt", "ka10076", {"qry_tp": "0", "sell_tp": "0", "stex_tp": "0"})
     by: dict[str, list[dict]] = {}
     for r in d.get("cntr") or []:
@@ -315,7 +378,28 @@ def executions(mode: str) -> dict[str, dict]:
             price = p[q.index(max(q))] if q else 0
         out[no] = {"qty": int(filled), "price": price, "left": int(left), "ordered": int(ordered),
                    "code": str(rs[0].get("stk_cd", ""))[-6:],
-                   "side": "sell" if "매도" in str(rs[0].get("io_tp_nm", "")) else "buy"}
+                   "side": "sell" if "매도" in str(rs[0].get("io_tp_nm", "")) else "buy", "kind": _kind(rs[0].get("io_tp_nm"))}
+    return out
+
+
+def open_orders(mode: str) -> dict[str, dict]:
+    """미체결요청(ka10075): 아직 체결이 안 끝난 주문 {ord_no: {qty, price, left, ordered, code, side}} (executions 와 같은 모양).
+    체결요청(ka10076)에는 체결이 하나도 없는 주문이 안 보일 수 있어, 결과 모르는 주문을 찾을 때만 같이 본다.
+    ※ 응답 칸 이름(oso·ord_no·ord_qty·oso_qty·cntr_qty)은 실제 응답으로 한 번 확인 필요.
+    목록 칸(oso)이 없으면 '미체결 없음'과 구분할 수 없으니 오류로 올린다 (조용히 빈 결과를 주면 '주문 없음'으로 오인)."""
+    d = call(mode, "/api/dostk/acnt", "ka10075", {"all_stk_tp": "0", "trde_tp": "0", "stk_cd": "", "stex_tp": "0"})
+    if not isinstance(d.get("oso"), list):
+        raise KiwoomError("미체결 조회 응답에 주문 목록(oso)이 없습니다")
+    out = {}
+    for r in d["oso"]:
+        no = str(r.get("ord_no", "")).lstrip("0")
+        ordered = abs(num(r.get("ord_qty")) or 0)
+        if not no or not ordered:
+            continue
+        out[no] = {"qty": int(abs(num(r.get("cntr_qty")) or 0)), "price": abs(num(r.get("cntr_pric")) or 0),
+                   "left": int(abs(num(r.get("oso_qty")) or 0)), "ordered": int(ordered),
+                   "code": str(r.get("stk_cd", ""))[-6:],
+                   "side": "sell" if "매도" in str(r.get("io_tp_nm", "")) else "buy", "kind": _kind(r.get("io_tp_nm"))}
     return out
 
 
@@ -326,10 +410,10 @@ ORDER_MODES = {"mock"}
 def _ord(mode: str, api_id: str, body: dict) -> str:
     if mode not in ORDER_MODES:
         raise KiwoomError("실전 주문은 아직 막혀 있습니다 (모의투자에서 충분히 시험한 뒤 열 예정)")
-    d = call(mode, "/api/dostk/ordr", api_id, {"dmst_stex_tp": "KRX", **body})
+    d = call(mode, ORDER_PATH, api_id, {"dmst_stex_tp": "KRX", **body})
     no = str(d.get("ord_no", "")).lstrip("0")
-    if not no:
-        raise KiwoomError(d.get("return_msg") or "주문번호를 받지 못했습니다")
+    if not no:  # 정상 응답인데 주문번호가 없다 → 들어갔는지 모른다
+        raise KiwoomUncertain(f"주문번호를 받지 못했습니다 (결과 모름): {d.get('return_msg') or ''}".strip())
     return no
 
 

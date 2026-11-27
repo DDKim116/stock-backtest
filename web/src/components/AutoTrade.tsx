@@ -2,7 +2,7 @@
 
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { type Account, asTrade, pnlOf, sizeLabel, wonShort, type AutoStrategy, type AutoView, entryLabel, man, md, type Plan, type Position, untracked, won } from "@/lib/auto";
+import { type Account, asTrade, pnlOf, sizeLabel, wonShort, type AutoStrategy, type AutoView, entryLabel, holdingIssues, man, md, type Plan, type Position, won } from "@/lib/auto";
 import { pct, retClass, today } from "@/lib/format";
 import type { Spec, Strategy, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
@@ -22,6 +22,8 @@ const STATUS: Record<string, [string, string]> = {
   nofill: ["미체결", "text-faint"],
   skipped: ["건너뜀", "text-faint"],
   failed: ["주문 실패", "text-critical"],
+  unknown: ["확인 중", "text-warning"],
+  check: ["확인 필요", "text-critical"],
 };
 const INK = "#10131A";
 // 전략 색 고르기 (서버 autotrade.COLORS 와 같음. 라임 = 중간값 선 색)
@@ -147,11 +149,14 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
             보유 {acct.balance.holdings.length}종목
           </p>
         )}
-        {untracked(acct, v.positions).length > 0 && (
+        {holdingIssues(acct, v.positions, v.untracked).length > 0 && (
           <p className="rounded-md bg-warning/10 p-2 text-xs text-warning">
-            ⚠ 앱이 산 기록이 없는 키움 보유:{" "}
-            {untracked(acct, v.positions)
-              .map((h) => `${h.name} ${h.qty.toLocaleString("ko-KR")}주${h.ret != null ? ` (${h.ret > 0 ? "+" : ""}${h.ret.toFixed(1)}%)` : ""}`)
+            ⚠ 앱 규칙 밖의 키움 보유:{" "}
+            {holdingIssues(acct, v.positions, v.untracked)
+              .map(
+                (h) =>
+                  `${h.name} ${h.qty.toLocaleString("ko-KR")}주${h.kind === "extra" ? " (앱 기록보다 많음)" : ""}${h.ret != null ? ` (${h.ret > 0 ? "+" : ""}${h.ret.toFixed(1)}%)` : ""}`,
+              )
               .join(", ")}
             <span className="block text-faint">
               자동매매 규칙(목표·손절·기간만료)이 적용되지 않아요 · 영웅문에서 직접 샀거나, 앱이 체결을 놓친 경우 · 정리하려면 영웅문에서 직접 매도
@@ -509,8 +514,39 @@ function StrategyCard({
                   <div className="tabular mt-0.5 text-xs text-muted">
                     {(p.qty - (p.sold_qty ?? 0)).toLocaleString("ko-KR")}주 · {won(p.entry_price)} →{" "}
                     <span className="text-foreground">{won(quotes[p.code]?.price)}</span> · 목표 {won(p.target_price || null)} · 손절{" "}
-                    {won(p.stop_price || null)} · {p.status === "closing" ? `${p.exit_reason} 매도 중` : `${md(p.entry_date)} 매수`}
+                    {won(p.stop_price || null)} ·{" "}
+                    {p.status === "closing"
+                      ? `${p.exit_reason} 매도 중`
+                      : p.status === "check"
+                        ? "확인 필요"
+                        : p.carry
+                          ? `다음 장 시작에 ${p.carry} 이어서`
+                          : `${md(p.entry_date)} 매수`}
                   </div>
+                  {p.status === "check" && (
+                    <div className="mt-1 rounded-md bg-critical/10 p-2 text-xs text-critical">
+                      ⚠ {p.check_msg ?? "확인 필요"}
+                      <span className="block text-faint">키움 앱에서 이 종목 주문·잔고를 확인한 뒤 골라 주세요 (그전까지 자동 매매가 손대지 않아요)</span>
+                      <div className="mt-1 flex gap-2">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => run(() => api(`/api/auto/positions/${p.id}/resolve`, { body: { action: "resume" } }), `${p.name} 다시 관리합니다`)}
+                          className="rounded-lg border border-border px-2 py-0.5 text-foreground"
+                        >
+                          남은 주식 다시 관리
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => run(() => api(`/api/auto/positions/${p.id}/resolve`, { body: { action: "close" } }), `${p.name} 정리됨으로 기록했습니다`)}
+                          className="rounded-lg border border-border px-2 py-0.5 text-foreground"
+                        >
+                          이미 정리됨
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -750,7 +786,7 @@ function Health({ v, acct }: { v: AutoView; acct: Account | null }) {
       `보유 ${pos.length}:`,
       ...pos,
       ...(acct
-        ? [`키움 잔고 ${acct.balance.holdings.length}종목 · 앱 기록에 없는 것: ${untracked(acct, v.positions).map((h) => `${h.name}(${h.code}) ${h.qty}주 @${h.avg_price} ${h.ret ?? ""}%`).join(", ") || "없음"}`]
+        ? [`키움 잔고 ${acct.balance.holdings.length}종목 · 앱 규칙 밖: ${holdingIssues(acct, v.positions, v.untracked).map((h) => `${h.name}(${h.code}) ${h.qty}주${h.kind === "extra" ? "(기록보다 많음)" : ""} @${h.avg_price ?? "-"} ${h.ret ?? ""}%`).join(", ") || "없음"}`]
         : []),
       `기록 (최근 ${v.log.length}):`,
       ...v.log.map((l) => `  ${l.ts} ${l.text}`),

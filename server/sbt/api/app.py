@@ -1946,6 +1946,20 @@ def auto_manual_sell(pid: int):
     return auto_view()
 
 
+class AutoResolveIn(BaseModel):
+    action: str  # resume: 다시 관리 · close: 정리됨
+
+
+@app.post("/api/auto/positions/{pid}/resolve", dependencies=[Depends(auth)])
+def auto_resolve(pid: int, body: AutoResolveIn):
+    """'확인 필요' 종목을 키움 앱에서 확인한 뒤 정리."""
+    try:
+        _auto().resolve(pid, body.action, _kst_now().replace(tzinfo=None))
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    return auto_view()
+
+
 @app.post("/api/auto/plan-now", dependencies=[Depends(auth)])
 def auto_plan_now():
     """지금 데이터로 다음 거래일 후보를 다시 만든다 (시험용: 주말에도 됨)."""

@@ -60,6 +60,18 @@ export interface Position {
   signal_date: string | null;
   limit_price: number | null;
   strategy_id: number;
+  check_msg?: string | null; // '확인 필요' 사유 (status === "check")
+  carry?: string | null; // 다음 거래일 장 시작에 이어서 팔 사유
+}
+// 서버 잔고 확인이 찾은 불일치: 키움에만 있는 종목(untracked) · 앱 기록보다 많은 종목(extra, qty = 남는 수량)
+export interface HoldingIssue {
+  code: string;
+  name: string;
+  kind: "untracked" | "extra";
+  qty: number;
+  held?: number;
+  avg_price?: number | null;
+  ret?: number | null;
 }
 export interface AutoView {
   key_saved: boolean;
@@ -72,6 +84,8 @@ export interface AutoView {
   stats_manual: { n: number; win: number; avg: number | null };
   last_plan: { trade_date: string; signal_date: string; count: number; per?: Record<string, number> } | null;
   log: { ts: string; text: string }[];
+  untracked?: HoldingIssue[];
+  untracked_at?: string | null;
   state?: { halted?: string | null; halted_why?: string | null; halt_skipped?: string; last_tick?: string; last_error?: string; buy_done?: string; expire_done?: string; overdue_done?: string; close_done?: string };
   version?: string;
   deploy?: string | null; // 마지막 배포 결과
@@ -96,6 +110,22 @@ export interface Holding {
 export const untracked = (acct: Account | null, positions: { code: string; status: string }[]) => {
   const ours = new Set(positions.filter((p) => p.status !== "closed").map((p) => p.code));
   return (acct?.balance.holdings ?? []).filter((h) => !ours.has(h.code));
+};
+
+// 화면 경고용: 지금 계좌 조회로 본 '앱 기록에 없는 종목' + 서버 잔고 확인 기록(앱 기록보다 많은 종목 포함)을 종목별로 하나로
+export const holdingIssues = (acct: Account | null, positions: { code: string; status: string }[], server?: HoldingIssue[]) => {
+  const out = new Map<string, HoldingIssue>();
+  for (const h of untracked(acct, positions))
+    out.set(h.code, { code: h.code, name: h.name, kind: "untracked", qty: h.qty, held: h.qty, avg_price: h.avg_price, ret: h.ret });
+  for (const h of server ?? []) {
+    if (acct) {
+      // 지금 계좌 조회가 있으면 그것을 믿는다: 이미 정리된 종목 · 이제 앱이 관리하는 종목의 옛 기록은 뺀다
+      if (!acct.balance.holdings.some((x) => x.code === h.code)) continue;
+      if (h.kind === "untracked" && !out.has(h.code)) continue;
+    }
+    out.set(h.code, { ...out.get(h.code), ...h });
+  }
+  return [...out.values()];
 };
 
 export const won = (v: number | null | undefined) => (v == null ? "–" : `${Math.round(v).toLocaleString("ko-KR")}원`);
