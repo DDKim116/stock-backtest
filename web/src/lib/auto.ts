@@ -79,8 +79,24 @@ export interface AutoView {
 }
 export interface Account {
   cash: { orderable: number | null; deposit: number | null };
-  balance: { assets: number | null; total_eval: number | null; pnl: number | null; holdings: unknown[] };
+  balance: { assets: number | null; total_eval: number | null; pnl: number | null; holdings: Holding[] };
 }
+
+export interface Holding {
+  code: string;
+  name: string;
+  qty: number;
+  avg_price: number;
+  price: number;
+  pnl: number | null;
+  ret: number | null;
+}
+
+// 키움에는 있는데 자동매매가 산 기록이 없는 종목 (영웅문에서 직접 샀거나, 앱이 놓친 체결)
+export const untracked = (acct: Account | null, positions: { code: string; status: string }[]) => {
+  const ours = new Set(positions.filter((p) => p.status !== "closed").map((p) => p.code));
+  return (acct?.balance.holdings ?? []).filter((h) => !ours.has(h.code));
+};
 
 export const won = (v: number | null | undefined) => (v == null ? "–" : `${Math.round(v).toLocaleString("ko-KR")}원`);
 export const man = (v: number) => `${Math.round(v / 10000).toLocaleString("ko-KR")}만`;

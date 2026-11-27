@@ -2,7 +2,7 @@
 
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { type Account, asTrade, pnlOf, sizeLabel, wonShort, type AutoStrategy, type AutoView, entryLabel, man, md, type Plan, type Position, won } from "@/lib/auto";
+import { type Account, asTrade, pnlOf, sizeLabel, wonShort, type AutoStrategy, type AutoView, entryLabel, man, md, type Plan, type Position, untracked, won } from "@/lib/auto";
 import { pct, retClass, today } from "@/lib/format";
 import type { Spec, Strategy, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
@@ -115,7 +115,7 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
         {!v.key_saved && (
           <p className="rounded-lg bg-background p-3 text-sm text-warning">설정 → 키움 연결에서 모의투자 키를 먼저 넣어 주세요.</p>
         )}
-        <Health v={v} />
+        <Health v={v} acct={acct} />
         <Safety v={v} run={run} busy={busy} />
         <div className="flex justify-between gap-2 text-sm">
           <span className="text-muted">계좌 사용</span>
@@ -145,6 +145,17 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
           <p className="tabular text-xs text-faint">
             추정자산 {won(acct.balance.assets)} · 평가손익 <span className={retClass(acct.balance.pnl)}>{won(acct.balance.pnl)}</span> · 키움
             보유 {acct.balance.holdings.length}종목
+          </p>
+        )}
+        {untracked(acct, v.positions).length > 0 && (
+          <p className="rounded-md bg-warning/10 p-2 text-xs text-warning">
+            ⚠ 앱이 산 기록이 없는 키움 보유:{" "}
+            {untracked(acct, v.positions)
+              .map((h) => `${h.name} ${h.qty.toLocaleString("ko-KR")}주${h.ret != null ? ` (${h.ret > 0 ? "+" : ""}${h.ret.toFixed(1)}%)` : ""}`)
+              .join(", ")}
+            <span className="block text-faint">
+              자동매매 규칙(목표·손절·기간만료)이 적용되지 않아요 · 영웅문에서 직접 샀거나, 앱이 체결을 놓친 경우 · 정리하려면 영웅문에서 직접 매도
+            </span>
           </p>
         )}
       </section>
@@ -711,7 +722,7 @@ function GlobalSettings({ v, busy, onSave }: { v: AutoView; busy: boolean; onSav
 }
 
 // 자동 매매가 살아 있는지: 마지막 확인 시각 · 오늘 단계 · 마지막 오류 · 서버 버전
-function Health({ v }: { v: AutoView }) {
+function Health({ v, acct }: { v: AutoView; acct: Account | null }) {
   const st = v.state ?? {};
   const now = v.now ? new Date(v.now) : null;
   const last = st.last_tick ? new Date(st.last_tick) : null;
@@ -738,6 +749,9 @@ function Health({ v }: { v: AutoView }) {
       `상태: ${JSON.stringify(st)}`,
       `보유 ${pos.length}:`,
       ...pos,
+      ...(acct
+        ? [`키움 잔고 ${acct.balance.holdings.length}종목 · 앱 기록에 없는 것: ${untracked(acct, v.positions).map((h) => `${h.name}(${h.code}) ${h.qty}주 @${h.avg_price} ${h.ret ?? ""}%`).join(", ") || "없음"}`]
+        : []),
       `기록 (최근 ${v.log.length}):`,
       ...v.log.map((l) => `  ${l.ts} ${l.text}`),
     ].join("\n");
