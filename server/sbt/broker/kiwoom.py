@@ -191,12 +191,16 @@ def call(mode: str, path: str, api_id: str, body: dict) -> dict:
     return _call(mode, path, api_id, body)[0]
 
 
+MAX_PAGES = 50  # 연속조회 최대 쪽수. 넘으면 일부만 보고 판단하지 않게 오류('모름')로 올린다
+
+
 def call_rows(mode: str, path: str, api_id: str, body: dict, key: str, required: bool = False,
-              max_pages: int = 20) -> list[dict]:
+              max_pages: int | None = None) -> list[dict]:
     """조회 TR 의 목록 칸(key)을 연속조회로 끝 페이지까지 모은다 (응답 헤더 cont-yn='Y' 면 next-key 로 다음 페이지).
     required: 목록 칸이 없으면 오류 ('없음'과 '모름'을 구분해야 할 때). 다음 페이지를 다 못 읽으면 오류 (일부만 보고 판단하지 않게)."""
     if path == ORDER_PATH:
         raise KiwoomError("주문 TR 은 연속조회하지 않습니다")
+    max_pages = max_pages or MAX_PAGES
     rows: list[dict] = []
     cont, nxt = "N", ""
     for _ in range(max_pages):
@@ -390,7 +394,15 @@ def _kind(io_tp_nm) -> str:
 def executions(mode: str) -> dict[str, dict]:
     """체결요청(ka10076) 오늘 체결을 주문번호별로 모은다: {ord_no: {qty, price, left, ordered, code, side, kind}}."""
     # 체결마다 한 줄이면 첫 페이지만 읽을 때 뒤 체결이 빠진다 → 끝 페이지까지
-    rows = call_rows(mode, "/api/dostk/acnt", "ka10076", {"qry_tp": "0", "sell_tp": "0", "stex_tp": "0"}, "cntr")
+    return _parse_exec(call_rows(mode, ACNT_PATH, "ka10076", EXEC_BODY, "cntr"))
+
+
+EXEC_BODY = {"qry_tp": "0", "sell_tp": "0", "stex_tp": "0"}
+OPEN_BODY = {"all_stk_tp": "0", "trde_tp": "0", "stk_cd": "", "stex_tp": "0"}
+
+
+def _parse_exec(rows: list) -> dict[str, dict]:
+    """ka10076 줄들 → 주문번호별 {qty, price, left, ordered, code, side, kind}."""
     by: dict[str, list[dict]] = {}
     for r in rows:
         by.setdefault(str(r.get("ord_no", "")).lstrip("0") or "0", []).append(r)
@@ -421,10 +433,19 @@ def open_orders(mode: str) -> dict[str, dict]:
     ※ 응답 칸 이름(oso·ord_no·ord_qty·oso_qty·cntr_qty)은 실제 응답으로 한 번 확인 필요.
     목록 칸(oso)이 없거나, 줄이 있는데 하나도 해석 못 하거나, 다음 페이지를 다 못 읽으면 오류로 올린다
     (조용히 빈 결과를 주면 '주문 없음 = 취소 확인됨'으로 오인할 수 있다)."""
-    rows = call_rows(mode, "/api/dostk/acnt", "ka10075", {"all_stk_tp": "0", "trde_tp": "0", "stk_cd": "", "stex_tp": "0"},
-                     "oso", required=True)
+    rows = call_rows(mode, ACNT_PATH, "ka10075", OPEN_BODY, "oso", required=True)
+    out = _parse_open(rows)
+    if rows and not out:
+        raise KiwoomError("미체결 조회 응답을 해석하지 못했습니다 (칸 이름이 다름)")
+    return out
+
+
+def _parse_open(rows: list) -> dict[str, dict]:
+    """ka10075 줄들 → 주문번호별 {qty, price, left, ordered, code, side, kind}. 해석 못 한 줄은 건너뛴다."""
     out = {}
     for r in rows:
+        if not isinstance(r, dict):
+            continue
         no = str(r.get("ord_no", "")).lstrip("0")
         ordered = abs(num(r.get("ord_qty")) or 0)
         if not no or not ordered:
@@ -433,8 +454,32 @@ def open_orders(mode: str) -> dict[str, dict]:
                    "left": int(abs(num(r.get("oso_qty")) or 0)), "ordered": int(ordered),
                    "code": str(r.get("stk_cd", ""))[-6:],
                    "side": "sell" if "매도" in str(r.get("io_tp_nm", "")) else "buy", "kind": _kind(r.get("io_tp_nm"))}
-    if rows and not out:
-        raise KiwoomError("미체결 조회 응답을 해석하지 못했습니다 (칸 이름이 다름)")
+    return out
+
+
+def probe(mode: str) -> dict:
+    """실전 전 확인용 (읽기 전용): 미체결(ka10075)·체결(ka10076) 첫 쪽 응답의 '모양'만 돌려준다.
+    칸 이름·줄 수·첫 줄의 칸 이름·연속조회 헤더(cont-yn 값, next-key 있는지)·우리 파서가 해석한 줄 수.
+    값(계좌번호·종목·가격·메시지)과 토큰은 넣지 않는다. 주문 TR 은 부르지 않는다."""
+    out = {}
+    for api_id, body, key, parse in (("ka10075", OPEN_BODY, "oso", _parse_open), ("ka10076", EXEC_BODY, "cntr", _parse_exec)):
+        try:
+            d, h = _call(mode, ACNT_PATH, api_id, body)
+            hl = {str(k).lower(): v for k, v in h.items()}
+            rows = d.get(key) if isinstance(d.get(key), list) else []
+            first = rows[0] if rows and isinstance(rows[0], dict) else {}
+            cy = str(hl.get("cont-yn", "")).upper()
+            out[api_id] = {
+                "list_key": key, "has_list": isinstance(d.get(key), list),
+                "top_keys": sorted(str(k) for k in d.keys()),
+                "lists": {str(k): len(v) for k, v in d.items() if isinstance(v, list)},
+                "rows": len(rows), "first_row_keys": sorted(str(k) for k in first.keys()),
+                "return_code": str(d.get("return_code", ""))[:6],
+                "cont_yn": cy if cy in ("Y", "N") else ("?" if cy else ""), "has_next_key": bool(hl.get("next-key")),
+                "parsed": len(parse(rows)),
+            }
+        except Exception as e:  # noqa: BLE001
+            out[api_id] = {"error": str(e)[:200]}
     return out
 
 

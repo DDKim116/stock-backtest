@@ -253,3 +253,19 @@ def test_server_alert(client, monkeypatch):
     assert app_mod._server_tick(dt.datetime(2026, 11, 7, 11, 0)) is None  # 그 주엔 한 번만
     monkeypatch.setattr(pulse, "server_updates", lambda: {"updates": 2, "security": 0, "reboot": False})
     assert app_mod._server_tick(dt.datetime(2026, 11, 14, 10, 30)) is None  # 몇 개뿐이면 조용
+
+
+def test_kiwoom_probe_endpoint(client, monkeypatch):
+    """[4차-6] 읽기 전용 키움 응답 점검 API (가짜 키움 응답)."""
+    from sbt.broker import kiwoom
+
+    def fake(mode, path, api_id, body, cont="N", nxt=""):
+        assert path == "/api/dostk/acnt"
+        key = "oso" if api_id == "ka10075" else "cntr"
+        return {"return_code": 0, key: []}, {}
+
+    monkeypatch.setattr(kiwoom, "_call", fake)
+    r = client.get("/api/auto/kiwoom-probe")
+    assert r.status_code == 200, r.text
+    p = r.json()["probe"]
+    assert p["ka10075"]["rows"] == 0 and p["ka10076"]["has_list"] and p["ka10076"]["parsed"] == 0

@@ -93,3 +93,45 @@ def test_open_orders_unknown_when_pages_incomplete_or_unparsed(monkeypatch):
     monkeypatch.setattr(kiwoom, "_call", lambda *a, **k: ({"oso": [{"주문번호": "1", "수량": "5"}]}, {}))
     with pytest.raises(kiwoom.KiwoomError):  # 줄은 있는데 하나도 해석 못 함
         kiwoom.open_orders("mock")
+
+
+def test_page_limit_is_error_not_partial(monkeypatch):
+    """[4차-5] 쪽수 상한(MAX_PAGES)을 넘으면 일부만 돌려주지 않고 오류 ('모름')."""
+    import pytest
+
+    monkeypatch.setattr(kiwoom, "MAX_PAGES", 3)
+    calls = []
+
+    def fake(mode, path, api_id, body, cont="N", nxt=""):
+        calls.append(1)
+        return {"cntr": [{"ord_no": str(len(calls)), "stk_cd": "A000001", "io_tp_nm": "+매수", "ord_qty": "1",
+                          "oso_qty": "0", "cntr_qty": "1", "cntr_pric": "1"}]}, {"cont-yn": "Y", "next-key": "k"}
+
+    monkeypatch.setattr(kiwoom, "_call", fake)
+    with pytest.raises(kiwoom.KiwoomError, match="페이지"):
+        kiwoom.executions("mock")
+    assert len(calls) == 3 and kiwoom.MAX_PAGES == 3
+
+
+def test_probe_shape_only(monkeypatch):
+    """[4차-6] 키움 응답 점검: 칸 이름·줄 수·첫 줄 칸 이름·연속조회 헤더·해석한 줄 수만. 값(계좌번호·가격·메시지)은 없다."""
+    import json
+
+    def fake(mode, path, api_id, body, cont="N", nxt=""):
+        assert path == "/api/dostk/acnt"  # 주문 TR 은 부르지 않는다
+        if api_id == "ka10075":
+            return ({"return_code": 0, "return_msg": "계좌 5512-3456 조회 완료", "acnt_no": "55123456",
+                     "oso": [{"ord_no": "0003340", "stk_cd": "A200710", "io_tp_nm": "-매도", "ord_qty": "286",
+                              "oso_qty": "236", "cntr_qty": "50", "cntr_pric": "19700"}]},
+                    {"cont-yn": "Y", "next-key": "SECRETKEY99"})
+        raise kiwoom.KiwoomError("ka10076 시험 오류")
+
+    monkeypatch.setattr(kiwoom, "_call", fake)
+    r = kiwoom.probe("mock")
+    o = r["ka10075"]
+    assert o["has_list"] and o["rows"] == 1 and o["parsed"] == 1 and o["cont_yn"] == "Y" and o["has_next_key"]
+    assert "ord_no" in o["first_row_keys"] and "oso" in o["top_keys"] and o["lists"] == {"oso": 1}
+    assert "error" in r["ka10076"]
+    text = json.dumps(r, ensure_ascii=False)
+    for secret in ("5512", "55123456", "SECRETKEY99", "19700", "200710", "3340"):
+        assert secret not in text

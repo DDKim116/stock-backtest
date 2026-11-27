@@ -1976,6 +1976,16 @@ def auto_plan_resolve(pid: int, body: AutoPlanResolveIn):
     return auto_view()
 
 
+@app.get("/api/auto/kiwoom-probe", dependencies=[Depends(auth)])
+def auto_kiwoom_probe():
+    """실전 전 확인용 (읽기 전용): 키움 미체결(ka10075)·체결(ka10076) 응답의 모양만 (칸 이름·줄 수·연속조회 헤더·해석한 줄 수).
+    값·계좌번호·토큰은 돌려주지 않고 주문 TR 은 부르지 않는다."""
+    from ..broker import kiwoom
+
+    mode = _auto().settings()["account"]
+    return {"mode": mode, "at": _kst_now().isoformat(timespec="seconds"), "probe": kiwoom.probe(mode)}
+
+
 @app.post("/api/auto/plan-now", dependencies=[Depends(auth)])
 def auto_plan_now():
     """지금 데이터로 다음 거래일 후보를 다시 만든다 (시험용: 주말에도 됨)."""

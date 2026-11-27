@@ -1785,3 +1785,189 @@ def test_manual_sell_deferred_shows_reason(env):
     with pytest.raises(ValueError, match="취소가 아직 확인되지"):
         a.manual_sell(pos["id"], T(29, 10, 0))
     assert not kw.find(side="sell", kind="market")
+
+
+# ---------------------------------------------------------------- 4차: 돌돌이 재현을 '고쳐졌으면 통과'로
+def test_balance_down_uses_recent_balance_for_stop(env):
+    """[돌돌이 X1] 보통 계좌(개인분 없음)에서 잔고 조회만 실패해도 손절이 막히던 문제: 5분 안에 정상으로 읽은 잔고에서
+    그 종목이 우리 몫뿐이었으면 바로 판다. 잔고가 돌아오면 정상으로 닫힌다."""
+    a, kw, runner, sent = env
+    pos = _bought(a, kw, runner, close=10_000, fill=10_000)
+    a.tick(T(29, 9, 58))  # 정상 잔고 읽음
+    real = kw.balance
+    kw.balance = lambda mode: (_ for _ in ()).throw(kiwoom.KiwoomError("키움 응답 오류 502"))
+    kw.prices["200710"] = 9_000
+    a.tick(T(29, 10, 0))
+    m = kw.find(side="sell", kind="market")
+    assert len(m) == 1 and kw.orders[m[0]]["qty"] == 500
+    p = a.positions("active")[0]
+    assert p["status"] == "closing" and p["base_qty"] is None  # 예전 잔고는 기준값으로 쓰지 않는다
+    kw.fill(m[0], 9_000)
+    a.tick(T(29, 10, 0, 20))
+    assert a.positions("active")  # 잔고를 못 읽는 동안은 닫지 않고 기다린다
+    kw.balance = real
+    a.tick(T(29, 10, 0, 40))
+    p = [x for x in a.positions() if x["id"] == pos["id"]][0]
+    assert p["status"] == "closed" and p["exit_reason"] == "손절"
+
+
+def test_balance_down_without_recent_balance_defers_with_cause(env):
+    """최근 5분 안의 정상 잔고도 없으면 보류하고, 미룬 이유는 '잔고를 못 읽어'로 적는다."""
+    a, kw, runner, sent = env
+    pos = _bought(a, kw, runner, close=10_000, fill=10_000)
+    kw.balance = lambda mode: (_ for _ in ()).throw(kiwoom.KiwoomError("키움 응답 오류 502"))
+    kw.prices["200710"] = 9_000
+    a.tick(T(29, 10, 0))
+    assert not kw.find(side="sell", kind="market")
+    assert any("잔고를 못 읽어" in t for t in _logs(a))
+    with pytest.raises(ValueError, match="잔고를 못 읽어"):
+        a.manual_sell(pos["id"], T(29, 10, 1))
+
+
+def test_defer_messages_name_the_cause(env):
+    """[4차-2] 보류 문구가 원인별: 개인분이면 '앱 기록에 없는 같은 종목 주식(개인분 N주)'."""
+    a, kw, runner, sent = env
+    kw.strict, kw.cancel_delay = True, 99
+    kw.manual = {"200710": 120}
+    pos = _bought(a, kw, runner, close=10_000, fill=10_000)
+    with pytest.raises(ValueError, match="개인분 120주"):
+        a.manual_sell(pos["id"], T(29, 10, 0))
+
+
+def test_stale_short_wait_cleared(env):
+    """[돌돌이 X2] 미룬 기록이 남아 나중의 잠깐 반영 지연에서 3분 유예 없이 일부만 팔던 문제: 다시 안 미룬 기록은 지운다."""
+    a, kw, runner, sent = env
+    pos = _bought(a, kw, runner, close=10_000, fill=10_000)
+    real = kw.balance
+    kw.balance = lambda mode: {"assets": 5e7, "holdings": []}  # 손절 순간 잔고가 0으로 보임
+    kw.prices["200710"] = 9_000
+    a.tick(T(29, 10, 0))
+    assert not kw.find(side="sell", kind="market") and a._wait
+    kw.balance = real
+    kw.prices["200710"] = 9_500  # 손절선 위로 회복 → 그 뒤 매도 시도 없음
+    a.tick(T(29, 10, 1))
+    a.tick(T(29, 10, 2))
+    assert not a._wait  # 다시 안 미룬 기록은 지워졌다
+    kw.balance = lambda mode: {"assets": 5e7, "holdings": [{"code": "200710", "qty": 450}]}
+    kw.prices["200710"] = 9_000
+    a.tick(T(29, 13, 0))
+    assert not kw.find(side="sell", kind="market")  # 다시 3분 유예
+    kw.balance = real
+    a.tick(T(29, 13, 0, 20))
+    m = kw.find(side="sell", kind="market")
+    assert len(m) == 1 and kw.orders[m[0]]["qty"] == 500
+    assert pos["id"]
+
+
+def test_wait_keys_have_date(env):
+    """[4차-3] 미룬 기록 키에 날짜가 들어간다 (다른 날로 넘어가지 않게)."""
+    a, kw, runner, sent = env
+    _bought(a, kw, runner, close=10_000, fill=10_000)
+    kw.balance = lambda mode: {"assets": 5e7, "holdings": []}
+    kw.prices["200710"] = 9_000
+    a.tick(T(29, 10, 0))
+    assert a._wait and all(k[-1] == "2026-10-29" for k in a._wait)
+
+
+def test_deferred_position_cheap_on_later_ticks(env):
+    """[돌돌이 X3] 개인분 + 취소 확인 불가로 보류된 종목: 처음에만 1.5초×4 다시 보고, 다음 확인부터는
+    취소를 다시 보내지 않고 기다림 없이 계좌 조회 몇 건(체결·미체결·잔고 각 1번)만."""
+    a, kw, runner, sent = env
+    kw.strict, kw.cancel_delay = True, 99
+    kw.manual = {"200710": 500}
+    pos = _bought(a, kw, runner, close=10_000, fill=10_000)
+    kw.prices["200710"] = 9_000
+    import sbt.autotrade as at
+    n = {"ex": 0, "oo": 0, "bal": 0, "cancel": 0, "sleep": 0}
+    rex, roo, rbal, rc = kw.executions, kw.open_orders, kw.balance, kw.cancel
+
+    def count(key, fn):
+        def f(*x):
+            n[key] += 1
+            return fn(*x)
+        return f
+
+    kw.executions, kw.open_orders, kw.balance, kw.cancel = (count("ex", rex), count("oo", roo), count("bal", rbal),
+                                                          count("cancel", rc))
+    real_sleep = at.time.sleep
+    at.time.sleep = lambda s: n.__setitem__("sleep", n["sleep"] + 1)
+    try:
+        a.tick(T(29, 10, 0))
+        first = dict(n)
+        for k in n:
+            n[k] = 0
+        a.tick(T(29, 10, 0, 20))
+    finally:
+        at.time.sleep = real_sleep
+    assert first["cancel"] == 1 and first["sleep"] >= 4  # 처음 보류: 취소 1번 + 잠깐 다시 보기
+    assert n["sleep"] == 0 and n["cancel"] == 0
+    assert n["ex"] + n["oo"] + n["bal"] <= 3, n
+    assert not kw.find(side="sell", kind="market") and a.positions("active")[0]["old_target"] == pos["target_order"]
+
+
+def test_check_stop_alert_repeats_every_3pct(env):
+    """[4차-4] 확인 필요 종목 손절선 아래 알림: 처음 + 손절선 대비 3%p 더 떨어질 때마다, 하루 최대 4번."""
+    a, kw, runner, sent = env
+    _bought(a, kw, runner, close=10_000, fill=10_000)  # 손절선 9,300
+    a._need_check(T(29, 9, 10), a.positions("active")[0], "시험")
+    alerts = lambda: sum("손절선 아래" in t for t, _ in sent)  # noqa: E731
+    for mm, px, want in ((10, 9_000, 1), (11, 9_000, 1), (12, 8_700, 2), (13, 8_700, 2), (14, 8_400, 3),
+                         (15, 8_100, 4), (16, 7_800, 4), (17, 7_000, 4)):
+        kw.prices["200710"] = px
+        a.tick(T(29, 10, mm))
+        assert alerts() == want, (px, alerts())
+
+
+def test_finished_unknown_when_executions_fail(env):
+    """[4차-5] 체결 조회가 (쪽수 상한 초과 등으로) 실패하면 '끝남'으로 보지 않는다 ('모름')."""
+    a, kw, runner, sent = env
+    pos = _bought(a, kw, runner, close=10_000, fill=10_000)
+    kw.executions = lambda mode: (_ for _ in ()).throw(kiwoom.KiwoomError("ka10076 페이지가 너무 많습니다"))
+    assert a._finished("mock", pos["target_order"], "200710") == (False, None)
+
+
+def test_old_miss_does_not_count_as_second(env):
+    """[돌돌이 X2] 잔고 확인의 '모자람' 기록이 오래 남아 몇 시간 뒤 한 번의 반영 지연을 '키움에서 직접 매도'로 보던 문제."""
+    a, kw, runner, sent = env
+    pos = _bought(a, kw, runner, close=10_000, fill=10_000)
+    real = kw.balance
+    kw.balance = lambda mode: {"assets": 5e7, "holdings": []}
+    a.tick(T(29, 10, 0))  # 잔고가 잠깐 0 으로 보임 (한 번)
+    kw.balance = real
+    a.tick(T(29, 10, 1))  # (2분 간격이라 잔고 확인은 안 돎)
+    kw.balance = lambda mode: {"assets": 5e7, "holdings": [{"code": "200710", "qty": 450}]}
+    a.tick(T(29, 13, 0))  # 세 시간 뒤 한 번 더 잠깐 모자람 → 아직 판단하지 않는다
+    kw.balance = real
+    p = a.positions("active")[0]
+    assert p["sold_qty"] == 0 and not any("직접" in t for t in _logs(a))
+    a.tick(T(29, 13, 2, 30))
+    assert a.positions("active")[0]["sold_qty"] == 0 and pos["id"]
+
+
+def test_cancel_not_sent_is_retried_and_stop_goes_out(env):
+    """목표가 취소가 '연결 실패'로 안 나갔으면 old_target 으로 남아도 1분 뒤 취소를 다시 보내고 손절이 나간다
+    (다시 안 보내면 목표가가 살아 있는 채로 손절·기간만료가 하루 종일 막힘). 돌돌이 4차 Y1."""
+    a, kw, runner, sent = env
+    kw.strict = True
+    pos = _bought(a, kw, runner, close=10_000, fill=10_000)
+    tno = pos["target_order"]
+    real_c = kw.cancel
+    fail = {"n": 1}
+
+    def c(mode, code, no):
+        if fail["n"]:
+            fail["n"] -= 1
+            raise kiwoom.KiwoomError("키움 서버에 연결하지 못했습니다: Max retries exceeded")
+        return real_c(mode, code, no)
+
+    kw.cancel = c
+    kw.prices["200710"] = 9_000
+    t = T(29, 10, 0)
+    while t <= T(29, 10, 10):
+        a.tick(t)
+        t += dt.timedelta(seconds=20)
+    assert tno in kw.cancelled and kw.find(side="sell", kind="market")
+    # 접수된 취소는 다시 보내지 않는다
+    n = len(kw.cancelled)
+    a.tick(T(29, 10, 12))
+    assert len(kw.cancelled) == n

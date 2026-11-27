@@ -790,6 +790,22 @@ function GlobalSettings({ v, busy, onSave }: { v: AutoView; busy: boolean; onSav
 }
 
 // 자동 매매가 살아 있는지: 마지막 확인 시각 · 오늘 단계 · 마지막 오류 · 서버 버전
+// 클립보드 복사 (안 되는 브라우저는 숨긴 입력칸으로)
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+  }
+}
+
 function Health({ v, acct }: { v: AutoView; acct: Account | null }) {
   const st = v.state ?? {};
   const now = v.now ? new Date(v.now) : null;
@@ -803,6 +819,19 @@ function Health({ v, acct }: { v: AutoView; acct: Account | null }) {
   const alive = ago != null && ago < 120;
   const errToday = st.last_error && st.last_error.startsWith(today);
   const [copied, setCopied] = useState(false);
+  const [probed, setProbed] = useState<string | null>(null);
+  // 실전 전 확인: 키움 미체결·체결 응답의 '모양'(칸 이름·줄 수·연속조회 헤더·해석한 줄 수)을 복사 (값·계좌번호 없음)
+  const probe = async () => {
+    setProbed("확인 중…");
+    try {
+      const r = await api(`/api/auto/kiwoom-probe`);
+      await copyText(`[키움 응답 점검]\n${JSON.stringify(r, null, 2)}`);
+      setProbed("복사됨 ✓");
+    } catch (e) {
+      setProbed(`실패: ${e instanceof Error ? e.message : String(e)}`.slice(0, 60));
+    }
+    setTimeout(() => setProbed(null), 4000);
+  };
   // 문제가 생겼을 때 그대로 붙여 보낼 수 있게: 상태 · 보유 종목 · 최근 기록 (키·계좌번호 같은 비밀은 없음)
   const copy = async () => {
     const pos = v.positions
@@ -823,18 +852,7 @@ function Health({ v, acct }: { v: AutoView; acct: Account | null }) {
       `기록 (최근 ${v.log.length}):`,
       ...v.log.map((l) => `  ${l.ts} ${l.text}`),
     ].join("\n");
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      ta.remove();
-    }
+    await copyText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -850,6 +868,9 @@ function Health({ v, acct }: { v: AutoView; acct: Account | null }) {
         {v.version && <span className="tabular text-faint">버전 {v.version}</span>}
         <button type="button" onClick={copy} className="rounded-md border border-border px-2 py-0.5 text-muted">
           {copied ? "복사됨 ✓" : "진단 복사"}
+        </button>
+        <button type="button" onClick={probe} className="rounded-md border border-border px-2 py-0.5 text-muted">
+          {probed ?? "키움 응답 점검"}
         </button>
       </div>
       {errToday && (() => {
