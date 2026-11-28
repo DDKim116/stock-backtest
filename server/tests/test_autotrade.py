@@ -1971,3 +1971,17 @@ def test_cancel_not_sent_is_retried_and_stop_goes_out(env):
     n = len(kw.cancelled)
     a.tick(T(29, 10, 12))
     assert len(kw.cancelled) == n
+
+
+def test_view_positions_carry_server_held_days(env):
+    """화면의 'n일째'는 서버 기간만료 셈 그대로 (공휴일 반영) — 돌돌이 UI ② 발견 2."""
+    a, kw, runner, sent = env
+    runner.rows["2026-10-23"] = [{"code": "000001", "name": "가", "signal_date": "2026-10-23", "close": 10_000, "value": 5e9}]
+    a.tick(T(23, 17, 0))
+    a.approve(a.plans("2026-10-26")[0]["id"], True, T(23, 18, 0))
+    a.tick(T(26, 8, 50))
+    kw.fill(kw.find(side="buy")[0], 10_000)
+    a.tick(T(26, 9, 1))
+    v = a.view("2026-10-28")
+    p = [x for x in v["positions"] if x["status"] != "closed"][0]
+    assert p["held"] == a._held_days(p["entry_date"], dt.date(2026, 10, 28))

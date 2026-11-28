@@ -62,6 +62,7 @@ export interface Position {
   strategy_id: number;
   check_msg?: string | null; // '확인 필요' 사유 (status === "check")
   carry?: string | null; // 다음 거래일 장 시작에 이어서 팔 사유
+  held?: number | null; // 서버가 센 보유 거래일 (공휴일 반영, 기간만료 셈과 같음)
 }
 // 서버 잔고 확인이 찾은 불일치: 키움에만 있는 종목(untracked) · 앱 기록보다 많은 종목(extra, qty = 남는 수량)
 export interface HoldingIssue {

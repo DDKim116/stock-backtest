@@ -23,7 +23,6 @@ import EcosSettings from "./EcosSettings";
 import FredSettings from "./FredSettings";
 import Today from "./Today";
 import AutoTrade from "./AutoTrade";
-import WatchCard from "./WatchCard";
 import Lab from "./Lab";
 import Calendar from "./Calendar";
 import { syncThemeColor } from "@/lib/theme";
@@ -521,8 +520,8 @@ export default function App() {
               키움 <b>모의투자</b> 계좌로 <b>실제 주문</b>이 나갑니다. 앱 안에서 계산만 하는 모투는 &apos;앱 모의&apos;에 있어요.
             </span>
           </div>
+          {/* 장중 실시간 감시(WatchCard)는 키움 자동 화면의 '설정'으로 옮김 */}
           <AutoTrade onFlash={flash} />
-          <WatchCard onFlash={flash} />
         </div>
       )}
       {!needLogin && tab === "paper" && (

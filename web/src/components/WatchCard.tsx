@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { pct, retClass } from "@/lib/format";
 import type { Spec, Strategy, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
-import { SectionHead } from "./AutoTrade";
+import { SectionHead } from "./SectionHead";
 import TradeChart, { limitLabel } from "./TradeChart";
 import { InfoButton, InfoGroup, Swap } from "./ui/Info";
 

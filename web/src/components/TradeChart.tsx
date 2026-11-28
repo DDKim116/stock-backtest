@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   CandlestickSeries,
   createChart,
@@ -114,6 +114,8 @@ export default function TradeChart({
   strategy = true,
   startMode = "day",
   subtitle,
+  head,
+  footer,
 }: {
   trade: Trade;
   spec: Spec;
@@ -124,8 +126,22 @@ export default function TradeChart({
   strategy?: boolean; // false 면 전략 표시(신호·매수·청산·가격선)를 빼고 내 체결만
   startMode?: "day" | number; // 처음 보여 줄 것: 일봉 또는 분봉(분)
   subtitle?: string; // 머리 둘째 줄 (기본: 신호·결과 또는 '내 매수·매도 표시')
+  head?: ReactNode; // 머리 오른쪽: 현재가·전일 대비 등 (부른 곳이 아는 값)
+  footer?: ReactNode; // 아래: 부른 곳의 요약·이전/다음·종목 행동 (주면 기본 요약표 대신)
 }) {
   const box = useRef<HTMLDivElement>(null);
+  const backBtn = useRef<HTMLButtonElement>(null);
+  // 전체 화면 차트: 열리면 '뒤로' 버튼에 초점, Esc 로 닫기 (휴대폰 '뒤로'는 부른 곳의 useBackClose 가 처리)
+  useEffect(() => {
+    backBtn.current?.focus({ preventScroll: true });
+  }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
   const [dayBars, setDayBars] = useState<Bar[] | null>(null);
   const [live, setLive] = useState<Bar | null>(null); // 오늘 봉 (키움 실시간)
   const [mode, setMode] = useState<"day" | number>(startMode); // 일봉 또는 분봉 단위(분)
@@ -543,20 +559,30 @@ export default function TradeChart({
   }, [bars, pinned, ind, trade, spec, currency, ixName, dayBars, isDay]);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background" role="dialog" aria-modal="true">
-      <header className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div>
-          <div className="font-semibold">
-            {trade.name} <span className="text-sm font-normal text-muted">{trade.code} · {trade.market}</span>
+    <div className="fixed inset-0 z-50 flex flex-col bg-background" role="dialog" aria-modal="true" aria-label={`${trade.name} 차트`}>
+      <header className="flex items-center gap-2 border-b border-border py-2 pl-1 pr-4 fold:pl-3">
+        <button
+          ref={backBtn}
+          type="button"
+          onClick={onClose}
+          aria-label="뒤로 (차트 닫기)"
+          className="flex h-11 shrink-0 items-center gap-0.5 rounded-lg px-2 text-sm text-muted"
+        >
+          <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+          뒤로
+        </button>
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-semibold">
+            {trade.name} <span className="text-sm font-normal text-muted">{trade.code}{trade.market ? ` · ${trade.market}` : ""}</span>
           </div>
-          <div className="text-xs text-muted">
+          <div className="truncate text-xs text-muted">
             {subtitle ?? (strategy ? `신호 ${trade.signal_date} · ${trade.outcome}` : "내 매수·매도 표시")}
             {trade.uncertain && ` (낙관적: ${trade.outcome_opt})`}
           </div>
         </div>
-        <button type="button" onClick={onClose} className="rounded-lg border border-border px-3 py-1.5 text-sm">
-          닫기
-        </button>
+        {head && <div className="shrink-0 text-right">{head}</div>}
       </header>
       <div className="tabular space-y-0.5 px-4 py-2 text-xs text-muted">
         {shown ? (
@@ -744,7 +770,8 @@ export default function TradeChart({
           </div>
         )}
       </div>
-      {strategy && !mine && (
+      {footer}
+      {!footer && strategy && !mine && (
       <dl className="tabular grid grid-cols-3 gap-px border-t border-border bg-border text-center text-sm">
         {[
           [limitLabel(spec), price(trade.limit, currency)],

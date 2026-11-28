@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { api } from "@/lib/api";
 import { pct, retClass } from "@/lib/format";
 import { type AutoView, pnlOf, type Position as Pos, stratOf, wonShort } from "@/lib/auto";
@@ -43,6 +43,10 @@ function kstNow() {
   return { date: `${p.year}-${p.month}-${p.day}`, hm: `${p.hour === "24" ? "00" : p.hour}:${p.minute}`, wd: p.weekday as string };
 }
 const WD: Record<string, string> = { Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토", Sun: "일" };
+// 정적 내보내기 HTML 은 빌드한 날의 날짜로 그려져 있다. 날짜·시각 글자는 화면이 붙은 뒤에만 그려야
+// 다른 날 열었을 때 React 가 '글자 다름'(#418)으로 문서 전체를 새로 그리며 밝게/어둡게 설정을 지우는 일이 없다.
+const noop = () => () => {};
+const useHydrated = () => useSyncExternalStore(noop, () => true, () => false);
 
 function session(hm: string, wd: string): string {
   if (wd === "Sat" || wd === "Sun") return "휴장";
@@ -122,6 +126,7 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "auto" | "paper
     return () => clearInterval(t);
   }, [load]);
 
+  const hydrated = useHydrated();
   const sess = session(now.hm, now.wd);
   const active = (auto?.positions ?? []).filter((p) => p.status !== "closed");
   const closed = (auto?.positions ?? []).filter((p) => p.status === "closed").slice(0, 3);
@@ -163,7 +168,7 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "auto" | "paper
       <header className="flex items-end justify-between">
         <div>
           <div className="text-xs tracking-wide text-muted">
-            {+now.date.slice(5, 7)}월 {+now.date.slice(8)}일 {WD[now.wd]} · {sess}
+            {hydrated ? `${+now.date.slice(5, 7)}월 ${+now.date.slice(8)}일 ${WD[now.wd]} · ${sess}` : "\u00a0"}
           </div>
           <h2 className="text-xl font-bold">오늘</h2>
         </div>
@@ -290,8 +295,8 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "auto" | "paper
       <section className="grid grid-cols-2 gap-2 fold:grid-cols-1">
         <div className="rounded-xl border border-border bg-card p-3">
           <div className="text-[11px] text-muted">다음 일정</div>
-          <div className="tabular text-lg font-semibold text-accent">{nextT}</div>
-          <div className="text-xs">{nextL}</div>
+          <div className="tabular text-lg font-semibold text-accent">{hydrated ? nextT : "–"}</div>
+          <div className="text-xs">{hydrated ? nextL : "\u00a0"}</div>
         </div>
         <button type="button" onClick={() => onGo("market")} className="rounded-xl border border-border bg-card p-3 text-left">
           {(["KOSPI", "KOSDAQ"] as const).map((k) => {

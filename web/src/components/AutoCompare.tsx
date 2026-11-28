@@ -18,7 +18,7 @@ interface Item {
   verdict: "early" | "inside" | "above" | "below" | null;
 }
 const VERDICT: Record<string, [string, string]> = {
-  early: ["아직 판단 이름", "bg-background text-muted"],
+  early: ["아직 판단하기 일러요", "bg-background text-muted"],
   inside: ["기대 범위 안", "bg-accent-fill/10 text-accent"],
   above: ["기대보다 좋음", "bg-up/10 text-up"],
   below: ["기대보다 나쁨 · 점검", "bg-down/10 text-down"],

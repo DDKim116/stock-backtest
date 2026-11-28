@@ -518,8 +518,14 @@ class Auto:
         for p in plans:
             p["strategy_id"] = p["strategy_id"] or first
         positions = self.positions()
+        td = dt.date.fromisoformat(today)
         for p in positions:
             p["strategy_id"] = p["strategy_id"] or first
+            if p.get("status") != "closed" and p.get("entry_date"):  # 화면의 'n일째' = 서버 기간만료 셈 그대로 (공휴일 반영)
+                try:
+                    p["held"] = self._held_days(p["entry_date"], td)
+                except Exception:  # noqa: BLE001
+                    p["held"] = None
         return {
             "key_saved": bool(self.kw.view().get("mock", {}).get("saved")), "rules": self.rules(),
             "settings": s, "strategies": strategies, "rank_label": RANK_LABEL["value_asc"],
@@ -1684,6 +1690,17 @@ class Auto:
                     f"지금 {v:,.0f}원 (손절 {pos['stop_price']:,.0f}원, {gap:+.1f}%). 확인 필요 상태라 자동으로 팔지 않습니다 — "
                     "키움 앱에서 확인해 직접 정리해 주세요")
 
+    def _trade_dates(self):
+        """시세 데이터의 거래일 목록 (패널이 바뀔 때만 다시 계산 — 화면 새로고침마다 수백만 줄을 훑지 않게)."""
+        import numpy as np
+
+        panel = self.get_runner("kr").panel
+        c = getattr(self, "_udates", None)
+        if c is None or c[0] is not panel:
+            c = (panel, np.unique(panel.dates))
+            self._udates = c
+        return c[1]
+
     def _held_days(self, entry_date: str, today: dt.date) -> int:
         """체결일 다음부터 오늘까지 거래일 수 (오늘이 거래일이면 오늘 포함).
         시세 데이터의 날짜로 세되, 데이터가 어제까지 안 들어와 있으면(갱신 지연) 거래소 달력으로 센다
@@ -1699,7 +1716,7 @@ class Auto:
         try:
             import numpy as np
 
-            u = np.unique(self.get_runner("kr").panel.dates)
+            u = self._trade_dates()
             prev_td = today - dt.timedelta(days=1)
             while not is_trading_day(prev_td):
                 prev_td -= dt.timedelta(days=1)
