@@ -109,7 +109,7 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-semibold">키움 모의투자 자동 매매</h3>
           <div className="flex gap-1 text-xs">
-            <span className={`rounded-full px-2 py-0.5 ${s.enabled ? "bg-accent/10 text-accent" : "bg-background text-faint"}`}>
+            <span className={`rounded-full px-2 py-0.5 ${s.enabled ? "bg-accent-fill/10 text-accent" : "bg-background text-faint"}`}>
               {s.enabled ? "켜짐" : "꺼짐"}
             </span>
             <span className="rounded-full bg-background px-2 py-0.5 text-muted">{s.mode === "auto" ? "완전 자동" : "승인 모드"}</span>
@@ -182,7 +182,7 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
             type="button"
             disabled={busy}
             onClick={() => run(() => api("/api/auto/approve-all", { body: { trade_date: v.plan_date } }), "모두 승인했습니다")}
-            className="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-50"
+            className="shrink-0 rounded-lg bg-accent-fill px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-50"
           >
             모두 승인
           </button>
@@ -463,7 +463,7 @@ function StrategyCard({
                           type="button"
                           disabled={busy}
                           onClick={() => run(() => api(`/api/auto/plans/${p.id}`, { body: { approve: true } }))}
-                          className={`rounded-lg px-2.5 py-1 text-xs ${p.status === "approved" ? "bg-accent text-on-accent" : "border border-border"}`}
+                          className={`rounded-lg px-2.5 py-1 text-xs ${p.status === "approved" ? "bg-accent-chip text-on-accent-chip" : "border border-border"}`}
                         >
                           승인
                         </button>
@@ -649,7 +649,7 @@ function StrategySettings({ x, busy, run }: { x: AutoStrategy; busy: boolean; ru
               key={k}
               type="button"
               onClick={() => setSizeMode(k)}
-              className={`flex-1 rounded-md py-1 ${sizeMode === k ? "bg-accent text-on-accent" : "text-muted"}`}
+              className={`flex-1 rounded-md py-1 ${sizeMode === k ? "bg-accent-chip text-on-accent-chip" : "text-muted"}`}
             >
               {l}
             </button>
@@ -756,7 +756,7 @@ function AddStrategy({ have, busy, onAdd, onCancel }: { have: number[]; busy: bo
           type="button"
           disabled={busy || !sid}
           onClick={() => sid && onAdd(sid)}
-          className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-50"
+          className="rounded-lg bg-accent-fill px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-50"
         >
           추가
         </button>
@@ -777,7 +777,7 @@ function GlobalSettings({ v, busy, onSave }: { v: AutoView; busy: boolean; onSav
         type="button"
         disabled={busy}
         onClick={() => onSave({ enabled: !s.enabled })}
-        className={`w-full rounded-xl py-2.5 font-semibold disabled:opacity-50 ${s.enabled ? "border border-critical text-critical" : "bg-accent text-on-accent"}`}
+        className={`w-full rounded-xl py-2.5 font-semibold disabled:opacity-50 ${s.enabled ? "border border-critical text-critical" : "bg-accent-fill text-on-accent"}`}
       >
         {s.enabled ? "전체 중지 (모든 전략 새 매수 멈춤)" : "자동 매매 켜기"}
       </button>

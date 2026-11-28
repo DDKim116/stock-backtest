@@ -132,7 +132,7 @@ export default function SentenceConvert({
         type="button"
         onClick={() => doConvert()}
         disabled={!q.trim()}
-        className="w-full rounded-xl bg-accent py-3 font-semibold text-on-accent disabled:opacity-50"
+        className="w-full rounded-xl bg-accent-fill py-3 font-semibold text-on-accent disabled:opacity-50"
       >
         조건식으로 바꾸기
       </button>
@@ -194,7 +194,7 @@ export default function SentenceConvert({
                   const s = await build();
                   if (s) onRun(s);
                 }}
-                className="flex-1 rounded-xl bg-accent py-2.5 font-semibold text-on-accent disabled:opacity-50"
+                className="flex-1 rounded-xl bg-accent-fill py-2.5 font-semibold text-on-accent disabled:opacity-50"
               >
                 이대로 검증
               </button>

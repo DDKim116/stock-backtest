@@ -137,7 +137,7 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "auto" | "paper
   };
   const per = auto?.strategies.map((x) => [x, waiting.filter((p) => p.strategy_id === x.id).length] as const).filter(([, n]) => n > 0);
   const banner = waiting.length > 0 && auto?.plan_date && (
-    <button type="button" onClick={() => onGo("auto")} className="flex w-full items-center justify-between gap-3 rounded-xl bg-accent px-4 py-3 text-left text-on-accent fold:flex-col fold:items-start lg:flex-row lg:items-center">
+    <button type="button" onClick={() => onGo("auto")} className="flex w-full items-center justify-between gap-3 rounded-xl bg-accent-fill px-4 py-3 text-left text-on-accent fold:flex-col fold:items-start lg:flex-row lg:items-center">
       <span>
         <span className="block font-semibold">{md(auto.plan_date)} 매수 후보 {waiting.length}종목 승인 대기</span>
         <span className="text-xs">
@@ -173,7 +173,7 @@ export default function Today({ onGo, newsCount }: { onGo: (tab: "auto" | "paper
             onClick={() => onGo("auto")}
             className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs ${auto.settings.enabled ? "border-border text-accent" : "border-border text-faint"}`}
           >
-            <span className={`h-2 w-2 rounded-full ${auto.settings.enabled ? "bg-accent" : "bg-faint"}`} />
+            <span className={`h-2 w-2 rounded-full ${auto.settings.enabled ? "bg-accent-fill" : "bg-faint"}`} />
             자동 매매 {auto.settings.enabled ? "켜짐" : "꺼짐"}
           </button>
         )}

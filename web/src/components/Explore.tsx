@@ -219,7 +219,7 @@ export default function Explore({
           type="button"
           onClick={start}
           disabled={!plan}
-          className="w-full rounded-xl bg-accent py-3 font-semibold text-on-accent disabled:opacity-50"
+          className="w-full rounded-xl bg-accent-fill py-3 font-semibold text-on-accent disabled:opacity-50"
         >
           탐색 시작 ({plan?.n_combos ?? 0}개 조합)
         </button>
@@ -235,7 +235,7 @@ export default function Explore({
             <span className="tabular text-muted">{Math.round(job.elapsed)}초</span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-background">
-            <div className="h-full bg-accent transition-all" style={{ width: `${(job.done / Math.max(1, job.total)) * 100}%` }} />
+            <div className="h-full bg-accent-fill transition-all" style={{ width: `${(job.done / Math.max(1, job.total)) * 100}%` }} />
           </div>
           <Swap
             label="탐색 진행"
@@ -407,7 +407,7 @@ function Card({
     <div className={`space-y-2 rounded-xl border bg-card p-3 text-sm ${best ? "border-accent" : "border-border"}`}>
       <div className="flex flex-wrap items-center gap-1.5">
         {rank && <span className="mr-1 font-bold text-accent">{rank}위</span>}
-        {best && <span className="rounded bg-accent px-1.5 py-0.5 text-[11px] font-semibold text-on-accent">AI 추천</span>}
+        {best && <span className="rounded bg-accent-chip px-1.5 py-0.5 text-[11px] font-semibold text-on-accent-chip">AI 추천</span>}
         {axes.map((a, k) => (
           <span key={a.key} className="tabular rounded bg-accent-soft px-1.5 py-0.5 text-xs text-accent">
             {shortKey(a)} {fmtVal(a, r.combo[k])}

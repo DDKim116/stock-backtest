@@ -278,6 +278,13 @@ function tileColor(v: number | null, period: Period): string {
   return `color-mix(in srgb, ${v >= 0 ? "var(--up)" : "var(--down)"} ${pct}%, var(--card))`;
 }
 
+// 진한 칸(80% 이상)의 글자: 밝게에서는 아이보리 글자로 바꿔 잘 읽히게 (어둡게는 currentColor = 그대로)
+function tileInk(v: number | null, period: Period): string | undefined {
+  if (v == null) return undefined;
+  const full = period === "d1" ? 3 : period === "w1" ? 7 : 15;
+  return 25 + Math.min(1, Math.abs(v) / full) * 75 >= 80 ? "var(--tile-ink-strong)" : undefined;
+}
+
 const COUNTS = [30, 50, 100];
 const usd = (v: number) => (v >= 1e12 ? `$${(v / 1e12).toFixed(2)}T` : `$${Math.round(v / 1e9).toLocaleString("en-US")}B`);
 const jo = (won: number) => (won >= 1e12 ? `${(won / 1e12).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}조` : `${Math.round(won / 1e8).toLocaleString("ko-KR")}억`);
@@ -377,7 +384,7 @@ function Treemap({ data }: { data: Pulse["treemap"] }) {
                 setMarket(m);
                 setPick(null);
               }}
-              className={`whitespace-nowrap rounded-md px-2 py-0.5 ${market === m ? "bg-accent text-on-accent" : "border border-border text-muted"}`}
+              className={`whitespace-nowrap rounded-md px-2 py-0.5 ${market === m ? "bg-accent-chip text-on-accent-chip" : "border border-border text-muted"}`}
             >
               {MKT_LABEL[m]}
             </button>
@@ -388,7 +395,7 @@ function Treemap({ data }: { data: Pulse["treemap"] }) {
               key={n}
               type="button"
               onClick={() => setCount(n)}
-              className={`whitespace-nowrap rounded-md px-2 py-0.5 ${count === n ? "bg-accent text-on-accent" : "border border-border text-muted"}`}
+              className={`whitespace-nowrap rounded-md px-2 py-0.5 ${count === n ? "bg-accent-chip text-on-accent-chip" : "border border-border text-muted"}`}
             >
               {n}
             </button>
@@ -399,7 +406,7 @@ function Treemap({ data }: { data: Pulse["treemap"] }) {
               key={k}
               type="button"
               onClick={() => setPeriod(k)}
-              className={`whitespace-nowrap rounded-md px-2 py-0.5 ${period === k ? "bg-accent text-on-accent" : "border border-border text-muted"}`}
+              className={`whitespace-nowrap rounded-md px-2 py-0.5 ${period === k ? "bg-accent-chip text-on-accent-chip" : "border border-border text-muted"}`}
             >
               {label}
             </button>
@@ -439,7 +446,7 @@ function Treemap({ data }: { data: Pulse["treemap"] }) {
               onClick={() => openChart(r.t)}
               title={`${r.t.name} ${v == null ? "–" : sign(v, 2) + "%"}`}
               className={`absolute flex flex-col items-center justify-center overflow-hidden border text-center leading-tight ${on ? "z-10 border-2 border-foreground" : "border-background"}`}
-              style={{ left: r.x, top: r.y, width: r.w, height: r.h, background: tileColor(v, period) }}
+              style={{ left: r.x, top: r.y, width: r.w, height: r.h, background: tileColor(v, period), color: tileInk(v, period) }}
             >
               {mid && <span className="tabular text-[9px]">{v == null ? "–" : `${sign(v, 1)}`}</span>}
               {big && (

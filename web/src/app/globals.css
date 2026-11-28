@@ -8,28 +8,51 @@
 
 :root {
   color-scheme: light;
-  --background: #f4f5f7;
-  --foreground: #0e1117;
-  --card: #ffffff;
-  --border: #e1e4e8;
-  --muted: #57606a;
-  --faint: #6e7781;
-  --accent: #9a5b00;
-  --accent-soft: #fff4e0;
-  --on-accent: #ffffff;
-  --mid: #5c8a00; /* 중간값·지정가 선 (라임) */
+  /* 밝게: 크림 바탕 + 아이보리 카드 + 파스텔 포인트. 숫자·차트 선·상승/하락은 진하게 */
+  --background: #faf6ee; /* 크림 (밝게) */
+  --foreground: #2b2620; /* 따뜻한 짙은 갈색 */
+  --card: #fffdf9; /* 아이보리 */
+  --border: #e8e0cf;
+  --muted: #6b6255;
+  --faint: #72695b; /* 크림·아이보리·칩(#f1eadc) 위 4.5:1 이상 */
+  --accent: #7a4e12; /* 글자·테두리용 강조 (진한 꿀갈색) */
+  --accent-soft: #f8e8c8; /* 선택된 탭·칩 뒤 (파스텔 살구) */
+  --accent-fill: #f2b544; /* 주요 버튼·선택된 버튼 면 (꿀색) */
+  --on-accent: #3a2500; /* accent-fill 위 글자 */
+  --accent-chip: #f6d9a2; /* 선택된 칩·토글 면 (파스텔 꿀) */
+  --on-accent-chip: #5c3a0c;
+  --chart-main: #b87200; /* 차트 주 선 (굵게) */
+  --nav: #fdfaf4; /* 아래·옆 메뉴 바탕 */
+  --nav-on: #f8e8c8; /* 선택된 메뉴 뒤 */
+  --tile-ink-strong: #fffdf9; /* 시총 지도 진한 칸 위 글자 */
+  --mid: #4f7a00; /* 중간값·지정가 선 (라임) */
   /* 국내 관례: 상승 빨강 / 하락 파랑 */
-  --up: #cf222e;
-  --down: #0969da;
-  --good: #1a7f37;
-  --warning: #9a6700;
-  --critical: #cf222e;
-  --bar-track: #eaeef2;
+  --up: #c2362c;
+  --down: #2a5bbf;
+  --good: #237536;
+  --warning: #8a5a00;
+  --critical: #c2362c;
+  --bar-track: #f1eadc;
   /* 지수 비교 색 (보라·주황 — 상승/하락 색과 겹치지 않게) */
-  --series-1: #7b6be0;
-  --series-2: #e0703f;
+  --series-1: #6a57d0;
+  --series-2: #c25a1e;
   /* 선택된 탭 뒤 후광 */
-  --glow: rgba(240, 166, 58, 0.35);
+  --glow: rgba(242, 181, 68, 0.35);
+  /* 차트 선 색 (이평선·전략 이평선·시총 비중·동일가중) — 크림 위에서도 잘 보이게 진하게 */
+  --ma-5: #c8505a;
+  --ma-20: #3f74c4;
+  --ma-60: #3d8a5a;
+  --ma-120: #7a5cc8;
+  --ma-240: #6b6255;
+  --strat-1: #c27a2c;
+  --strat-2: #2f8c99;
+  --strat-3: #b0548e;
+  --strat-4: #7f8326;
+  --top-1: #d0602e;
+  --top-5: #b98a10;
+  --top-10: #1f9488;
+  --top-30: #3a8fc8;
+  --ew: #1f9488;
 }
 
 /* 시안 A '트레이딩 데스크': 어두운 화면이 기본 (설정에서 밝게로 바꿀 수 있음) */
@@ -45,6 +68,14 @@
   --accent: #f0a63a;
   --accent-soft: #2a2113;
   --on-accent: #1a1206;
+  /* 새 토큰: 다크는 기존과 똑같은 결과 (버튼·칩 면 = accent, 칩 글자 = on-accent, 차트 주 선 = accent, 메뉴 바탕 = background, 선택 메뉴 뒤 없음) */
+  --accent-fill: #f0a63a;
+  --accent-chip: #f0a63a;
+  --on-accent-chip: #1a1206;
+  --chart-main: #f0a63a;
+  --nav: #0e1117;
+  --nav-on: transparent;
+  --tile-ink-strong: currentColor;
   --mid: #b5e655;
   --up: #f26d6d;
   --down: #5b9bf0;
@@ -55,6 +86,21 @@
   --series-1: #a99cf5;
   --series-2: #f08a5d;
   --glow: rgba(240, 166, 58, 0.28);
+  /* 차트 선 색: 다크는 원래 컴포넌트에 있던 값 그대로 */
+  --ma-5: #e8898c;
+  --ma-20: #7ea7dd;
+  --ma-60: #7fc29b;
+  --ma-120: #a68fdc;
+  --ma-240: #9a9ea6;
+  --strat-1: #e9a96f;
+  --strat-2: #6fbcc8;
+  --strat-3: #d993bf;
+  --strat-4: #b5b86a;
+  --top-1: #F08A5D;
+  --top-5: #E3B341;
+  --top-10: #3CC4B4;
+  --top-30: #7EC8F2;
+  --ew: #3CC4B4;
   }
 }
 
@@ -69,6 +115,14 @@
   --accent: #f0a63a;
   --accent-soft: #2a2113;
   --on-accent: #1a1206;
+  /* 새 토큰: 다크는 기존과 똑같은 결과 (버튼·칩 면 = accent, 칩 글자 = on-accent, 차트 주 선 = accent, 메뉴 바탕 = background, 선택 메뉴 뒤 없음) */
+  --accent-fill: #f0a63a;
+  --accent-chip: #f0a63a;
+  --on-accent-chip: #1a1206;
+  --chart-main: #f0a63a;
+  --nav: #0e1117;
+  --nav-on: transparent;
+  --tile-ink-strong: currentColor;
   --mid: #b5e655;
   --up: #f26d6d;
   --down: #5b9bf0;
@@ -79,6 +133,21 @@
   --series-1: #a99cf5;
   --series-2: #f08a5d;
   --glow: rgba(240, 166, 58, 0.28);
+  /* 차트 선 색: 다크는 원래 컴포넌트에 있던 값 그대로 */
+  --ma-5: #e8898c;
+  --ma-20: #7ea7dd;
+  --ma-60: #7fc29b;
+  --ma-120: #a68fdc;
+  --ma-240: #9a9ea6;
+  --strat-1: #e9a96f;
+  --strat-2: #6fbcc8;
+  --strat-3: #d993bf;
+  --strat-4: #b5b86a;
+  --top-1: #F08A5D;
+  --top-5: #E3B341;
+  --top-10: #3CC4B4;
+  --top-30: #7EC8F2;
+  --ew: #3CC4B4;
 }
 
 /* 폴드 펼침(브라우저 폭 약 600~760px)부터 왼쪽 메뉴·두 단 */
@@ -95,6 +164,12 @@
   --color-faint: var(--faint);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
+  --color-accent-fill: var(--accent-fill);
+  --color-accent-chip: var(--accent-chip);
+  --color-on-accent-chip: var(--on-accent-chip);
+  --color-chart-main: var(--chart-main);
+  --color-nav: var(--nav);
+  --color-nav-on: var(--nav-on);
   --color-on-accent: var(--on-accent);
   --color-mid: var(--mid);
   --color-up: var(--up);

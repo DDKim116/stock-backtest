@@ -169,7 +169,7 @@ function Spark({ h, ref0 }: { h: Hist; ref0?: number | null }) {
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-14 w-full" aria-hidden>
         {ref0 != null && <line x1={0} x2={W} y1={y(ref0)} y2={y(ref0)} stroke="var(--critical, var(--up))" strokeWidth={1} vectorEffect="non-scaling-stroke" />}
         <line x1={0} x2={W} y1={y(h.avg)} y2={y(h.avg)} stroke="var(--faint)" strokeDasharray="4 4" strokeWidth={1} vectorEffect="non-scaling-stroke" />
-        <polyline points={pts} fill="none" stroke="var(--accent)" strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
+        <polyline points={pts} fill="none" stroke="var(--chart-main)" strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
       </svg>
       <div className="tabular flex justify-between text-[11px] text-faint">
         <span>{h.start.slice(0, 4)}</span>
@@ -190,7 +190,7 @@ function Where({ h }: { h: Hist }) {
   return (
     <div className="space-y-1">
       <div className="relative h-2 rounded-full bg-background">
-        <div className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-card bg-accent" style={{ left: `${clamp(p, 0, 100)}%` }} />
+        <div className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-card bg-accent-fill" style={{ left: `${clamp(p, 0, 100)}%` }} />
       </div>
       <Under p={p}>{word}</Under>
       <div className="flex justify-between text-[11px] text-faint">

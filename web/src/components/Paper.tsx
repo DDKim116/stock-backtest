@@ -12,7 +12,7 @@ import NumInput from "./NumInput";
 import { Explain, Swap } from "./ui/Info";
 
 const STATUS_STYLE: Record<string, string> = {
-  pending: "bg-accent text-on-accent",
+  pending: "bg-accent-chip text-on-accent-chip",
   holding: "bg-accent-soft text-accent",
   closed: "bg-border text-muted",
   nofill: "bg-border text-faint",
@@ -189,7 +189,7 @@ export default function Paper({
                 key={k}
                 type="button"
                 onClick={() => setDs(k)}
-                className={`rounded-md px-2.5 py-1 ${ds === k ? "bg-accent text-on-accent" : "text-muted"}`}
+                className={`rounded-md px-2.5 py-1 ${ds === k ? "bg-accent-chip text-on-accent-chip" : "text-muted"}`}
               >
                 {l}
               </button>
@@ -488,7 +488,7 @@ function Detail({
                   setView(k);
                   setFilter("all");
                 }}
-                className={`flex-1 rounded-md py-1 ${view === k ? "bg-accent text-on-accent" : "text-muted"}`}
+                className={`flex-1 rounded-md py-1 ${view === k ? "bg-accent-chip text-on-accent-chip" : "text-muted"}`}
               >
                 {l}
               </button>
@@ -609,7 +609,7 @@ function Detail({
                     key={k}
                     type="button"
                     onClick={() => setCashKind(k)}
-                    className={`flex-1 rounded-md py-1 ${cashKind === k ? "bg-accent text-on-accent" : "text-muted"}`}
+                    className={`flex-1 rounded-md py-1 ${cashKind === k ? "bg-accent-chip text-on-accent-chip" : "text-muted"}`}
                   >
                     {l}
                   </button>
@@ -633,7 +633,7 @@ function Detail({
                   setCashAmt("");
                   onFlash(cashKind === "per_trade" ? "1회 매수금을 바꿨습니다" : cashKind === "deposit" ? "입금했습니다" : "출금했습니다");
                 }}
-                className="w-full rounded-xl bg-accent py-2 font-semibold text-on-accent disabled:opacity-50"
+                className="w-full rounded-xl bg-accent-fill py-2 font-semibold text-on-accent disabled:opacity-50"
               >
                 적용
               </button>

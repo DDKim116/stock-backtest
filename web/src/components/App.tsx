@@ -26,6 +26,7 @@ import AutoTrade from "./AutoTrade";
 import WatchCard from "./WatchCard";
 import Lab from "./Lab";
 import Calendar from "./Calendar";
+import { syncThemeColor } from "@/lib/theme";
 import { Explain, ExplainToggle, Swap } from "./ui/Info";
 
 type Tab = "today" | "run" | "explore" | "journal" | "auto" | "paper" | "market" | "calendar" | "lab" | "saved" | "more";
@@ -584,7 +585,7 @@ export default function App() {
       {/* 폰: 아래 메뉴 / 폴드 펼침·태블릿(넓은 화면): 왼쪽 세로 메뉴 */}
       <nav
         aria-label="주 메뉴"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur fold:inset-y-0 fold:right-auto fold:w-16 fold:border-r fold:border-t-0 fold:pb-0"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-nav/95 pb-[env(safe-area-inset-bottom)] backdrop-blur fold:inset-y-0 fold:right-auto fold:w-16 fold:border-r fold:border-t-0 fold:pb-0"
       >
         <div className="mx-auto grid max-w-3xl grid-cols-6 fold:mt-16 fold:grid-cols-1 fold:gap-2">
           {GROUPS.map((g) => {
@@ -598,7 +599,7 @@ export default function App() {
                   window.scrollTo({ top: 0 });
                 }}
                 aria-current={on ? "page" : undefined}
-                className={`relative flex flex-col items-center gap-1 py-2.5 text-[11px] transition-colors ${on ? "font-semibold text-accent" : "text-muted"}`}
+                className={`relative mx-1 flex flex-col items-center gap-1 rounded-xl py-2.5 text-[11px] transition-colors ${on ? "bg-nav-on font-semibold text-accent" : "text-muted"}`}
               >
                 <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={on ? 2 : 1.7} strokeLinecap="round" strokeLinejoin="round">
                   <path d={g.icon} />
@@ -638,7 +639,7 @@ function Login({ onDone }: { onDone: () => void }) {
       <h2 className="font-semibold">로그인</h2>
       <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="비밀번호" autoFocus />
       {err && <p className="text-sm text-critical">⚠ {err}</p>}
-      <button className="w-full rounded-xl bg-accent py-3 font-semibold text-on-accent">들어가기</button>
+      <button className="w-full rounded-xl bg-accent-fill py-3 font-semibold text-on-accent">들어가기</button>
     </form>
   );
 }
@@ -673,7 +674,7 @@ function Saved({ onLoad, onScan }: { onLoad: (s: Strategy) => void; onScan: (s: 
             </button>
             <button
               type="button"
-              className="shrink-0 rounded-lg bg-accent px-2.5 py-1.5 text-xs font-semibold text-on-accent"
+              className="shrink-0 rounded-lg bg-accent-fill px-2.5 py-1.5 text-xs font-semibold text-on-accent"
               onClick={() => onScan(s)}
             >
               오늘 신호
@@ -813,6 +814,7 @@ function Settings({ onSaved }: { onSaved: () => void }) {
     const root = document.documentElement;
     if (t === "system") root.removeAttribute("data-theme");
     else root.setAttribute("data-theme", t);
+    syncThemeColor();
   };
   return (
     <div className="space-y-4">
@@ -830,7 +832,7 @@ function Settings({ onSaved }: { onSaved: () => void }) {
               role="radio"
               aria-checked={theme === k}
               onClick={() => pickTheme(k)}
-              className={`flex-1 rounded-md py-2 text-sm ${theme === k ? "bg-accent text-on-accent font-semibold" : "text-muted"}`}
+              className={`flex-1 rounded-md py-2 text-sm ${theme === k ? "bg-accent-chip text-on-accent-chip font-semibold" : "text-muted"}`}
             >
               {label}
             </button>
@@ -849,7 +851,7 @@ function Settings({ onSaved }: { onSaved: () => void }) {
         <div className="flex gap-2">
           <button
             type="button"
-            className="flex-1 rounded-xl bg-accent py-2.5 font-semibold text-on-accent"
+            className="flex-1 rounded-xl bg-accent-fill py-2.5 font-semibold text-on-accent"
             onClick={async () => {
               setApiUrl(url);
               try {
@@ -920,7 +922,7 @@ function AISettings() {
             {status.month_count}회
             <div className="mt-2 h-2 rounded-full bg-[var(--bar-track)]">
               <div
-                className="h-2 rounded-full bg-accent"
+                className="h-2 rounded-full bg-accent-fill"
                 style={{ width: `${Math.min(100, (status.month_krw / Math.max(1, status.limit_krw)) * 100)}%` }}
               />
             </div>

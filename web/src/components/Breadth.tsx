@@ -26,7 +26,7 @@ const RANGES: [string, number][] = [
   ["3년", 750],
   ["전체", 0],
 ];
-const EW = "#3CC4B4";
+const EW = "--ew"; // 동일가중 선 색 토큰 (globals.css)
 
 function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -94,7 +94,7 @@ export default function Breadth({ bare = false }: { bare?: boolean }) {
       const s = chart.addSeries(LineSeries, { color: cssVar("--series-1"), lineWidth: 2, priceLineVisible: false, priceFormat: fmt });
       s.setData(idx.map((i) => (d.index![i] == null ? { time: t(i) } : { time: t(i), value: ((d.index![i] as number) / ix0) * 100 })));
     }
-    const e = chart.addSeries(LineSeries, { color: EW, lineWidth: 2, priceLineVisible: false, priceFormat: fmt });
+    const e = chart.addSeries(LineSeries, { color: cssVar(EW), lineWidth: 2, priceLineVisible: false, priceFormat: fmt });
     e.setData(idx.map((i) => ({ time: t(i), value: (d.ew[i] / (ew0 as number)) * 100 })));
     // 아래 칸: 상승비율 (막대: 그날, 선: 20일 평균)
     const h = chart.addSeries(
@@ -130,7 +130,7 @@ export default function Breadth({ bare = false }: { bare?: boolean }) {
               key={k}
               type="button"
               onClick={() => setMarket(k)}
-              className={`rounded-md px-2.5 py-1 ${market === k ? "bg-accent text-on-accent" : "text-muted"}`}
+              className={`rounded-md px-2.5 py-1 ${market === k ? "bg-accent-chip text-on-accent-chip" : "text-muted"}`}
             >
               {l}
             </button>
@@ -163,7 +163,7 @@ export default function Breadth({ bare = false }: { bare?: boolean }) {
             </div>
             <div className="rounded-lg bg-background p-2">
               <div className="flex items-center gap-1 text-[11px] text-muted">
-                <span className="inline-block h-0.5 w-3 rounded" style={{ background: EW }} />
+                <span className="inline-block h-0.5 w-3 rounded" style={{ background: `var(${EW})` }} />
                 동일가중 ({RANGES.find(([, n]) => n === span)?.[0]})
               </div>
               <div className={`tabular text-lg font-semibold ${retClass(ewRet)}`}>{pct(ewRet, 1, true)}</div>
@@ -175,7 +175,7 @@ export default function Breadth({ bare = false }: { bare?: boolean }) {
                 key={l}
                 type="button"
                 onClick={() => setSpan(n)}
-                className={`rounded-md border px-2.5 py-1 ${span === n ? "border-accent bg-accent text-on-accent" : "border-border text-muted"}`}
+                className={`rounded-md border px-2.5 py-1 ${span === n ? "border-accent bg-accent-chip text-on-accent-chip" : "border-border text-muted"}`}
               >
                 {l}
               </button>

@@ -62,7 +62,7 @@ function Dot({ open }: { open: boolean }) {
     <span
       aria-hidden="true"
       className={`flex h-[18px] w-[18px] items-center justify-center rounded-full border text-[11px] font-semibold leading-none ${
-        open ? "border-accent bg-accent text-on-accent" : "border-faint text-faint"
+        open ? "border-accent bg-accent-chip text-on-accent-chip" : "border-faint text-faint"
       }`}
     >
       i
@@ -215,7 +215,7 @@ export function ExplainToggle({ size = "sm" }: { size?: "sm" | "md" }) {
           type="button"
           aria-pressed={mode === k}
           onClick={() => setMode(k)}
-          className={`whitespace-nowrap rounded-md ${pad} ${mode === k ? "bg-accent font-semibold text-on-accent" : "text-muted"}`}
+          className={`whitespace-nowrap rounded-md ${pad} ${mode === k ? "bg-accent-chip font-semibold text-on-accent-chip" : "text-muted"}`}
         >
           {label}
         </button>

@@ -125,7 +125,7 @@ export default function PnlChart({ assets, unrealized, colorOf }: { assets?: num
                 setRange(k);
                 setPick(null);
               }}
-              className={`whitespace-nowrap rounded-md px-2 py-0.5 ${range === k ? "bg-accent text-on-accent" : "border border-border text-muted"}`}
+              className={`whitespace-nowrap rounded-md px-2 py-0.5 ${range === k ? "bg-accent-chip text-on-accent-chip" : "border border-border text-muted"}`}
             >
               {label}
             </button>
@@ -146,9 +146,9 @@ export default function PnlChart({ assets, unrealized, colorOf }: { assets?: num
             </span>
           </div>
           <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-24 w-full" aria-label="계좌 금액">
-            <polygon points={`0,${H} ${pts} ${W},${H}`} fill="var(--accent)" opacity={0.12} />
+            <polygon points={`0,${H} ${pts} ${W},${H}`} fill="var(--chart-main)" opacity={0.12} />
             <line x1={0} x2={W} y1={y(START)} y2={y(START)} stroke="var(--faint)" strokeDasharray="4 4" strokeWidth={1} vectorEffect="non-scaling-stroke" />
-            <polyline points={pts} fill="none" stroke="var(--accent)" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+            <polyline points={pts} fill="none" stroke="var(--chart-main)" strokeWidth={2} vectorEffect="non-scaling-stroke" />
           </svg>
           <div className="tabular flex justify-between text-[11px] text-faint">
             <span>{md(lp[0].date)}</span>

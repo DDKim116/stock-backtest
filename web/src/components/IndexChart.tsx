@@ -21,10 +21,11 @@ const RANGES: [string, number][] = [
   ["3년", 750],
   ["전체", 0],
 ];
+// 이평선 색 토큰 (globals.css --ma-*)
 const MAS: [number, string][] = [
-  [20, "#7ea7dd"],
-  [60, "#7fc29b"],
-  [120, "#a68fdc"],
+  [20, "--ma-20"],
+  [60, "--ma-60"],
+  [120, "--ma-120"],
 ];
 
 function cssVar(name: string): string {
@@ -85,7 +86,7 @@ export default function IndexChart({ ixKey, name, color, bare = false }: { ixKey
     for (const [n, c] of MAS) {
       const v = sma(closes, n);
       const s = chart.addSeries(LineSeries, {
-        color: c,
+        color: cssVar(c),
         lineWidth: 1,
         priceLineVisible: false,
         lastValueVisible: false,
@@ -136,7 +137,7 @@ export default function IndexChart({ ixKey, name, color, bare = false }: { ixKey
             key={l}
             type="button"
             onClick={() => setSpan(n)}
-            className={`rounded-md border px-2.5 py-1 ${span === n ? "border-accent bg-accent text-on-accent" : "border-border text-muted"}`}
+            className={`rounded-md border px-2.5 py-1 ${span === n ? "border-accent bg-accent-chip text-on-accent-chip" : "border-border text-muted"}`}
           >
             {l}
           </button>
@@ -144,7 +145,7 @@ export default function IndexChart({ ixKey, name, color, bare = false }: { ixKey
         <span className="ml-auto flex gap-2 text-muted">
           {MAS.map(([n, c]) => (
             <span key={n} className="flex items-center gap-1">
-              <span className="inline-block h-0.5 w-3 rounded" style={{ background: c }} />
+              <span className="inline-block h-0.5 w-3 rounded" style={{ background: `var(${c})` }} />
               {n}일
             </span>
           ))}

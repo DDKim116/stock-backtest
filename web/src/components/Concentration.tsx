@@ -28,10 +28,10 @@ interface Data {
 }
 // 상위 1·5·10·30: 진할수록 적은 종목
 const LINES: [keyof Row, string, string][] = [
-  ["top1", "1위", "#F08A5D"],
-  ["top5", "상위 5", "#E3B341"],
-  ["top10", "상위 10", "#3CC4B4"],
-  ["top30", "상위 30", "#7EC8F2"],
+  ["top1", "1위", "--top-1"],
+  ["top5", "상위 5", "--top-5"],
+  ["top10", "상위 10", "--top-10"],
+  ["top30", "상위 30", "--top-30"],
 ];
 const MARKETS: [string, string][] = [
   ["KOSPI", "코스피"],
@@ -78,7 +78,7 @@ export default function Concentration({ bare = false }: { bare?: boolean }) {
     });
     for (const [k, , color] of LINES) {
       const s = chart.addSeries(LineSeries, {
-        color,
+        color: cssVar(color),
         lineWidth: 2,
         priceLineVisible: false,
         priceFormat: { type: "custom", formatter: (p: number) => `${p.toFixed(0)}%`, minMove: 0.1 },
@@ -105,7 +105,7 @@ export default function Concentration({ bare = false }: { bare?: boolean }) {
                 setMarket(k);
                 setOpen(null);
               }}
-              className={`rounded-md px-2.5 py-1 ${market === k ? "bg-accent text-on-accent" : "text-muted"}`}
+              className={`rounded-md px-2.5 py-1 ${market === k ? "bg-accent-chip text-on-accent-chip" : "text-muted"}`}
             >
               {l}
             </button>
@@ -122,7 +122,7 @@ export default function Concentration({ bare = false }: { bare?: boolean }) {
             {LINES.map(([k, l, c]) => (
               <div key={k} className="rounded-lg bg-background p-2">
                 <div className="flex items-center gap-1 text-[11px] text-muted">
-                  <span className="inline-block h-0.5 w-3 rounded" style={{ background: c }} />
+                  <span className="inline-block h-0.5 w-3 rounded" style={{ background: `var(${c})` }} />
                   {l}
                 </div>
                 <div className="tabular text-lg font-semibold">{(latest[k] as number).toFixed(1)}%</div>
@@ -176,7 +176,7 @@ export default function Concentration({ bare = false }: { bare?: boolean }) {
                                 <span className="text-faint">{i + 1}</span>
                                 <span className="relative truncate">
                                   <span
-                                    className="absolute inset-y-0 left-0 rounded-sm bg-accent/15"
+                                    className="absolute inset-y-0 left-0 rounded-sm bg-accent-fill/15"
                                     style={{ width: `${Math.min(100, (t.w / y.top[0].w) * 100)}%` }}
                                   />
                                   <span className="relative">{t.name}</span>

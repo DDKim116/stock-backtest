@@ -29,19 +29,13 @@ const RANGES = [
   { label: "2년", bars: 500 },
 ];
 
-// 이평선 색: 5·20·60·120 은 증권사 차트에서 흔히 쓰는 구분
-// 이평선 색 (파스텔 톤). 240일선은 짙은 회색으로 조금 굵게
-const MA_COLORS: Record<number, string> = { 5: "#e8898c", 20: "#7ea7dd", 60: "#7fc29b", 120: "#a68fdc", 240: "#6b7079" };
-// 어두운 화면에서는 짙은 회색이 묻혀서 한 단계 밝게
-function isDark(): boolean {
-  const t = document.documentElement.dataset.theme;
-  if (t) return t === "dark";
-  return window.matchMedia("(prefers-color-scheme: dark)").matches;
-}
+// 이평선 색: 5·20·60·120 은 증권사 차트에서 흔히 쓰는 구분, 240일선은 회색으로 조금 굵게.
+// 색 값은 globals.css 토큰 (--ma-*: 어둡게는 파스텔, 밝게는 크림 위에서 보이게 진하게)
+const MA_VARS: Record<number, string> = { 5: "--ma-5", 20: "--ma-20", 60: "--ma-60", 120: "--ma-120", 240: "--ma-240" };
 const MA_WIDTH: Record<number, 1 | 2> = { 240: 2 };
 const DEFAULT_MA = [5, 20, 60, 120, 240];
 // 전략 이평선 (조건식에 쓴 기간 중 기본선에 없는 것). 점선으로 구분
-const STRAT_COLORS = ["#e9a96f", "#6fbcc8", "#d993bf", "#b5b86a"];
+const STRAT_VARS = ["--strat-1", "--strat-2", "--strat-3", "--strat-4"];
 function strategyPeriods(spec: Spec): number[] {
   const text = `${spec.signal}\n${spec.exit?.exit_signal ?? ""}`;
   const ns = [...text.matchAll(/(?:지수이평|이평|ema|ma)\(\s*종가\s*,\s*(\d+)\s*\)/gi)].map((m) => +m[1]);
@@ -58,7 +52,7 @@ function indexPeriods(spec: Spec): { ma: number[]; back: number[] } {
     back: pick(/이전\(\s*(?:지수|시장지수|index|idx)\s*,\s*(\d+)\s*\)/gi),
   };
 }
-const IDX_MA_COLORS = ["#e9a96f", "#6fbcc8", "#d993bf"];
+const IDX_MA_VARS = ["--strat-1", "--strat-2", "--strat-3"];
 
 interface Ind {
   ma: boolean;
@@ -161,8 +155,16 @@ export default function TradeChart({
   // 지금 그릴 이평선: 기본선(이평선 버튼) + 전략 이평선(전략 이평선 버튼)
   const periods = isDay ? [...(ind.ma ? DEFAULT_MA : []), ...(ind.st ? stratMA : [])] : [];
   const isStrat = (n: number) => !DEFAULT_MA.includes(n);
-  const maColor = (n: number) =>
-    isStrat(n) ? STRAT_COLORS[stratMA.indexOf(n) % STRAT_COLORS.length] : n === 240 && isDark() ? "#9a9ea6" : MA_COLORS[n];
+  const maVar = (n: number): string | undefined => (isStrat(n) ? STRAT_VARS[stratMA.indexOf(n) % STRAT_VARS.length] : MA_VARS[n]);
+  // 화면(범례)용은 var(...), 차트 그림용은 실제 색 값
+  const maColor = (n: number) => {
+    const v = maVar(n);
+    return v ? `var(${v})` : undefined;
+  };
+  const maPaint = (n: number) => {
+    const v = maVar(n);
+    return (v ? cssVar(v) : undefined) as string;
+  };
   const ixP = indexPeriods(spec);
   const hasIx = !!bars?.some((b) => b.x != null);
   const showIx = isDay && ind.ix && hasIx;
@@ -299,7 +301,7 @@ export default function TradeChart({
       ls.setData(bars.map((b, i) => (vals[i] == null ? { time: toTime(b.t) } : { time: toTime(b.t), value: vals[i] as number })));
       return ls;
     };
-    for (const n of periods) line(sma(closes, n), maColor(n), 0, isStrat(n) ? LineStyle.Dashed : LineStyle.Solid, MA_WIDTH[n] ?? 1);
+    for (const n of periods) line(sma(closes, n), maPaint(n), 0, isStrat(n) ? LineStyle.Dashed : LineStyle.Solid, MA_WIDTH[n] ?? 1);
     if (showBB) {
       const bb = bollinger(closes, 20, 2);
       const c = cssVar("--muted");
@@ -315,13 +317,13 @@ export default function TradeChart({
       const xl = line(ixVals, fg0, nextPane);
       xl.applyOptions({ priceFormat: ixFmt, lastValueVisible: true, title: ixName ?? "지수" });
       ixP.ma.forEach((n, k) => {
-        const s = line(smaGap(ixVals, n), IDX_MA_COLORS[k % IDX_MA_COLORS.length], nextPane, LineStyle.Dashed);
+        const s = line(smaGap(ixVals, n), cssVar(IDX_MA_VARS[k % IDX_MA_VARS.length]), nextPane, LineStyle.Dashed);
         s.applyOptions({ priceFormat: ixFmt });
       });
       nextPane++;
     }
     if (showRSI) {
-      const r = line(rsi(closes, 14), cssVar("--accent"), nextPane);
+      const r = line(rsi(closes, 14), cssVar("--chart-main"), nextPane);
       r.createPriceLine({ price: 70, color: up, lineStyle: LineStyle.Dotted, lineWidth: 1, title: "70" });
       r.createPriceLine({ price: 30, color: down, lineStyle: LineStyle.Dotted, lineWidth: 1, title: "30" });
     }
@@ -423,7 +425,7 @@ export default function TradeChart({
       chartRef.current = null;
       chart.remove();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- periods·maColor 는 spec 에서 나옴
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- periods·maPaint 는 spec 에서 나옴
   }, [bars, trade, spec, currency, ind, mine, strategy, ixName, isDay]);
 
   // 보이는 기간: 매수·매도 지점이 오른쪽에 오도록 앞쪽을 span 만큼 보여 준다
@@ -662,7 +664,7 @@ export default function TradeChart({
             key={r.label}
             type="button"
             onClick={() => setSpan(r.bars)}
-            className={`rounded-md px-2.5 py-1 text-xs ${span === r.bars ? "bg-accent text-on-accent" : "border border-border text-muted"}`}
+            className={`rounded-md px-2.5 py-1 text-xs ${span === r.bars ? "bg-accent-chip text-on-accent-chip" : "border border-border text-muted"}`}
           >
             {r.label}
           </button>
@@ -710,7 +712,7 @@ export default function TradeChart({
         <div className="flex flex-wrap gap-x-3 px-4 pb-1 text-[11px] text-muted">
           {ixP.ma.map((n, k) => (
             <span key={n} className="inline-flex items-center gap-1">
-              <span className="inline-block w-3 border-t-2 border-dashed" style={{ borderColor: IDX_MA_COLORS[k % IDX_MA_COLORS.length] }} />
+              <span className="inline-block w-3 border-t-2 border-dashed" style={{ borderColor: `var(${IDX_MA_VARS[k % IDX_MA_VARS.length]})` }} />
               지수 {n}일
             </span>
           ))}

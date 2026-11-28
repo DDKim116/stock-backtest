@@ -120,7 +120,7 @@ export default function ExploreReview({
                     const sp = await toSpec(s.text);
                     if (sp) onExplore(sp);
                   }}
-                  className="flex-1 rounded-lg bg-accent py-2 text-xs font-semibold text-on-accent"
+                  className="flex-1 rounded-lg bg-accent-fill py-2 text-xs font-semibold text-on-accent"
                 >
                   이 범위로 탐색 준비
                 </button>

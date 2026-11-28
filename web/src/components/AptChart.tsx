@@ -118,7 +118,7 @@ export default function AptChart() {
                 setRange(k);
                 setPick(null);
               }}
-              className={`whitespace-nowrap rounded-md px-2 py-0.5 ${range === k ? "bg-accent text-on-accent" : "border border-border text-muted"}`}
+              className={`whitespace-nowrap rounded-md px-2 py-0.5 ${range === k ? "bg-accent-chip text-on-accent-chip" : "border border-border text-muted"}`}
             >
               {label}
             </button>
@@ -168,7 +168,7 @@ export default function AptChart() {
         ))}
         <line x1={0} x2={W} y1={y1(100)} y2={y1(100)} stroke="var(--faint)" strokeDasharray="3 4" strokeWidth={0.8} />
         <polyline points={path(v.K, y1)} fill="none" stroke="var(--series-1)" strokeWidth={1.4} />
-        <polyline points={path(v.A, y1)} fill="none" stroke="var(--accent)" strokeWidth={2} />
+        <polyline points={path(v.A, y1)} fill="none" stroke="var(--chart-main)" strokeWidth={2} />
         <g transform={`translate(0 ${H1 + 8})`}>
           <line x1={0} x2={W} y1={H2} y2={H2} stroke="var(--border)" />
           <polyline points={step} fill="none" stroke="var(--foreground)" strokeWidth={1.4} />

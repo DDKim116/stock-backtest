@@ -89,7 +89,7 @@ export default function FredSettings() {
         </span>
         {info?.saved && !edit && (
           <div className="flex gap-1">
-            <button type="button" disabled={busy} onClick={test} className="rounded-lg bg-accent px-3 py-1 text-xs font-semibold text-on-accent disabled:opacity-50">
+            <button type="button" disabled={busy} onClick={test} className="rounded-lg bg-accent-fill px-3 py-1 text-xs font-semibold text-on-accent disabled:opacity-50">
               연결 시험
             </button>
             <button type="button" disabled={busy} onClick={() => setEdit(true)} className="rounded-lg border border-border px-3 py-1 text-xs">
@@ -121,7 +121,7 @@ export default function FredSettings() {
               type="button"
               disabled={busy || !key.trim()}
               onClick={save}
-              className="flex-1 rounded-xl bg-accent py-2 font-semibold text-on-accent disabled:opacity-50"
+              className="flex-1 rounded-xl bg-accent-fill py-2 font-semibold text-on-accent disabled:opacity-50"
             >
               FRED 키 저장
             </button>

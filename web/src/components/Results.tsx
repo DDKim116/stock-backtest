@@ -78,7 +78,7 @@ function RateBar({ value, base }: { value: number | null; base?: number | null }
   return (
     <div className="relative h-2 w-full rounded-full bg-[var(--bar-track)]">
       {value !== null && (
-        <div className="absolute inset-y-0 left-0 rounded-full bg-accent" style={{ width: `${Math.min(100, value)}%` }} />
+        <div className="absolute inset-y-0 left-0 rounded-full bg-accent-fill" style={{ width: `${Math.min(100, value)}%` }} />
       )}
       {base !== null && base !== undefined && (
         <div className="absolute -inset-y-0.5 w-0.5 bg-foreground" style={{ left: `${Math.min(100, base)}%` }} />

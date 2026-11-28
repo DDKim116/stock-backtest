@@ -131,7 +131,7 @@ export default function Market() {
                 setHeatKey(null);
                 setChartKey(null);
               }}
-              className={`rounded-md px-3 py-1 ${group === g.key ? "bg-accent text-on-accent" : "text-muted"}`}
+              className={`rounded-md px-3 py-1 ${group === g.key ? "bg-accent-chip text-on-accent-chip" : "text-muted"}`}
             >
               {g.name}
             </button>
