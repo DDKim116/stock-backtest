@@ -64,10 +64,68 @@ def set_keys(mode: str, appkey: str, secretkey: str) -> None:
         raise KiwoomError("App Key·Secret Key 를 다시 확인해 주세요 (공백 없이 전체를 붙여넣기)")
     with _lock:
         d = _load()
-        d.setdefault("kiwoom", {})[mode] = {"appkey": appkey, "secretkey": secretkey,
-                                            "saved_at": time.strftime("%Y-%m-%d %H:%M")}
+        prev = d.setdefault("kiwoom", {}).get(mode) or {}
+        meta = {k: prev[k] for k in ("expires", "remind_from") if prev.get(k)}  # 만료일·알림일은 새 날짜를 넣을 때까지 유지
+        d["kiwoom"][mode] = {"appkey": appkey, "secretkey": secretkey, "saved_at": time.strftime("%Y-%m-%d %H:%M"), **meta}
         _save(d)
         _tokens.pop(mode, None)
+
+
+def set_meta(mode: str, expires: str | None, remind_from: str | None) -> None:
+    """키 만료일·갱신 알림 시작일(YYYY-MM-DD). 빈 값이면 지운다."""
+    import datetime as _dt
+
+    _check_mode(mode)
+    vals = {}
+    for k, v in (("expires", expires), ("remind_from", remind_from)):
+        v = (v or "").strip()
+        if v:
+            try:
+                _dt.date.fromisoformat(v)
+            except ValueError:
+                raise KiwoomError("날짜는 YYYY-MM-DD 형식으로 넣어 주세요") from None
+        vals[k] = v or None
+    if vals["expires"] and vals["remind_from"] and vals["remind_from"] > vals["expires"]:
+        raise KiwoomError("갱신 알림 시작일은 만료일보다 앞이어야 해요")
+    with _lock:
+        d = _load()
+        k = d.get("kiwoom", {}).get(mode)
+        if not k:
+            raise KiwoomError(f"{MODE_LABEL[mode]} 키가 저장되어 있지 않습니다")
+        for name, v in vals.items():
+            if v:
+                k[name] = v
+            else:
+                k.pop(name, None)
+        _save(d)
+
+
+def key_reminders(today) -> list[tuple[str, str]]:
+    """갱신 알림을 보낼 키: [(mode, 문구)]. 알림 시작일(없으면 만료 23일 전)부터 매일."""
+    import datetime as _dt
+
+    out = []
+    for m, k in _load().get("kiwoom", {}).items():
+        exp = k.get("expires")
+        if m not in BASES or not exp:
+            continue
+        e = _dt.date.fromisoformat(exp)
+        start = _dt.date.fromisoformat(k["remind_from"]) if k.get("remind_from") else e - _dt.timedelta(days=23)
+        if today < start:
+            continue
+        left = (e - today).days
+        when = f"{left}일 남음" if left > 0 else ("오늘 만료" if left == 0 else f"{-left}일 전에 만료됨")
+        out.append((m, f"키움 {MODE_LABEL[m]} API 키 만료 {exp} ({when}) — 키움 REST API 사이트에서 갱신하고 "
+                       "앱 설정 → 키움 증권 연결에서 새 키와 만료일을 저장하세요"))
+    return out
+
+
+def account_test(mode: str) -> dict:
+    """계좌 조회 시험 (읽기 전용): 예수금·주문가능·추정자산·보유 종목 수. 계좌번호는 돌려주지 않는다."""
+    c = cash(mode)
+    b = balance(mode)
+    return {"ok": True, "mode": mode, "deposit": c.get("deposit"), "orderable": c.get("orderable"),
+            "assets": b.get("assets"), "holdings": len(b.get("holdings") or [])}
 
 
 def clear_keys(mode: str) -> None:
@@ -89,7 +147,8 @@ def _keys(mode: str) -> dict:
 def view() -> dict:
     """화면용: 키는 끝 4자리만."""
     d = _load().get("kiwoom", {})
-    return {m: ({"saved": True, "key_tail": d[m]["appkey"][-4:], "saved_at": d[m].get("saved_at", "")}
+    return {m: ({"saved": True, "key_tail": d[m]["appkey"][-4:], "saved_at": d[m].get("saved_at", ""),
+                 "expires": d[m].get("expires"), "remind_from": d[m].get("remind_from")}
                 if m in d else {"saved": False}) for m in BASES}
 
 

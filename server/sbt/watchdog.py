@@ -21,6 +21,10 @@ STALE = 180  # 초
 def check(store, now: dt.datetime | None = None, send=None) -> str:
     now = now or dt.datetime.now(KST).replace(tzinfo=None)
     send = send or (lambda t, b: push.send(store, t, b, tab="auto"))
+    try:
+        key_reminder(store, now, send)
+    except Exception:  # noqa: BLE001 — 키 알림이 실패해도 멈춤 감시는 계속
+        pass
     if not is_trading_day(now.date()) or not (dt.time(8, 45) <= now.time() <= dt.time(15, 35)):
         return "장 밖"
     st = store.get_setting("autotrade_state", {})
@@ -38,6 +42,24 @@ def check(store, now: dt.datetime | None = None, send=None) -> str:
         send("자동 매매가 다시 작동해요", f"{wd['alert'][11:16]} 부터 멈췄다가 {now:%H:%M} 에 돌아왔어요.")
         store.set_setting("watchdog", {})
     return "정상"
+
+
+def key_reminder(store, now: dt.datetime, send) -> int:
+    """키움 API 키 갱신 알림: 알림 시작일부터 하루 한 번 (평일 지킴이가 도는 시간에)."""
+    from .broker import kiwoom
+
+    sent = store.get_setting("key_remind", {})
+    today = now.date().isoformat()
+    n = 0
+    for mode, text in kiwoom.key_reminders(now.date()):
+        if sent.get(mode) == today:
+            continue
+        send("🔑 키움 API 키 갱신하세요", text)
+        sent[mode] = today
+        n += 1
+    if n:
+        store.set_setting("key_remind", sent)
+    return n
 
 
 def run() -> None:

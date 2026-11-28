@@ -39,7 +39,8 @@ def test_keys_and_quote(kw, tmp_path):
     kiwoom.set_keys("mock", " APPKEY123456789 ", "SECRET123456789")
     assert stat.S_IMODE((tmp_path / "broker.json").stat().st_mode) == 0o600
     v = kiwoom.view()
-    assert v["mock"] == {"saved": True, "key_tail": "6789", "saved_at": v["mock"]["saved_at"]} and not v["real"]["saved"]
+    assert v["mock"] == {"saved": True, "key_tail": "6789", "saved_at": v["mock"]["saved_at"], "expires": None,
+                         "remind_from": None} and not v["real"]["saved"]
     r = kiwoom.test("mock")
     assert r["name"] == "삼성전자" and r["price"] == 70000 and r["change_pct"] == -1.25
     assert kw[0][0] == "https://mockapi.kiwoom.com/oauth2/token" and kw[0][1]["appkey"] == "APPKEY123456789"

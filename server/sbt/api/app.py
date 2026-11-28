@@ -1702,6 +1702,34 @@ def broker_clear_keys(mode: str):
     return _broker_view()
 
 
+class BrokerMetaIn(BaseModel):
+    expires: str | None = None
+    remind_from: str | None = None
+
+
+@app.put("/api/broker/kiwoom/{mode}/meta", dependencies=[Depends(auth)])
+def broker_set_meta(mode: str, body: BrokerMetaIn):
+    """키 만료일·갱신 알림 시작일 — 서버가 알림 시작일부터 매일(평일 장중 지킴이) 휴대폰으로 알린다."""
+    from ..broker import kiwoom
+
+    try:
+        kiwoom.set_meta(mode, body.expires, body.remind_from)
+    except kiwoom.KiwoomError as e:
+        raise HTTPException(422, str(e))
+    return _broker_view()
+
+
+@app.post("/api/broker/kiwoom/{mode}/account-test", dependencies=[Depends(auth)])
+def broker_account_test(mode: str):
+    """계좌 조회 시험 (읽기 전용 · 주문 없음 · 계좌번호 안 돌려줌)."""
+    from ..broker import kiwoom
+
+    try:
+        return kiwoom.account_test(mode)
+    except kiwoom.KiwoomError as e:
+        raise HTTPException(502, str(e))
+
+
 @app.post("/api/broker/kiwoom/{mode}/test", dependencies=[Depends(auth)])
 def broker_test(mode: str):
     from ..broker import kiwoom

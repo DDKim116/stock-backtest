@@ -8,6 +8,8 @@ interface KeyState {
   saved: boolean;
   key_tail?: string;
   saved_at?: string;
+  expires?: string | null;
+  remind_from?: string | null;
 }
 interface BrokerInfo {
   ip: string | null;
@@ -101,6 +103,26 @@ function KeyCard({ mode, state, onChange }: { mode: Mode; state: KeyState; onCha
       return `연결 성공 · ${r.name} 현재가 ${r.price?.toLocaleString("ko-KR") ?? "–"}원${chg}`;
     });
 
+  const accountTest = () =>
+    run(async () => {
+      const r = await api<{ deposit: number | null; orderable: number | null; assets: number | null; holdings: number }>(
+        `/api/broker/kiwoom/${mode}/account-test`,
+        { body: {} },
+      );
+      const w = (v: number | null) => (v == null ? "–" : `${Math.round(v).toLocaleString("ko-KR")}원`);
+      return `계좌 조회 성공 · 예수금 ${w(r.deposit)} · 주문가능 ${w(r.orderable)} · 추정자산 ${w(r.assets)} · 보유 ${r.holdings}종목 (조회만, 주문 없음)`;
+    });
+
+  const [exp, setExp] = useState(state.expires ?? "");
+  const [remind, setRemind] = useState(state.remind_from ?? "");
+  const saveMeta = () =>
+    run(async () => {
+      onChange(await api<BrokerInfo>(`/api/broker/kiwoom/${mode}/meta`, { method: "PUT", body: { expires: exp || null, remind_from: remind || null } }));
+      return exp ? `저장했습니다. ${remind || "만료 23일 전"}부터 매일(평일 장중) 휴대폰으로 갱신 알림을 보냅니다.` : "만료일을 지웠습니다.";
+    });
+  const [today] = useState(() => Date.now());
+  const daysLeft = state.expires ? Math.ceil((new Date(state.expires).getTime() - today) / 86_400_000) : null;
+
   const remove = () =>
     run(async () => {
       onChange(await api<BrokerInfo>(`/api/broker/kiwoom/${mode}`, { method: "DELETE" }));
@@ -123,6 +145,9 @@ function KeyCard({ mode, state, onChange }: { mode: Mode; state: KeyState; onCha
             <button type="button" disabled={busy} onClick={test} className="rounded-lg bg-accent px-3 py-1 text-xs font-semibold text-on-accent disabled:opacity-50">
               연결 시험
             </button>
+            <button type="button" disabled={busy} onClick={accountTest} className="rounded-lg border border-accent px-3 py-1 text-xs text-accent disabled:opacity-50">
+              계좌 조회 시험
+            </button>
             <button type="button" disabled={busy} onClick={() => setEdit(true)} className="rounded-lg border border-border px-3 py-1 text-xs">
               바꾸기
             </button>
@@ -132,6 +157,26 @@ function KeyCard({ mode, state, onChange }: { mode: Mode; state: KeyState; onCha
           </div>
         )}
       </div>
+      {state.saved && !edit && (
+        <div className="flex flex-wrap items-end gap-2 text-xs">
+          <label className="block">
+            <span className="text-muted">키 만료일</span>
+            <input type="date" value={exp} onChange={(e) => setExp(e.target.value)} className="mt-1 !w-auto" />
+          </label>
+          <label className="block">
+            <span className="text-muted">갱신 알림 시작일 (비우면 만료 23일 전)</span>
+            <input type="date" value={remind} onChange={(e) => setRemind(e.target.value)} className="mt-1 !w-auto" />
+          </label>
+          <button type="button" disabled={busy} onClick={saveMeta} className="rounded-lg border border-border px-3 py-1.5 disabled:opacity-50">
+            날짜 저장
+          </button>
+          {daysLeft != null && (
+            <span className={daysLeft <= 30 ? "text-critical" : "text-faint"}>
+              {daysLeft > 0 ? `만료까지 ${daysLeft}일` : daysLeft === 0 ? "오늘 만료" : "만료됨"}
+            </span>
+          )}
+        </div>
+      )}
       {(!state.saved || edit) && (
         <div className="space-y-2">
           <input
