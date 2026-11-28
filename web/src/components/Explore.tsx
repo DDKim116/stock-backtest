@@ -6,6 +6,7 @@ import { pct, retClass } from "@/lib/format";
 import ExploreReview from "./ExploreReview";
 import StartEditor from "./StartEditor";
 import type { DatasetInfo, ExploreAxis, ExploreJob, ExplorePlan, ExploreRow, Spec } from "@/lib/types";
+import { Explain, InfoButton, InfoGroup, Swap } from "./ui/Info";
 
 const JOB_KEY = "sbt-explore-job";
 
@@ -129,13 +130,20 @@ export default function Explore({
 
   return (
     <div className="space-y-4">
+      <InfoGroup>
       <div className="rounded-xl border border-border bg-card p-3 text-sm">
-        <h2 className="font-semibold">전략 탐색</h2>
-        <p className="mt-1 text-muted">
-          출발점 조건(여기서 바로 입력하거나 검증 화면의 조건)을 바탕으로 숫자 조합을 자동으로 바꿔 가며 돌립니다. 기간을 <b>과거 구간</b>과 <b>검증 구간</b>으로 나눠, 과거에서
-          고른 조합이 보지 않은 기간에서도 통하는지 확인하고 운에 맞춘 조합은 걸러 냅니다. AI를 쓰지 않아 무료입니다.
-        </p>
+        <h2 className="font-semibold">
+          전략 탐색
+          <InfoButton label="전략 탐색" />
+        </h2>
+        <Swap label="전략 탐색" short={<p className="mt-1 text-muted">숫자 조합을 자동으로 바꿔 돌리고, 보지 않은 기간에서도 통하는지 확인 (무료)</p>}>
+          <p className="mt-1 text-muted">
+            출발점 조건(여기서 바로 입력하거나 검증 화면의 조건)을 바탕으로 숫자 조합을 자동으로 바꿔 가며 돌립니다. 기간을 <b>과거 구간</b>과 <b>검증 구간</b>으로 나눠, 과거에서
+            고른 조합이 보지 않은 기간에서도 통하는지 확인하고 운에 맞춘 조합은 걸러 냅니다. AI를 쓰지 않아 무료입니다.
+          </p>
+        </Swap>
       </div>
+      </InfoGroup>
 
       <section className="space-y-2 rounded-xl border border-border bg-card p-3 text-sm">
         <h3 className="font-semibold">1. 출발점</h3>
@@ -177,9 +185,11 @@ export default function Explore({
                 {n}
               </p>
             ))}
-            <p className="text-xs text-faint">
-              원하는 값만 돌리려면 검증 화면 숫자 칸에 <code>8, 10, 12</code>처럼 여러 값을 적으세요. 그 값들만 탐색합니다.
-            </p>
+            <Explain label="원하는 값만 돌리기">
+              <p className="text-xs text-faint">
+                원하는 값만 돌리려면 검증 화면 숫자 칸에 <code>8, 10, 12</code>처럼 여러 값을 적으세요. 그 값들만 탐색합니다.
+              </p>
+            </Explain>
           </>
         )}
       </section>
@@ -197,9 +207,11 @@ export default function Explore({
             ))}
           </select>
         </div>
-        <p className="text-xs text-faint">
-          과거 구간에서 좋은 조합을 고르고, 이 연도부터의 검증 구간에서도 수익이 나는지 봅니다. 자동은 전체 기간의 뒤쪽 약 30%입니다.
-        </p>
+        <Explain label="검증 구간">
+          <p className="text-xs text-faint">
+            과거 구간에서 좋은 조합을 고르고, 이 연도부터의 검증 구간에서도 수익이 나는지 봅니다. 자동은 전체 기간의 뒤쪽 약 30%입니다.
+          </p>
+        </Explain>
       </section>
 
       {!running && (
@@ -225,11 +237,22 @@ export default function Explore({
           <div className="h-2 overflow-hidden rounded-full bg-background">
             <div className="h-full bg-accent transition-all" style={{ width: `${(job.done / Math.max(1, job.total)) * 100}%` }} />
           </div>
-          <p className="text-xs text-faint">
-            서버에서 계산하므로 다른 화면에 가거나 앱을 닫아도 계속됩니다. 돌아오면 이어서 보여 줍니다.
-            {job.done > 0 &&
-              ` 남은 시간 약 ${Math.max(1, Math.round(((job.elapsed / job.done) * (job.total - job.done)) / 60))}분.`}
-          </p>
+          <Swap
+            label="탐색 진행"
+            short={
+              <p className="text-xs text-faint">
+                앱을 닫아도 서버에서 계속됩니다.
+                {job.done > 0 &&
+                  ` 남은 시간 약 ${Math.max(1, Math.round(((job.elapsed / job.done) * (job.total - job.done)) / 60))}분.`}
+              </p>
+            }
+          >
+            <p className="text-xs text-faint">
+              서버에서 계산하므로 다른 화면에 가거나 앱을 닫아도 계속됩니다. 돌아오면 이어서 보여 줍니다.
+              {job.done > 0 &&
+                ` 남은 시간 약 ${Math.max(1, Math.round(((job.elapsed / job.done) * (job.total - job.done)) / 60))}분.`}
+            </p>
+          </Swap>
           <button type="button" onClick={cancel} className="rounded-lg border border-border px-3 py-1 text-xs">
             중지
           </button>
@@ -257,18 +280,22 @@ export default function Explore({
                 ))}
               </div>
             )}
-            <p className="mt-2 text-[11px] text-faint">
-              통과 기준: 과거 구간 100건·검증 구간 30건 이상, 두 구간 모두 평균 수익(비용 차감) 플러스, 수익 난 해 60% 이상, 바로 옆 숫자
-              조합들도 플러스. 순위는 두 구간 중 나쁜 쪽 평균 수익률 기준입니다.
-            </p>
+            <Explain label="통과 기준" className="mt-1">
+              <p className="text-[11px] text-faint">
+                통과 기준: 과거 구간 100건·검증 구간 30건 이상, 두 구간 모두 평균 수익(비용 차감) 플러스, 수익 난 해 60% 이상, 바로 옆 숫자
+                조합들도 플러스. 순위는 두 구간 중 나쁜 쪽 평균 수익률 기준입니다.
+              </p>
+            </Explain>
           </div>
 
           {res.axis_effects && res.axis_effects.length > 0 && (
             <details className="rounded-xl border border-border bg-card p-3 text-sm">
               <summary className="cursor-pointer font-semibold">값별 평균 수익률</summary>
-              <p className="mt-1 text-[11px] text-faint">
-                그 값을 쓴 모든 조합의 평균 수익률(중앙값). 과거 → 검증 구간 순. 어느 쪽 값이 통하는지 방향을 볼 때 씁니다.
-              </p>
+              <Swap label="값별 평균 수익률" short={<p className="mt-1 text-[11px] text-faint">과거 → 검증 구간 순</p>}>
+                <p className="text-[11px] text-faint">
+                  그 값을 쓴 모든 조합의 평균 수익률(중앙값). 과거 → 검증 구간 순. 어느 쪽 값이 통하는지 방향을 볼 때 씁니다.
+                </p>
+              </Swap>
               <div className="mt-2 space-y-2">
                 {res.axis_effects.map((a, k) => (
                   <div key={a.key}>

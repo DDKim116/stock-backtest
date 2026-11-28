@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import type { ExploreReview as Review, Spec } from "@/lib/types";
 import { useAIStatus } from "./AIAsk";
+import { Explain } from "./ui/Info";
 
 export default function ExploreReview({
   jobId,
@@ -61,9 +62,11 @@ export default function ExploreReview({
         >
           {busy ? "AI가 탐색 결과를 검토하는 중… (20~60초)" : `AI 검토 받기 (약 ${est.toLocaleString("ko-KR")}원)`}
         </button>
-        <p className="mt-1 text-[11px] text-faint">
-          통과한 조합을 비교해 실전 후보를 고르고, 어떤 값이 통했는지와 다음 탐색 아이디어를 알려 줍니다.
-        </p>
+        <Explain label="AI 검토" className="mt-1">
+          <p className="text-[11px] text-faint">
+            통과한 조합을 비교해 실전 후보를 고르고, 어떤 값이 통했는지와 다음 탐색 아이디어를 알려 줍니다.
+          </p>
+        </Explain>
         {err && <p className="mt-2 text-sm text-critical">⚠ {err}</p>}
       </div>
     );

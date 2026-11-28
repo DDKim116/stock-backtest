@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { InfoButton, InfoGroup, Swap } from "./ui/Info";
 
 interface EcosInfo {
   saved: boolean;
@@ -66,11 +67,17 @@ export default function EcosSettings() {
 
   const c = info?.collected;
   return (
+    <InfoGroup>
     <section className="space-y-3 rounded-xl border border-border bg-card p-4">
-      <h2 className="font-semibold">한국은행 ECOS</h2>
-      <p className="text-sm text-muted">
-        한국은행 경제통계시스템(ecos.bok.or.kr → 개발자센터) 인증키입니다. 서울 아파트 매매가격지수·한국 기준금리·코스피(월)를 받아 시장 탭과 연구에 씁니다. 저장한 키는 서버에만 있고 화면에 다시 나오지 않습니다.
-      </p>
+      <h2 className="font-semibold">
+        한국은행 ECOS
+        <InfoButton label="한국은행 ECOS" />
+      </h2>
+      <Swap label="한국은행 ECOS" short={<p className="text-sm text-muted">아파트값·기준금리·코스피(월) 받기 · 인증키는 서버에만</p>}>
+        <p className="text-sm text-muted">
+          한국은행 경제통계시스템(ecos.bok.or.kr → 개발자센터) 인증키입니다. 서울 아파트 매매가격지수·한국 기준금리·코스피(월)를 받아 시장 탭과 연구에 씁니다. 저장한 키는 서버에만 있고 화면에 다시 나오지 않습니다.
+        </p>
+      </Swap>
       <div className="flex items-center justify-between gap-2 text-sm">
         <span className="font-medium">
           인증키{" "}
@@ -130,5 +137,6 @@ export default function EcosSettings() {
       )}
       {msg && <p className={`whitespace-pre-wrap text-xs ${msg.ok ? "text-accent" : "text-critical"}`}>{msg.text}</p>}
     </section>
+    </InfoGroup>
   );
 }

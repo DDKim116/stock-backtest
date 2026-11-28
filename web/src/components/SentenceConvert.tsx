@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { convert, type SentenceResult } from "@/lib/sentence";
 import type { Spec } from "@/lib/types";
+import { Swap } from "./ui/Info";
 
 const EXAMPLES = [
   "거래량이 전일 대비 500% 이상 상승하고 주가가 12% 이상 상승한 날 시가와 종가의 중간값에 매수해서 3% 이상 상승",
@@ -106,10 +107,14 @@ export default function SentenceConvert({
 
   return (
     <div className="space-y-3">
-      <p className="text-sm text-muted">
-        매매 아이디어를 문장으로 쓰면 정해진 규칙으로 조건식을 만들어 줍니다. AI를 쓰지 않아 <b>무료</b>입니다. 적지 않은 항목은 지금
-        설정을 그대로 씁니다.
-      </p>
+      <div>
+        <Swap label="문장 변환" short={<p className="text-sm text-muted">문장 → 조건식 (<b>무료</b>)</p>}>
+          <p className="text-sm text-muted">
+            매매 아이디어를 문장으로 쓰면 정해진 규칙으로 조건식을 만들어 줍니다. AI를 쓰지 않아 <b>무료</b>입니다. 적지 않은 항목은 지금
+            설정을 그대로 씁니다.
+          </p>
+        </Swap>
+      </div>
       <textarea
         rows={3}
         value={q}

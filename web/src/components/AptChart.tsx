@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cachedApi } from "@/lib/api";
+import { Swap } from "./ui/Info";
 
 interface AptData {
   available: boolean;
@@ -185,11 +186,13 @@ export default function AptChart() {
         <span>금리 {v.rate[p]?.toFixed(2) ?? "–"}%</span>
       </div>
 
+      <Swap label="아파트 그림" short={<p className="text-[11px] text-faint">주황 = 서울 아파트 · 보라 = 코스피 · 계단선 = 기준금리</p>}>
       <ul className="space-y-0.5 text-[11px] text-faint">
         <li>· 굵은 주황 = 서울 아파트 매매가격지수, 보라 = 코스피 (둘 다 보는 기간 첫 달 = 100) · 아래 계단선 = 기준금리 · 위 그림은 로그 눈금(같은 % 변화 = 같은 높이)</li>
         <li>· 배경 빨강 = 금리 올리는 시기, 파랑 = 내리는 시기 · 그림을 누르거나 밀면 그달 값</li>
         <li>· 물가를 빼지 않은 숫자 · 출처 한국은행 ECOS{d.source ? ` (${d.source})` : ""} · 자세한 분석은 연구 탭 &lsquo;서울 아파트값 · 코스피 · 기준금리&rsquo;</li>
       </ul>
+      </Swap>
     </div>
   );
 }

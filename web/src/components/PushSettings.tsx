@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { Strategy } from "@/lib/types";
+import { InfoButton, InfoGroup, Swap } from "./ui/Info";
 
 interface PushPrefs {
   paper: boolean;
@@ -125,11 +126,17 @@ export default function PushSettings() {
     p && save({ ...p, signals: p.signals.includes(id) ? p.signals.filter((x) => x !== id) : [...p.signals, id] });
 
   return (
+    <InfoGroup>
     <section className="space-y-3 rounded-xl border border-border bg-card p-4">
-      <h2 className="font-semibold">휴대폰 알림</h2>
-      <p className="text-sm text-muted">
-        새 거래일 데이터가 들어오면(평일 저녁 임시값, 늦으면 다음 날 아침) 한 번 알려 줍니다. 밤 11시~아침 7시에는 보내지 않습니다.
-      </p>
+      <h2 className="font-semibold">
+        휴대폰 알림
+        <InfoButton label="휴대폰 알림" />
+      </h2>
+      <Swap label="휴대폰 알림" short={<p className="text-sm text-muted">새 거래일 데이터가 들어오면 한 번 알림</p>}>
+        <p className="text-sm text-muted">
+          새 거래일 데이터가 들어오면(평일 저녁 임시값, 늦으면 다음 날 아침) 한 번 알려 줍니다. 밤 11시~아침 7시에는 보내지 않습니다.
+        </p>
+      </Swap>
 
       {!ok && (
         <p className="rounded-lg bg-background p-3 text-sm text-warning">
@@ -199,5 +206,6 @@ export default function PushSettings() {
       )}
       {msg && <p className="whitespace-pre-wrap text-sm text-muted">{msg}</p>}
     </section>
+    </InfoGroup>
   );
 }

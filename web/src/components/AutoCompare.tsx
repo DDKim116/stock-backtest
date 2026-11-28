@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { wonShort } from "@/lib/auto";
 import { pct, retClass } from "@/lib/format";
+import { Explain, InfoButton, InfoGroup, Swap } from "./ui/Info";
 
 interface Item {
   strategy_id: number;
@@ -52,11 +53,19 @@ export default function AutoCompare() {
   if (err) return <p className="text-xs text-critical">⚠ 기대치 비교: {err}</p>;
   if (!items) return null;
   return (
+    <InfoGroup>
     <section className="space-y-3 rounded-xl border border-border bg-card p-3">
       <div className="flex items-baseline justify-between gap-2">
-        <h3 className="font-semibold">기대치 vs 실제</h3>
+        <h3 className="font-semibold">
+          기대치 vs 실제
+          <InfoButton label="기대치 vs 실제" />
+        </h3>
         <span className="text-[11px] text-muted">전략대로 청산한 거래만 · 비용 차감</span>
       </div>
+      {/* 빈 격자 대신 한 줄 (빈 격자도 위아래 간격을 먹는다) */}
+      {items.length === 0 ? (
+        <p className="text-xs text-faint">아직 전략대로 청산한 거래 없음</p>
+      ) : (
       <div className="grid gap-3 fold:grid-cols-2">
         {items.map((it) => {
           const a = it.actual;
@@ -113,9 +122,11 @@ export default function AutoCompare() {
                     {a.lose_streak}번 · {a.first.slice(5).replace("-", "/")}~{a.last.slice(5).replace("-", "/")}
                   </p>
                   {a.n < MIN_N && (
-                    <p className="text-[11px] text-faint">
-                      {a.n}/{MIN_N}건 · 30건이 넘어야 실력인지 운인지 구분할 수 있어요. 그 전엔 범위를 벗어나도 흔한 일이에요.
-                    </p>
+                    <div className="text-[11px] text-faint">
+                      <Swap label="건수" short={<>{a.n}/{MIN_N}건 · 아직 판단하기 일러요</>}>
+                        {a.n}/{MIN_N}건 · 30건이 넘어야 실력인지 운인지 구분할 수 있어요. 그 전엔 범위를 벗어나도 흔한 일이에요.
+                      </Swap>
+                    </div>
                   )}
                 </>
               )}
@@ -123,10 +134,14 @@ export default function AutoCompare() {
           );
         })}
       </div>
-      <p className="text-[11px] text-faint">
-        기대 = 같은 전략을 2021년부터 백테스트한 거래 1건당 평균. 정상 범위 = 지금 건수에서 우연히 나올 수 있는 폭(약 95%). 실제는 수수료·세금(0.23%)을
-        빼서 맞췄고, 모의투자 체결은 실제 시장보다 유리할 수 있어 실투에선 조금 낮게 보세요.
-      </p>
+      )}
+      <Explain label="기대치 vs 실제">
+        <p className="text-[11px] text-faint">
+          기대 = 같은 전략을 2021년부터 백테스트한 거래 1건당 평균. 정상 범위 = 지금 건수에서 우연히 나올 수 있는 폭(약 95%). 실제는 수수료·세금(0.23%)을
+          빼서 맞췄고, 모의투자 체결은 실제 시장보다 유리할 수 있어 실투에선 조금 낮게 보세요.
+        </p>
+      </Explain>
     </section>
+    </InfoGroup>
   );
 }

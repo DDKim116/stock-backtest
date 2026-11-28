@@ -9,6 +9,7 @@ import Concentration from "./Concentration";
 import Fold from "./Fold";
 import Gauge from "./Gauge";
 import IndexChart from "./IndexChart";
+import { Swap } from "./ui/Info";
 
 interface MonthRet {
   m: number;
@@ -144,15 +145,15 @@ export default function Market() {
       {sum && avail.length === 0 && (
         <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted">
           {group === "kr" ? (
-            <>
+            <Swap label="지수 데이터 받는 법" short="코스피·코스닥 지수 데이터가 아직 없습니다.">
               코스피·코스닥 지수 데이터가 아직 없습니다. KRX OpenAPI에서 <b>KOSPI 시리즈 일별시세정보</b>와{" "}
               <b>KOSDAQ 시리즈 일별시세정보</b> 이용 신청이 승인되면 서버에서{" "}
               <code>python -m sbt.data.cli index-update</code> 를 한 번 실행하세요. 이후에는 매일 자동으로 갱신됩니다.
-            </>
+            </Swap>
           ) : (
-            <>
+            <Swap label="지수 데이터 받는 법" short="미국 지수 데이터가 아직 없습니다.">
               미국 지수 데이터가 아직 없습니다. 서버에서 <code>python -m sbt.data.cli index-update</code> 를 한 번 실행하세요.
-            </>
+            </Swap>
           )}
         </div>
       )}
@@ -293,7 +294,9 @@ export default function Market() {
                 );
               })}
             </ul>
-            <p className="mt-2 text-[11px] text-faint">전년 마지막 거래일 종가 대비 그해 마지막 거래일 종가.</p>
+            <Swap label="연간 수익률 계산법" className="mt-2 text-[11px] text-faint" short={<p>연말 종가 기준</p>}>
+              <p>전년 마지막 거래일 종가 대비 그해 마지막 거래일 종가.</p>
+            </Swap>
           </Fold>
 
           {/* 월별 계절성 */}
@@ -343,9 +346,13 @@ export default function Market() {
           {group === "kr" ? (
             <Concentration bare />
           ) : (
-            <p className="text-xs text-muted">
-              미국은 지금 날마다의 시총 지도(홈)만 됩니다. 과거 시가총액(발행주식수) 기록이 있어야 비중 흐름을 그릴 수 있어요 (SEC 자료로 가능).
-            </p>
+            <div className="space-y-1">
+              <Swap label="미국 시총 비중" short={<p className="text-xs text-muted">미국은 아직 안 돼요 (홈의 시총 지도만)</p>}>
+                <p className="text-xs text-muted">
+                  미국은 지금 날마다의 시총 지도(홈)만 됩니다. 과거 시가총액(발행주식수) 기록이 있어야 비중 흐름을 그릴 수 있어요 (SEC 자료로 가능).
+                </p>
+              </Swap>
+            </div>
           )}
         </Fold>
       )}
@@ -531,9 +538,11 @@ function Heatmap({ idx, onYear }: { idx: IndexData; onYear: (y: number) => void 
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-[11px] text-faint">
-        숫자는 등락률(%). 빨강은 상승, 파랑은 하락이며 진할수록 크게 움직인 달입니다. &apos;상승&apos;은 그 달이 오른 해의 비율이고, 평균·상승에는 진행 중인 달을 넣지 않았습니다. 연도를 누르면 위 연도별 목록에서 그해가 열립니다.
-      </p>
+      <Swap label="월별 표" short={<p className="mt-2 text-[11px] text-faint">숫자 = 등락률(%) · 빨강 상승 / 파랑 하락</p>}>
+        <p className="text-[11px] text-faint">
+          숫자는 등락률(%). 빨강은 상승, 파랑은 하락이며 진할수록 크게 움직인 달입니다. &apos;상승&apos;은 그 달이 오른 해의 비율이고, 평균·상승에는 진행 중인 달을 넣지 않았습니다. 연도를 누르면 위 연도별 목록에서 그해가 열립니다.
+        </p>
+      </Swap>
     </>
   );
 }

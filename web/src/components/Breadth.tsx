@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createChart, HistogramSeries, LineSeries, LineStyle, type Time } from "lightweight-charts";
 import { cachedApi } from "@/lib/api";
 import { pct, retClass } from "@/lib/format";
+import { Swap } from "./ui/Info";
 
 interface Data {
   market: string;
@@ -181,10 +182,12 @@ export default function Breadth({ bare = false }: { bare?: boolean }) {
             ))}
           </div>
           <div ref={box} className="h-80 w-full fold:h-96" />
-          <p className="text-[11px] text-faint">
-            위: 기간 첫날을 100으로 맞춘 {d.index_name ?? "지수"}(시총 가중)와 동일가중 지수. 두 선이 벌어지면 대형주와 나머지 종목이 따로 움직이는
-            장입니다. 아래: 그날 오른 종목 비율(막대)과 20일 평균(선). 조건식에서 <b>상승비율</b>, <b>동일가중</b>으로 쓸 수 있어요 (예: 상승비율 &lt;= 20).
-          </p>
+          <Swap label="시장 폭 그림" short={<p className="text-[11px] text-faint">위: {d.index_name ?? "지수"} vs 동일가중 · 아래: 오른 종목 비율</p>}>
+            <p className="text-[11px] text-faint">
+              위: 기간 첫날을 100으로 맞춘 {d.index_name ?? "지수"}(시총 가중)와 동일가중 지수. 두 선이 벌어지면 대형주와 나머지 종목이 따로 움직이는
+              장입니다. 아래: 그날 오른 종목 비율(막대)과 20일 평균(선). 조건식에서 <b>상승비율</b>, <b>동일가중</b>으로 쓸 수 있어요 (예: 상승비율 &lt;= 20).
+            </p>
+          </Swap>
         </>
       )}
     </section>

@@ -10,6 +10,7 @@ import { type LiveQuote, useLiveQuotes } from "@/lib/useLiveQuotes";
 import AutoCompare from "./AutoCompare";
 import NumInput from "./NumInput";
 import TradeChart from "./TradeChart";
+import { Explain, Swap } from "./ui/Info";
 
 const STATUS: Record<string, [string, string]> = {
   proposed: ["승인 대기", "text-warning"],
@@ -311,10 +312,12 @@ export default function AutoTrade({ onFlash }: { onFlash: (m: string) => void })
         </ul>
       )}
       {chart && <TradeChart trade={chart.trade} spec={chart.spec} dataset="kr" currency="KRW" onClose={chartBack.close} />}
-      <p className="text-[11px] text-faint">
-        계좌 돈은 모든 전략이 같이 씁니다. 아침 주문은 위 전략 순서대로 나가고, 주문가능금액이 모자라면 그 종목은 건너뜁니다 (지정가 전략은 다음 날 다시
-        시도). &apos;전체 중지&apos;는 새 매수만 멈추고, 이미 산 종목은 목표가·손절·기간 만료 매도를 계속합니다. 지금은 모의투자에서만 주문합니다.
-      </p>
+      <Swap label="운영 규칙" short={<p className="text-[11px] text-faint">계좌 돈은 전략들이 같이 씀 · 지금은 모의투자에서만 주문</p>}>
+        <p className="text-[11px] text-faint">
+          계좌 돈은 모든 전략이 같이 씁니다. 아침 주문은 위 전략 순서대로 나가고, 주문가능금액이 모자라면 그 종목은 건너뜁니다 (지정가 전략은 다음 날 다시
+          시도). &apos;전체 중지&apos;는 새 매수만 멈추고, 이미 산 종목은 목표가·손절·기간 만료 매도를 계속합니다. 지금은 모의투자에서만 주문합니다.
+        </p>
+      </Swap>
     </div>
   );
 }
@@ -386,7 +389,11 @@ function StrategyCard({
             }
           />
           {plans.length === 0 ? (
-            <p className="py-1.5 text-xs text-faint">지금 후보 없음 · 장 마감 뒤(15:50쯤, 늦으면 16:40) 새 데이터가 들어오면 다음 거래일 후보를 만듭니다</p>
+            <div className="py-1.5">
+              <Swap label="후보 만드는 때" short={<p className="text-xs text-faint">지금 후보 없음 · 15:50~16:40쯤 새로 만듦</p>}>
+                <p className="text-xs text-faint">지금 후보 없음 · 장 마감 뒤(15:50쯤, 늦으면 16:40) 새 데이터가 들어오면 다음 거래일 후보를 만듭니다</p>
+              </Swap>
+            </div>
           ) : (
             <>
             {r.entry === "limit" && (
@@ -673,10 +680,12 @@ function StrategySettings({ x, busy, run }: { x: AutoStrategy; busy: boolean; ru
         </label>
       </div>
       {sizeMode === "pct" && (
-        <p className="text-[11px] text-faint">
-          매수 후보를 만들 때(저녁) 키움 계좌의 추정자산 × {pctV || "?"}% 로 사고, {man(Number(cap) || 0)}을 넘지 않습니다. 계좌가 커지면 같이
-          커져요. 계좌를 못 읽으면 고정 금액({man(Number(per) || 0)})으로 삽니다.
-        </p>
+        <Explain label="계좌 % 계산">
+          <p className="text-[11px] text-faint">
+            매수 후보를 만들 때(저녁) 키움 계좌의 추정자산 × {pctV || "?"}% 로 사고, {man(Number(cap) || 0)}을 넘지 않습니다. 계좌가 커지면 같이
+            커져요. 계좌를 못 읽으면 고정 금액({man(Number(per) || 0)})으로 삽니다.
+          </p>
+        </Explain>
       )}
       <div className="flex flex-wrap gap-2">
         <button
@@ -737,9 +746,11 @@ function AddStrategy({ have, busy, onAdd, onCancel }: { have: number[]; busy: bo
           ))}
         </select>
       </label>
-      <p className="text-xs text-faint">
-        처음엔 1회 300만원 × 하루 5종목으로 시작합니다. 카드의 &apos;설정&apos;에서 바꿀 수 있어요. &apos;당일종가&apos; 매수 전략은 쓸 수 없습니다.
-      </p>
+      <Swap label="전략 추가 기본값" short={<p className="text-xs text-faint">처음엔 1회 300만원 × 하루 5종목</p>}>
+        <p className="text-xs text-faint">
+          처음엔 1회 300만원 × 하루 5종목으로 시작합니다. 카드의 &apos;설정&apos;에서 바꿀 수 있어요. &apos;당일종가&apos; 매수 전략은 쓸 수 없습니다.
+        </p>
+      </Swap>
       <div className="flex gap-2">
         <button
           type="button"
@@ -936,9 +947,11 @@ function Safety({ v, run, busy }: { v: AutoView; run: Run; busy: boolean }) {
           <input type="checkbox" checked={risky} onChange={(e) => setRisky(e.target.checked)} className="mt-0.5 !w-auto" />
           <span>관리종목·거래정지·투자경고/위험·단기과열·정리매매 종목은 매수 후보에서 빼기</span>
         </label>
-        <p className="text-faint">
-          하루 손실 한도: 장중 계좌가 전날 마감보다 이만큼 줄면 알림 + 다음 거래일 매수를 하루 쉬고, 그다음 날부터 저절로 다시 삽니다 (보유 종목의 목표·손절·기간만료는 계속 · 자동매매는 꺼지지 않음). v2b 는 하루 3~5% 출렁임이 흔해서 8% 정도를 권장 · 바로 다시 사려면 위의 켜기.
-        </p>
+        <Swap label="손실 한도" short={<p className="text-faint">손실 한도: 전날 마감보다 이만큼 줄면 다음 거래일 매수 하루 쉼</p>}>
+          <p className="text-faint">
+            하루 손실 한도: 장중 계좌가 전날 마감보다 이만큼 줄면 알림 + 다음 거래일 매수를 하루 쉬고, 그다음 날부터 저절로 다시 삽니다 (보유 종목의 목표·손절·기간만료는 계속 · 자동매매는 꺼지지 않음). v2b 는 하루 3~5% 출렁임이 흔해서 8% 정도를 권장 · 바로 다시 사려면 위의 켜기.
+          </p>
+        </Swap>
         <button type="button" disabled={busy} onClick={save} className="rounded-lg border border-accent px-3 py-1.5 font-semibold text-accent disabled:opacity-50">
           저장
         </button>

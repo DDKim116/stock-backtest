@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { createChart, LineSeries, type Time } from "lightweight-charts";
 import { cachedApi } from "@/lib/api";
+import { Swap } from "./ui/Info";
 
 interface Row {
   date: string;
@@ -193,10 +194,12 @@ export default function Concentration({ bare = false }: { bare?: boolean }) {
               </tbody>
             </table>
           </div>
-          <p className="text-[11px] text-faint">
-            단위 %. 연도를 누르면 그해 상위 10 종목. 우선주는 보통주와 한 회사로 합쳤고(예: 삼성전자 + 삼성전자우), 상장폐지된 종목도 그 시점 시총에
-            들어 있습니다.
-          </p>
+          <Swap label="비중 표" short={<p className="text-[11px] text-faint">단위 % · 연도를 누르면 그해 상위 10 종목</p>}>
+            <p className="text-[11px] text-faint">
+              단위 %. 연도를 누르면 그해 상위 10 종목. 우선주는 보통주와 한 회사로 합쳤고(예: 삼성전자 + 삼성전자우), 상장폐지된 종목도 그 시점 시총에
+              들어 있습니다.
+            </p>
+          </Swap>
         </>
       )}
     </section>

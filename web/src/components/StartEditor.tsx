@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { convert, type SentenceResult } from "@/lib/sentence";
 import type { Spec } from "@/lib/types";
 import { mergeSpecText } from "./SentenceConvert";
+import { Explain } from "./ui/Info";
 
 // 탐색 화면에서 바로 출발점 조건을 넣는 칸 (문장 → 규칙 변환, 또는 조건식 직접 입력)
 export default function StartEditor({ spec, onApply }: { spec: Spec; onApply: (s: Spec) => void }) {
@@ -130,10 +131,12 @@ export default function StartEditor({ spec, onApply }: { spec: Spec; onApply: (s
             spellCheck={false}
             className="text-xs"
           />
-          <p className="text-[11px] text-faint">
-            숫자 자리에 <code>[8, 10, 12]</code>처럼 여러 값을 쓰면 자동 범위 대신 그 값들만 탐색합니다. 예: <code>등락률 &gt;= [8, 10, 12]</code>,{" "}
-            <code>목표 = [3, 5, 8]</code>, <code>손절 = [5, 7]</code>
-          </p>
+          <Explain label="여러 값 쓰기">
+            <p className="text-[11px] text-faint">
+              숫자 자리에 <code>[8, 10, 12]</code>처럼 여러 값을 쓰면 자동 범위 대신 그 값들만 탐색합니다. 예: <code>등락률 &gt;= [8, 10, 12]</code>,{" "}
+              <code>목표 = [3, 5, 8]</code>, <code>손절 = [5, 7]</code>
+            </p>
+          </Explain>
           <button
             type="button"
             disabled={busy}

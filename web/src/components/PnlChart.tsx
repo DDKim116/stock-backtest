@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import { Explain, InfoButton, InfoGroup, Swap } from "./ui/Info";
 
 interface Item {
   code: string;
@@ -108,9 +109,13 @@ export default function PnlChart({ assets, unrealized, colorOf }: { assets?: num
   const chg = now - START; // 늘 시작 5천만 대비
 
   return (
+    <InfoGroup>
     <section className="space-y-3 rounded-xl border border-border bg-card p-4">
       <div className="flex items-center justify-between">
-        <h3 className="font-bold">손익 그래프</h3>
+        <h3 className="font-bold">
+          손익 그래프
+          <InfoButton label="손익 그래프" />
+        </h3>
         <span className="flex gap-1 text-xs">
           {RANGES.map(([k, label]) => (
             <button
@@ -166,14 +171,23 @@ export default function PnlChart({ assets, unrealized, colorOf }: { assets?: num
                 <div className="text-faint">수수료·세금 (실거래)</div>
                 <div className={`tabular font-semibold ${tone(parts.cost)}`}>{man(parts.cost)}</div>
               </div>
-              <div className="col-span-3 text-faint">
+              <Swap
+                label="계좌 변화"
+                className="col-span-3 text-faint"
+                short={
+                  <>
+                    계좌 변화 <b className={tone(chg)}>{man(chg)}</b> (시작 5,000만 대비)
+                    {assets != null && <span className="block">키움 모의투자 계좌 {won(assets)}</span>}
+                  </>
+                }
+              >
                 셋을 더하면 실거래 기준 계좌 변화 <b className={tone(chg)}>{man(chg)}</b> (시작 5,000만 대비, 처음부터)
                 {assets != null && (
                   <span className="block">
                     키움 모의투자 계좌 실제 금액 {won(assets)} (모의투자는 수수료가 실제보다 높아 더 낮게 나와요)
                   </span>
                 )}
-              </div>
+              </Swap>
             </div>
           )}
         </div>
@@ -246,11 +260,22 @@ export default function PnlChart({ assets, unrealized, colorOf }: { assets?: num
         </div>
       )}
       {data.slip && data.slip.n > 0 && data.slip.avg != null && (
-        <p className="text-xs text-muted">
+        <Swap
+          label="체결 차이"
+          className="text-xs text-muted"
+          short={
+            <>
+              시장가 매도 체결 차이 평균 <b className={tone(data.slip.avg)}>{data.slip.avg > 0 ? "+" : ""}{data.slip.avg.toFixed(2)}%</b> ({data.slip.n}건)
+            </>
+          }
+        >
           시장가 매도(손절·기간만료) 기준가 대비 체결가 평균 <b className={tone(data.slip.avg)}>{data.slip.avg > 0 ? "+" : ""}{data.slip.avg.toFixed(2)}%</b> ({data.slip.n}건) · 실투에서 −0.3% 보다 나쁘면 전략 수익이 크게 줄어요
-        </p>
+        </Swap>
       )}
-      <p className="text-[11px] text-faint">모두 실제 계좌 기준 (수수료 0.015% · 거래세 0.20%를 뺀 손익) · 점선 = 시작 5,000만 · 오늘 금액은 들고 있는 종목 평가 포함</p>
+      <Explain label="손익 그래프">
+        <p className="text-[11px] text-faint">모두 실제 계좌 기준 (수수료 0.015% · 거래세 0.20%를 뺀 손익) · 점선 = 시작 5,000만 · 오늘 금액은 들고 있는 종목 평가 포함</p>
+      </Explain>
     </section>
+    </InfoGroup>
   );
 }

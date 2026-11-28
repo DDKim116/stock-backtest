@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { InfoButton, InfoGroup, Swap, useInfoRegion } from "./ui/Info";
 
 interface Report {
   name: string;
@@ -76,9 +77,13 @@ export default function Lab() {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted">
-        궁금한 걸 질문 → 시뮬레이션 → 결론. 새 질문은 Claude에게 물어보면 여기에 하나씩 쌓여요.
-      </p>
+      <div>
+        <Swap label="연구 탭" short={<p className="text-sm text-muted">질문 → 시뮬레이션 → 결론</p>}>
+          <p className="text-sm text-muted">
+            궁금한 걸 질문 → 시뮬레이션 → 결론. 새 질문은 Claude에게 물어보면 여기에 하나씩 쌓여요.
+          </p>
+        </Swap>
+      </div>
 
       {v?.running && (
         <section
@@ -117,17 +122,20 @@ export default function Lab() {
 
       <div className="grid gap-3 fold:grid-cols-2">
         {items.map((it) => (
-          <article key={it.cmd} className="flex flex-col rounded-xl border border-border bg-card p-4">
+          <InfoGroup key={it.cmd}>
+          <article className="flex flex-col rounded-xl border border-border bg-card p-4">
             <div className="flex items-start justify-between gap-2">
-              <h3 className="font-semibold leading-snug">{it.title}</h3>
+              <h3 className="font-semibold leading-snug">
+                {it.title}
+                <InfoButton label={it.title} />
+              </h3>
               <span
                 className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] ${it.area === "미장" ? "border-down text-down" : it.area === "코인" ? "border-warning text-warning" : "border-up text-up"}`}
               >
                 {it.area}
               </span>
             </div>
-            <p className="mt-1 text-sm text-muted">Q. {it.question}</p>
-            <p className="mt-2 border-l-2 border-accent pl-2.5 text-sm leading-relaxed">{it.conclusion}</p>
+            <Conclusion it={it} />
             <div className="mt-auto flex items-center justify-between gap-2 pt-3">
               <span className="text-xs text-faint">
                 {it.latest ? `최근 ${when(it.latest.at)} · ${it.count}번` : "아직 결과 없음"} · 약 {it.minutes}분
@@ -153,6 +161,7 @@ export default function Lab() {
               </span>
             </div>
           </article>
+          </InfoGroup>
         ))}
       </div>
 
@@ -243,6 +252,17 @@ function ReportView({ item, reports, onClose }: { item: Item; reports: Report[];
           {text[name]}
         </pre>
       )}
+    </div>
+  );
+}
+
+// 결론: 간단히면 두 줄 요약(나머지는 ⓘ 로 펼침), 자세히면 질문과 결론 전체
+function Conclusion({ it }: { it: Item }) {
+  const { open, id } = useInfoRegion();
+  return (
+    <div id={id}>
+      {open && <p className="mt-1 text-sm text-muted">Q. {it.question}</p>}
+      <p className={`mt-2 border-l-2 border-accent pl-2.5 text-sm leading-relaxed ${open ? "" : "line-clamp-2"}`}>{it.conclusion}</p>
     </div>
   );
 }

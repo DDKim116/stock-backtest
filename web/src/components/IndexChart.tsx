@@ -5,6 +5,7 @@ import { CandlestickSeries, createChart, type IChartApi, LineSeries, type Time }
 import { cachedApi } from "@/lib/api";
 import { pct, retClass } from "@/lib/format";
 import { sma } from "@/lib/indicators";
+import { Explain } from "./ui/Info";
 
 interface Bar {
   t: string;
@@ -152,7 +153,9 @@ export default function IndexChart({ ixKey, name, color, bare = false }: { ixKey
       {err && <p className="text-sm text-critical">⚠ {err}</p>}
       {!bars && !err && <p className="text-sm text-muted">불러오는 중…</p>}
       <div ref={box} className="h-72 w-full fold:h-80" />
-      <p className="text-[11px] text-faint">종가는 연도별 분석과 같은 값, 시가·고가·저가는 야후 일봉. 오늘 봉은 장 마감 뒤 저녁에 더해집니다.</p>
+      <Explain label="자료">
+        <p className="text-[11px] text-faint">종가는 연도별 분석과 같은 값, 시가·고가·저가는 야후 일봉. 오늘 봉은 장 마감 뒤 저녁에 더해집니다.</p>
+      </Explain>
     </section>
   );
 }

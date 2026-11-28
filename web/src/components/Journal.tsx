@@ -16,6 +16,7 @@ import { useBackClose } from "@/lib/useBackClose";
 import JournalReview from "./JournalReview";
 import TradeChart from "./TradeChart";
 import NumInput from "./NumInput";
+import { Explain } from "./ui/Info";
 
 type View = "open" | "closed" | "stats";
 
@@ -360,9 +361,11 @@ function NewTrade({
           <input value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="산 이유" />
         </label>
       </div>
-      <p className="text-[11px] text-faint">
-        전략과 신호일을 넣으면 &apos;전략대로 했을 때&apos;와 내 매매를 비교해 줍니다. 추가 매수와 매도는 저장 후 기록 화면에서 넣습니다.
-      </p>
+      <Explain label="기록 입력">
+        <p className="text-[11px] text-faint">
+          전략과 신호일을 넣으면 &apos;전략대로 했을 때&apos;와 내 매매를 비교해 줍니다. 추가 매수와 매도는 저장 후 기록 화면에서 넣습니다.
+        </p>
+      </Explain>
       {err && <p className="text-critical">⚠ {err}</p>}
       <button
         type="button"
@@ -776,10 +779,12 @@ function Stats({ ds }: { ds: string }) {
               </tbody>
             </table>
           </div>
-          <p className="text-[11px] text-faint">
-            &apos;전략대로&apos;는 같은 신호를 전략 규칙대로 매매했다면 낸 평균 수익률, &apos;백테스트&apos;는 저장할 때의 과거 검증 성공률·평균입니다.
-            내 평균이 전략대로보다 낮으면 매수·매도 타이밍에서 손해를 보고 있다는 뜻입니다.
-          </p>
+          <Explain label="읽는 법">
+            <p className="text-[11px] text-faint">
+              &apos;전략대로&apos;는 같은 신호를 전략 규칙대로 매매했다면 낸 평균 수익률, &apos;백테스트&apos;는 저장할 때의 과거 검증 성공률·평균입니다.
+              내 평균이 전략대로보다 낮으면 매수·매도 타이밍에서 손해를 보고 있다는 뜻입니다.
+            </p>
+          </Explain>
         </section>
       )}
 

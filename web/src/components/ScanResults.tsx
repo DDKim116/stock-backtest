@@ -6,6 +6,7 @@ import type { ScanResult, ScanRow, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
 import PaperPick from "./PaperPick";
 import TradeChart from "./TradeChart";
+import { Swap } from "./ui/Info";
 
 const FILTERS: { key: ScanRow["kind"] | "all"; label: string }[] = [
   { key: "all", label: "전체" },
@@ -77,16 +78,18 @@ export default function ScanResults({
         <div className="font-semibold">
           {r.as_of} 기준 · {r.days === 1 ? "이날" : `최근 ${r.days}거래일`} 신호 {r.count.toLocaleString("ko-KR")}종목
         </div>
-        <p className="mt-1 text-xs text-muted">
-          {entry.type === "limit"
-            ? `지정가 주문은 신호 다음 날부터 ${entry.valid_days}거래일 동안 유효해서, 그 기간 안의 신호를 모두 보여 줍니다. '주문 대기'가 지금 주문을 넣을 수 있는 종목이에요.`
-            : entry.type === "next_open"
-              ? "다음 거래일 시가에 사는 방식이라, 마지막 거래일의 신호를 보여 줍니다."
-              : "신호일 종가에 사는 방식이라, 마지막 거래일에 이미 산 것으로 봅니다."}
-        </p>
-        <p className="mt-1 text-xs text-faint">
-          장 마감 후 데이터 기준입니다. 국내는 당일 저녁(4시 40분·6시 10분·8시 10분)에 야후 값으로 먼저 채우고 다음 날 아침 8시 20분에 KRX 공식 값으로 바꿉니다. 미국은 다음 날 아침 7시 40분에 갱신합니다. 장중 실시간 시세는 아닙니다.
-        </p>
+        <Swap label="신호 목록" className="space-y-1" short={<p className="mt-1 text-xs text-faint">장 마감 후 데이터 기준 (실시간 아님)</p>}>
+          <p className="text-xs text-muted">
+            {entry.type === "limit"
+              ? `지정가 주문은 신호 다음 날부터 ${entry.valid_days}거래일 동안 유효해서, 그 기간 안의 신호를 모두 보여 줍니다. '주문 대기'가 지금 주문을 넣을 수 있는 종목이에요.`
+              : entry.type === "next_open"
+                ? "다음 거래일 시가에 사는 방식이라, 마지막 거래일의 신호를 보여 줍니다."
+                : "신호일 종가에 사는 방식이라, 마지막 거래일에 이미 산 것으로 봅니다."}
+          </p>
+          <p className="text-xs text-faint">
+            장 마감 후 데이터 기준입니다. 국내는 당일 저녁(4시 40분·6시 10분·8시 10분)에 야후 값으로 먼저 채우고 다음 날 아침 8시 20분에 KRX 공식 값으로 바꿉니다. 미국은 다음 날 아침 7시 40분에 갱신합니다. 장중 실시간 시세는 아닙니다.
+          </p>
+        </Swap>
       </div>
 
       <div className="flex gap-1 overflow-x-auto text-xs">

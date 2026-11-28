@@ -9,6 +9,7 @@ import { useLiveQuotes } from "@/lib/useLiveQuotes";
 import PaperPick from "./PaperPick";
 import TradeChart from "./TradeChart";
 import NumInput from "./NumInput";
+import { Explain, Swap } from "./ui/Info";
 
 const STATUS_STYLE: Record<string, string> = {
   pending: "bg-accent text-on-accent",
@@ -210,10 +211,12 @@ export default function Paper({
       {list && list.length === 0 && (
         <div className="space-y-2 rounded-xl border border-border bg-card p-4 text-sm text-muted">
           <p className="font-medium text-foreground">아직 모의 카테고리가 없습니다.</p>
-          <p>
-            검증 화면에서 조건을 정하고 <b>오늘 신호</b>를 누른 뒤, 종목 옆 <b>모의</b> 버튼으로 담으면 카테고리가 만들어집니다. 담은 종목은
-            매일 실제 시세로 전략 규칙대로 사고팔린 것으로 계산됩니다.
-          </p>
+          <Swap label="모의 카테고리" short={<p>검증 → 오늘 신호 → 종목 옆 <b>모의</b>로 담으면 생겨요.</p>}>
+            <p>
+              검증 화면에서 조건을 정하고 <b>오늘 신호</b>를 누른 뒤, 종목 옆 <b>모의</b> 버튼으로 담으면 카테고리가 만들어집니다. 담은 종목은
+              매일 실제 시세로 전략 규칙대로 사고팔린 것으로 계산됩니다.
+            </p>
+          </Swap>
         </div>
       )}
       <ul className="space-y-2">
@@ -335,11 +338,13 @@ function GroupTable({ g, cur }: { g: NonNullable<PaperView["groups"]>; cur: stri
           )}
         </tbody>
       </table>
-      <p className="mt-2 text-[11px] text-faint">
-        거래당 수익률(비용 차감) 기준입니다. 전체 신호는 자본금 한도 없이 모두 샀다고 보고 계산합니다.
-        {few && " 내 선택 청산이 30건이 안 돼 아직은 우연일 수 있습니다."}
-        {cur && ""}
-      </p>
+      {few && <p className="mt-2 text-[11px] text-faint">내 선택 청산이 30건이 안 돼 아직은 우연일 수 있습니다.</p>}
+      <Explain label="계산법" className="mt-1">
+        <p className="text-[11px] text-faint">
+          거래당 수익률(비용 차감) 기준입니다. 전체 신호는 자본금 한도 없이 모두 샀다고 보고 계산합니다.
+          {cur && ""}
+        </p>
+      </Explain>
     </section>
   );
 }
@@ -448,7 +453,7 @@ function Detail({
       )}
 
       {bt && pg && (
-        <p className="rounded-xl border border-border bg-card p-3 text-xs text-muted">
+        <div className="rounded-xl border border-border bg-card p-3 text-xs text-muted">
           만들 때 검증 결과: 성공률 <b className="text-foreground">{bt.success_rate ?? "–"}%</b> · 평균{" "}
           <b className={retClass(bt.avg_ret)}>{pct(bt.avg_ret, 2, true)}</b> ({bt.n_complete?.toLocaleString("ko-KR")}건)
           {pg.closed > 0 && (
@@ -458,8 +463,10 @@ function Detail({
               <b className={retClass(pg.avg_ret)}>{pct(pg.avg_ret, 2, true)}</b> ({pg.closed}건)
             </>
           )}
-          <span className="block text-faint">검증의 성공률은 목표 도달 기준, 모의 승률은 수익으로 끝난 비율입니다.</span>
-        </p>
+          <Explain label="성공률과 승률">
+            <span className="block text-faint">검증의 성공률은 목표 도달 기준, 모의 승률은 수익으로 끝난 비율입니다.</span>
+          </Explain>
+        </div>
       )}
 
       {b.auto && v.groups?.all ? <GroupTable g={v.groups} cur={cur} /> : null}
@@ -630,7 +637,9 @@ function Detail({
               >
                 적용
               </button>
-              <p className="text-xs text-faint">입금·출금과 1회 매수금 변경은 고른 날짜부터 적용됩니다. 이미 산 종목에는 영향이 없습니다.</p>
+              <Explain label="적용 시점">
+                <p className="text-xs text-faint">입금·출금과 1회 매수금 변경은 고른 날짜부터 적용됩니다. 이미 산 종목에는 영향이 없습니다.</p>
+              </Explain>
               <ul className="tabular divide-y divide-border text-xs">
                 {v.cash.map((c) => (
                   <li key={c.id} className="flex items-center justify-between py-1.5">

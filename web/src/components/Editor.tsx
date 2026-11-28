@@ -6,6 +6,7 @@ import { joinAnd, parseNumList, showNumList, splitTopLevelAnd } from "@/lib/form
 import type { DatasetInfo, Spec } from "@/lib/types";
 import SentenceConvert from "./SentenceConvert";
 import AIAsk from "./AIAsk";
+import { Explain, Swap } from "./ui/Info";
 
 export const DEFAULT_SPEC: Spec = {
   name: "",
@@ -308,7 +309,9 @@ export default function Editor({
             spellCheck={false}
           />
           {textErr && <p className="whitespace-pre-wrap text-sm text-critical">⚠ {textErr}</p>}
-          <p className="text-xs text-faint">숫자 자리에 [10, 12, 15] 처럼 쓰면 각 값을 모두 돌려서 비교합니다.</p>
+          <Explain label="여러 값 비교">
+            <p className="text-xs text-faint">숫자 자리에 [10, 12, 15] 처럼 쓰면 각 값을 모두 돌려서 비교합니다.</p>
+          </Explain>
         </div>
       )}
 
@@ -438,9 +441,11 @@ export default function Editor({
                   </button>
                 ))}
               </div>
-              <span className="mt-1 block text-xs text-faint">
-                장 마감 때 이 조건을 만족하면 다음 날 시가에 팝니다. 목표·손절·추적손절·보유기간과 함께 쓰면 먼저 걸리는 쪽으로 청산합니다.
-              </span>
+              <Swap label="청산 조건식" short={<span className="mt-1 block text-xs text-faint">만족하면 다음 날 시가에 팜</span>}>
+                <span className="mt-1 block text-xs text-faint">
+                  장 마감 때 이 조건을 만족하면 다음 날 시가에 팝니다. 목표·손절·추적손절·보유기간과 함께 쓰면 먼저 걸리는 쪽으로 청산합니다.
+                </span>
+              </Swap>
             </div>
           </div>
 
@@ -548,7 +553,9 @@ export default function Editor({
               </div>
             )}
           </div>
-          <p className="text-xs text-faint">숫자 칸에 3, 5, 7 처럼 쉼표로 여러 값을 넣으면 한 번에 비교표가 나옵니다.</p>
+          <Explain label="여러 값 비교">
+            <p className="text-xs text-faint">숫자 칸에 3, 5, 7 처럼 쉼표로 여러 값을 넣으면 한 번에 비교표가 나옵니다.</p>
+          </Explain>
         </div>
       )}
 

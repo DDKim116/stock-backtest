@@ -7,6 +7,7 @@ import type { Spec, Strategy, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
 import { SectionHead } from "./AutoTrade";
 import TradeChart, { limitLabel } from "./TradeChart";
+import { InfoButton, InfoGroup, Swap } from "./ui/Info";
 
 interface Item {
   sid: number;
@@ -101,14 +102,20 @@ export default function WatchCard({ onFlash }: { onFlash: (m: string) => void })
   const holding = v.items.filter((i) => i.kind === "holding");
 
   return (
+    <InfoGroup>
     <section className="space-y-3 rounded-xl border border-border bg-card px-3 py-3">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="font-semibold">장중 실시간 감시</h3>
+        <h3 className="font-semibold">
+          장중 실시간 감시
+          <InfoButton label="장중 실시간 감시" />
+        </h3>
         <span className="text-xs text-muted">{v.updated ? `${v.updated} 시세` : "장중(09:00~15:20)에 갱신"}</span>
       </div>
-      <p className="text-xs text-muted">
-        고른 전략의 지정가 대기·보유 종목을 키움 시세로 약 20초마다 확인해, 매수가·목표·손절에 닿으면 휴대폰으로 알립니다. 주문은 하지 않습니다.
-      </p>
+      <Swap label="장중 실시간 감시" short={<p className="text-xs text-muted">가격에 닿으면 알림만 (주문은 안 함)</p>}>
+        <p className="text-xs text-muted">
+          고른 전략의 지정가 대기·보유 종목을 키움 시세로 약 20초마다 확인해, 매수가·목표·손절에 닿으면 휴대폰으로 알립니다. 주문은 하지 않습니다.
+        </p>
+      </Swap>
       {v.mode === null && <p className="text-xs text-warning">설정 → 키움 연결에 키를 넣어야 시세를 받을 수 있습니다.</p>}
       {v.error && <p className="text-xs text-critical">⚠ {v.error}</p>}
 
@@ -196,5 +203,6 @@ export default function WatchCard({ onFlash }: { onFlash: (m: string) => void })
       )}
       {chart && <TradeChart trade={chart.trade} spec={chart.spec} dataset="kr" currency="KRW" onClose={back.close} />}
     </section>
+    </InfoGroup>
   );
 }

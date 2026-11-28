@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import type { JournalReview as Review } from "@/lib/types";
 import { useAIStatus } from "./AIAsk";
+import { Explain } from "./ui/Info";
 
 export default function JournalReview({ ds }: { ds: string }) {
   const { status, reload } = useAIStatus();
@@ -37,9 +38,11 @@ export default function JournalReview({ ds }: { ds: string }) {
         >
           {busy ? "AI가 매매일지를 읽는 중… (20~60초)" : `AI 매매 복기 (약 ${est.toLocaleString("ko-KR")}원)`}
         </button>
-        <p className="mt-1 text-[11px] text-faint">
-          청산한 거래(최근 60건)와 보유 종목, 메모를 읽고 반복되는 실수와 다음에 지킬 규칙을 정리합니다.
-        </p>
+        <Explain label="AI 매매 복기" className="mt-1">
+          <p className="text-[11px] text-faint">
+            청산한 거래(최근 60건)와 보유 종목, 메모를 읽고 반복되는 실수와 다음에 지킬 규칙을 정리합니다.
+          </p>
+        </Explain>
         {err && <p className="mt-2 text-sm text-critical">⚠ {err}</p>}
       </div>
     );

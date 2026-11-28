@@ -5,6 +5,7 @@ import { api, cachedApi } from "@/lib/api";
 import type { Spec, Trade } from "@/lib/types";
 import { useBackClose } from "@/lib/useBackClose";
 import TradeChart from "./TradeChart";
+import { Explain, InfoButton, InfoGroup, Swap } from "./ui/Info";
 
 interface KrFear {
   available: boolean;
@@ -148,8 +149,14 @@ export default function MarketPulse() {
       </section>
 
       {open && kr.available && (
+        <InfoGroup>
         <section className="space-y-1.5 rounded-xl border border-border bg-card p-3 text-xs">
-          <div className="text-muted">국장 공포·탐욕 = 아래 다섯 가지의 평균 (각각 지난 2년 안에서 지금 위치, 0 공포 ~ 100 탐욕)</div>
+          <div className="flex items-start gap-1">
+            <Swap label="국장 공포·탐욕" className="min-w-0 flex-1" short={<div className="text-muted">다섯 가지의 평균 · 0 공포 ~ 100 탐욕</div>}>
+              <div className="text-muted">국장 공포·탐욕 = 아래 다섯 가지의 평균 (각각 지난 2년 안에서 지금 위치, 0 공포 ~ 100 탐욕)</div>
+            </Swap>
+            <InfoButton label="국장 공포·탐욕" />
+          </div>
           {kr.components?.map((c) => (
             <div key={c.name} className="grid grid-cols-[5.5rem_1fr_2rem] items-center gap-2">
               <span>{c.name}</span>
@@ -162,8 +169,11 @@ export default function MarketPulse() {
             </div>
           ))}
           {kr.vkospi_note && <div className="text-warning">VKOSPI: {kr.vkospi_note}</div>}
-          <div className="text-faint">참고용 · 공포일 때 v2b 신호가 많아지고, 탐욕일 때는 조용한 편이에요.</div>
+          <Explain label="국장 공포·탐욕">
+            <div className="text-faint">참고용 · 공포일 때 v2b 신호가 많아지고, 탐욕일 때는 조용한 편이에요.</div>
+          </Explain>
         </section>
+        </InfoGroup>
       )}
 
       <Treemap data={p.treemap} />
@@ -346,9 +356,11 @@ function Treemap({ data }: { data: Pulse["treemap"] }) {
   const sel = pick && items.find((t) => t.code === pick.code);
 
   return (
+    <InfoGroup>
     <section className="space-y-2 rounded-xl border border-border bg-card p-3">
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
         <span className="text-muted">
+          <InfoButton label="시총 지도" className="-ml-2" />
           시총 지도 · {MKT_LABEL[market]} 상위 {Math.min(count, d?.items.length ?? 0)}{" "}
           {lv ? (
             <span className="text-accent">· 실시간 {lv.at} (1일)</span>
@@ -444,7 +456,9 @@ function Treemap({ data }: { data: Pulse["treemap"] }) {
           );
         })}
       </div>
-      <div className="text-[11px] text-faint">네모 크기 = 시가총액 · 빨강 오름 / 파랑 내림 · 코스피·코스닥 1일은 장중 실시간(키움, 1분마다), 1주·1달과 미국은 마지막 종가 기준</div>
+      <Swap label="시총 지도" short={<div className="text-[11px] text-faint">네모 크기 = 시가총액 · 빨강 오름 / 파랑 내림</div>}>
+        <div className="text-[11px] text-faint">네모 크기 = 시가총액 · 빨강 오름 / 파랑 내림 · 코스피·코스닥 1일은 장중 실시간(키움, 1분마다), 1주·1달과 미국은 마지막 종가 기준</div>
+      </Swap>
       {chart && spec && (
         <TradeChart
           trade={asTrade(chart.t, chart.market)}
@@ -458,5 +472,6 @@ function Treemap({ data }: { data: Pulse["treemap"] }) {
         />
       )}
     </section>
+    </InfoGroup>
   );
 }

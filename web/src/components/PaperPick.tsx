@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { pct, retClass, today } from "@/lib/format";
 import type { PaperView, ScanRow, Spec } from "@/lib/types";
 import NumInput from "./NumInput";
+import { Explain, Swap } from "./ui/Info";
 
 // 오늘 신호 목록의 '모의' → 모의 카테고리를 골라 담는다 (없으면 새로 만든다)
 export default function PaperPick({
@@ -153,9 +154,11 @@ export default function PaperPick({
 
         {creating && (
           <div className="space-y-3 text-sm">
-            <p className="text-xs text-muted">
-              {row ? "지금 검색한" : "검증 화면의"} 조건(신호·매수·청산)을 그대로 고정해 새 카테고리를 만듭니다. 조건을 바꿔 시험하려면 카테고리를 새로 만드세요.
-            </p>
+            <Swap label="새 카테고리" short={<p className="text-xs text-muted">{row ? "지금 검색한" : "검증 화면의"} 조건을 그대로 고정해 만듭니다.</p>}>
+              <p className="text-xs text-muted">
+                {row ? "지금 검색한" : "검증 화면의"} 조건(신호·매수·청산)을 그대로 고정해 새 카테고리를 만듭니다. 조건을 바꿔 시험하려면 카테고리를 새로 만드세요.
+              </p>
+            </Swap>
             <p className="rounded-lg bg-background p-2 text-xs">
               <b>매수 방식:</b>{" "}
               {spec.entry.type === "limit"
@@ -163,10 +166,12 @@ export default function PaperPick({
                 : spec.entry.type === "next_open"
                   ? "다음 거래일 시가 (바로 체결)"
                   : "신호일 종가"}
-              {spec.entry.type === "limit" && (
-                <span className="block text-faint">주문 기간을 바꾸려면 검증 화면 매수의 &apos;주문 유효기간&apos;을 고친 뒤 새 카테고리로 만드세요.</span>
-              )}
             </p>
+            {spec.entry.type === "limit" && (
+              <Explain label="주문 기간 바꾸기">
+                <p className="text-xs text-faint">주문 기간을 바꾸려면 검증 화면 매수의 &apos;주문 유효기간&apos;을 고친 뒤 새 카테고리로 만드세요.</p>
+              </Explain>
+            )}
             <label className="block">
               <span className="text-muted">이름</span>
               <input value={name} onChange={(e) => setName(e.target.value)} className="mt-1" />

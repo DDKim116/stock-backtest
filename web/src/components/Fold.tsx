@@ -1,6 +1,7 @@
 "use client";
 
 import { type ReactNode, useState } from "react";
+import { InfoButton, InfoGroup } from "./ui/Info";
 
 const read = (key: string, fallback: boolean): boolean => {
   try {
@@ -17,12 +18,14 @@ export default function Fold({
   title,
   sub,
   defaultOpen = false,
+  info,
   children,
 }: {
   id: string;
   title: string;
   sub?: string;
   defaultOpen?: boolean;
+  info?: string; // 주면 제목 줄에 ⓘ 버튼 — 안의 <Explain> 이 이 버튼을 따른다
   children: ReactNode;
 }) {
   const key = `sbt.fold.${id}`;
@@ -37,13 +40,14 @@ export default function Fold({
       return !o;
     });
   };
-  return (
+  const box = (
     <section className="rounded-xl border border-border bg-card">
+      <div className="flex items-center">
       <button
         type="button"
         onClick={toggle}
         aria-expanded={open}
-        className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left"
+        className="flex min-w-0 flex-1 items-center justify-between gap-2 py-3 pl-4 pr-2 text-left"
       >
         <span className="min-w-0">
           <span className="font-semibold">{title}</span>
@@ -62,7 +66,10 @@ export default function Fold({
           <path d="M6 9l6 6 6-6" />
         </svg>
       </button>
+      {info && open ? <InfoButton label={info} className="mr-2" /> : <span className="w-2 shrink-0" />}
+      </div>
       {open && <div className="space-y-3 border-t border-border p-3">{children}</div>}
     </section>
   );
+  return info ? <InfoGroup>{box}</InfoGroup> : box;
 }

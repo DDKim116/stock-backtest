@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { InfoButton, InfoGroup, Swap } from "./ui/Info";
 
 interface DartInfo {
   saved: boolean;
@@ -66,11 +67,17 @@ export default function DartSettings() {
 
   const c = info?.collected;
   return (
+    <InfoGroup>
     <section className="space-y-3 rounded-xl border border-border bg-card p-4">
-      <h2 className="font-semibold">DART 재무 자료</h2>
-      <p className="text-sm text-muted">
-        금융감독원 전자공시(opendart.fss.or.kr) 인증키입니다. 회사 매출·영업이익·순이익을 받아 연구에 씁니다. 저장한 키는 서버에만 있고 화면에 다시 나오지 않습니다.
-      </p>
+      <h2 className="font-semibold">
+        DART 재무 자료
+        <InfoButton label="DART 재무 자료" />
+      </h2>
+      <Swap label="DART 재무 자료" short={<p className="text-sm text-muted">회사 실적(매출·이익) 받기 · 인증키는 서버에만</p>}>
+        <p className="text-sm text-muted">
+          금융감독원 전자공시(opendart.fss.or.kr) 인증키입니다. 회사 매출·영업이익·순이익을 받아 연구에 씁니다. 저장한 키는 서버에만 있고 화면에 다시 나오지 않습니다.
+        </p>
+      </Swap>
       <div className="flex items-center justify-between gap-2 text-sm">
         <span className="font-medium">
           인증키{" "}
@@ -130,5 +137,6 @@ export default function DartSettings() {
       )}
       {msg && <p className={`whitespace-pre-wrap text-xs ${msg.ok ? "text-accent" : "text-critical"}`}>{msg.text}</p>}
     </section>
+    </InfoGroup>
   );
 }

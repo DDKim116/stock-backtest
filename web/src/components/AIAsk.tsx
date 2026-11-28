@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { AIStatus, Spec, TranslateResult } from "@/lib/types";
+import { Swap } from "./ui/Info";
 
 interface Turn {
   question: string;
@@ -66,8 +67,10 @@ export default function AIAsk({
   if (status && !status.enabled) {
     return (
       <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted">
-        AI 기능이 꺼져 있습니다. 사용하려면 서버의 <code>.env</code> 에 <code>ANTHROPIC_API_KEY</code> 를 넣고 서버를 재시작하세요.
-        조립·조건식 화면은 AI 없이 그대로 쓸 수 있습니다.
+        <Swap label="AI 켜는 법" short="AI 기능이 꺼져 있습니다. 조립·조건식 화면은 AI 없이 그대로 쓸 수 있습니다.">
+          AI 기능이 꺼져 있습니다. 사용하려면 서버의 <code>.env</code> 에 <code>ANTHROPIC_API_KEY</code> 를 넣고 서버를 재시작하세요.
+          조립·조건식 화면은 AI 없이 그대로 쓸 수 있습니다.
+        </Swap>
       </div>
     );
   }
@@ -76,7 +79,9 @@ export default function AIAsk({
     <div className="space-y-3">
       {turns.length === 0 && (
         <div className="space-y-2">
-          <p className="text-sm text-muted">검증하고 싶은 매매 아이디어를 말하듯이 적어 주세요. AI가 조건식으로 바꿔 드리고, 실행·숫자 수정은 무료입니다.</p>
+          <Swap label="AI 질문" short={<p className="text-sm text-muted">아이디어를 말하듯이 적어 주세요.</p>}>
+            <p className="text-sm text-muted">검증하고 싶은 매매 아이디어를 말하듯이 적어 주세요. AI가 조건식으로 바꿔 드리고, 실행·숫자 수정은 무료입니다.</p>
+          </Swap>
           {EXAMPLES.map((e) => (
             <button
               key={e}

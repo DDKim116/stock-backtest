@@ -6,6 +6,7 @@ import { num, pct, price, retClass } from "@/lib/format";
 import type { BreakdownRow, Check, RunResult, SingleResult, Spec, SweepResult, Trade } from "@/lib/types";
 import AIExplain from "./AIExplain";
 import TradeChart from "./TradeChart";
+import { Explain, InfoButton, InfoGroup, Swap, useInfoRegion } from "./ui/Info";
 
 const CHECK_STYLE: Record<Check["level"], { icon: string; cls: string; label: string }> = {
   good: { icon: "✓", cls: "text-good", label: "좋음" },
@@ -14,39 +15,35 @@ const CHECK_STYLE: Record<Check["level"], { icon: string; cls: string; label: st
   danger: { icon: "✕", cls: "text-critical", label: "경고" },
 };
 
-function Tile({
-  label,
-  value,
-  sub,
-  cls,
-  help,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  cls?: string;
-  help?: string;
-}) {
-  const [open, setOpen] = useState(false);
+type TileProps = { label: string; value: string; sub?: string; cls?: string; help?: string };
+
+// 숫자 칸: ⓘ 를 눌렀을 때만 설명이 펼쳐지며 칸이 넓어진다 ('자세히'여도 격자 모양은 그대로)
+function Tile(props: TileProps) {
+  return props.help ? (
+    <InfoGroup manual>
+      <TileBody {...props} />
+    </InfoGroup>
+  ) : (
+    <TileBody {...props} />
+  );
+}
+
+function TileBody({ label, value, sub, cls, help }: TileProps) {
+  const region = useInfoRegion();
+  const open = region.open && !!help;
   return (
-    <div className={`rounded-xl border border-border bg-card px-3 py-2.5 ${open ? "col-span-2 sm:col-span-3" : ""}`}>
+    <div id={region.id} className={`rounded-xl border border-border bg-card px-3 py-2.5 ${open ? "col-span-2 sm:col-span-3" : ""}`}>
       <div className="flex items-start justify-between gap-1 text-xs text-muted">
         <span>{label}</span>
-        {help && (
-          <button
-            type="button"
-            onClick={() => setOpen(!open)}
-            aria-expanded={open}
-            aria-label={`${label} 설명`}
-            className={`-mr-1 -mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] ${open ? "border-accent text-accent" : "border-border text-faint"}`}
-          >
-            ?
-          </button>
-        )}
+        {help && <InfoButton label={label} className="-mr-2 -mt-1.5" />}
       </div>
       <div className={`tabular text-xl font-semibold ${cls ?? ""}`}>{value}</div>
       {sub && <div className="tabular text-xs text-faint">{sub}</div>}
-      {open && help && <p className="mt-2 whitespace-pre-line border-t border-border pt-2 text-xs leading-relaxed text-muted">{help}</p>}
+      {help && (
+        <Explain label={label}>
+          <p className="mt-2 whitespace-pre-line border-t border-border pt-2 text-xs leading-relaxed text-muted">{help}</p>
+        </Explain>
+      )}
     </div>
   );
 }
@@ -260,10 +257,12 @@ function Single({ r, onBack }: { r: SingleResult; onBack?: () => void }) {
           </span>
         </div>
         <BreakdownTable rows={r.breakdowns[tab]} base={b.success_rate} />
-        <p className="mt-2 text-[11px] leading-relaxed text-faint">
-          막대의 세로선은 아무 날이나 샀을 때의 성공률(기준)입니다. 해마다 막대가 세로선보다 오른쪽이고 평균이 플러스면 꾸준한 전략,
-          특정 해만 좋거나 기준선 근처를 오가면 시장 분위기에 기댄 결과일 수 있습니다.
-        </p>
+        <Explain label="읽는 법" className="mt-1">
+          <p className="text-[11px] leading-relaxed text-faint">
+            막대의 세로선은 아무 날이나 샀을 때의 성공률(기준)입니다. 해마다 막대가 세로선보다 오른쪽이고 평균이 플러스면 꾸준한 전략,
+            특정 해만 좋거나 기준선 근처를 오가면 시장 분위기에 기댄 결과일 수 있습니다.
+          </p>
+        </Explain>
       </div>
 
       <div>
@@ -381,9 +380,11 @@ function Sweep({ r, onPick }: { r: SweepResult; onPick: (s: Spec) => void }) {
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-faint">
-        ★ 기준 대비 우위가 가장 큰 조합. 표본이 적은 조합은 우연일 수 있으니 건수를 함께 보세요. · 계산 {r.elapsed}초
-      </p>
+      <Swap label="비교표" short={<p className="text-xs text-faint">★ 기준 대비 우위가 가장 큰 조합 · 계산 {r.elapsed}초</p>}>
+        <p className="text-xs text-faint">
+          ★ 기준 대비 우위가 가장 큰 조합. 표본이 적은 조합은 우연일 수 있으니 건수를 함께 보세요. · 계산 {r.elapsed}초
+        </p>
+      </Swap>
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { type ReactNode, useEffect, useState } from "react";
 import { cachedApi } from "@/lib/api";
+import { Swap } from "./ui/Info";
 
 interface GaugeData {
   available: boolean;
@@ -387,7 +388,9 @@ export default function Gauge({ bare = false }: { bare?: boolean }) {
           ))}
         </div>
       )}
-      <p className="text-[11px] text-faint">항목을 누르면 쉬운 설명이 나와요. 지금 모습을 보는 참고용이에요. 이걸로 규칙을 바꾸지 않아요 — v2b·적립은 어떤 장이든 그대로.</p>
+      <Swap label="시장 계기판" short={<p className="text-[11px] text-faint">참고용 · 이걸로 규칙을 바꾸지 않아요</p>}>
+        <p className="text-[11px] text-faint">항목을 누르면 쉬운 설명이 나와요. 지금 모습을 보는 참고용이에요. 이걸로 규칙을 바꾸지 않아요 — v2b·적립은 어떤 장이든 그대로.</p>
+      </Swap>
     </section>
   );
 }

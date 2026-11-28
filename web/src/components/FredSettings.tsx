@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { InfoButton, InfoGroup, Swap } from "./ui/Info";
 
 interface FredInfo {
   saved: boolean;
@@ -66,11 +67,17 @@ export default function FredSettings() {
 
   const c = info?.collected;
   return (
+    <InfoGroup>
     <section className="space-y-3 rounded-xl border border-border bg-card p-4">
-      <h2 className="font-semibold">FRED 경제 지표</h2>
-      <p className="text-sm text-muted">
-        미국 연준 세인트루이스(fred.stlouisfed.org) API 키입니다. 금리·금리차·신용 스프레드·실업률·물가·환율을 받아 계기판과 연구에 씁니다. 저장한 키는 서버에만 있고 화면에 다시 나오지 않습니다.
-      </p>
+      <h2 className="font-semibold">
+        FRED 경제 지표
+        <InfoButton label="FRED 경제 지표" />
+      </h2>
+      <Swap label="FRED 경제 지표" short={<p className="text-sm text-muted">미국 금리·물가·환율 등 받기 · API 키는 서버에만</p>}>
+        <p className="text-sm text-muted">
+          미국 연준 세인트루이스(fred.stlouisfed.org) API 키입니다. 금리·금리차·신용 스프레드·실업률·물가·환율을 받아 계기판과 연구에 씁니다. 저장한 키는 서버에만 있고 화면에 다시 나오지 않습니다.
+        </p>
+      </Swap>
       <div className="flex items-center justify-between gap-2 text-sm">
         <span className="font-medium">
           인증키{" "}
@@ -130,5 +137,6 @@ export default function FredSettings() {
       )}
       {msg && <p className={`whitespace-pre-wrap text-xs ${msg.ok ? "text-accent" : "text-critical"}`}>{msg.text}</p>}
     </section>
+    </InfoGroup>
   );
 }

@@ -26,6 +26,7 @@ import AutoTrade from "./AutoTrade";
 import WatchCard from "./WatchCard";
 import Lab from "./Lab";
 import Calendar from "./Calendar";
+import { Explain, ExplainToggle, Swap } from "./ui/Info";
 
 type Tab = "today" | "run" | "explore" | "journal" | "auto" | "paper" | "market" | "calendar" | "lab" | "saved" | "more";
 const TAB_KEYS: Tab[] = ["today", "run", "explore", "journal", "auto", "paper", "market", "calendar", "lab", "saved", "more"];
@@ -277,34 +278,52 @@ export default function App() {
   }, [needLogin]);
 
   const current = datasets.find((d) => d.name === dataset);
+  const showDataset = datasets.length > 0 && ["run", "explore", "saved", "journal"].includes(tab);
 
   return (
     <div className="mx-auto min-h-dvh max-w-3xl px-4 pb-28 pt-4 fold:max-w-6xl fold:pb-10 fold:pl-[5.25rem] fold:pr-4 lg:pl-24 lg:pr-6">
-      <header className="mb-4 flex items-center justify-between">
-        <h1 className="flex items-center gap-2 text-lg font-bold">
+      <header className="mb-4 flex items-center justify-between gap-2">
+        <h1 className="flex shrink-0 items-center gap-2 text-lg font-bold">
           {/* eslint-disable-next-line @next/next/no-img-element -- 정적 내보내기라 next/image 최적화를 못 씀 */}
           <img src="/icon-192.png" alt="" width={24} height={24} className="rounded-md" />
-          Autobull
+          {/* 휴대폰에서 데이터셋 선택이 보일 땐 글자 이름을 숨겨 데이터셋 이름이 잘리지 않게 (화면 읽기 프로그램엔 그대로) */}
+          <span className={showDataset ? "sr-only fold:not-sr-only" : ""}>Autobull</span>
         </h1>
-        {datasets.length > 0 && ["run", "explore", "saved", "journal"].includes(tab) && (
-          <select
-            value={dataset}
-            onChange={(e) => {
-              setDataset(e.target.value);
-              writeLS(KEY_DATASET, e.target.value);
-              const d = datasets.find((x) => x.name === e.target.value);
-              if (d) setSpec(fitToDataset(spec, d));
-            }}
-            className="!w-auto py-1 text-sm"
-          >
-            {datasets.map((d) => (
-              <option key={d.name} value={d.name} disabled={!d.ready}>
-                {d.label}
-                {d.ready ? "" : " (준비 안 됨)"}
-              </option>
-            ))}
-          </select>
+        <div className="flex min-w-0 items-center gap-2">
+        {showDataset && (
+          // 휴대폰: 글자 크기를 줄일 수 없는 선택 상자(16px, iOS 확대 방지) 위에 작은 이름표를 보여 주고 상자는 투명하게 겹친다.
+          // 누르면 기기 기본 목록이 전체 이름으로 뜬다. 넓은 화면은 원래 선택 상자 그대로.
+          <div className="relative min-w-0 rounded-lg has-[select:focus-visible]:outline has-[select:focus-visible]:outline-2 has-[select:focus-visible]:outline-accent">
+            <span
+              aria-hidden="true"
+              className="pointer-events-none flex items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-1 text-sm fold:hidden"
+            >
+              <span className="truncate">{current?.label ?? ""}</span>
+              <span className="text-[10px] text-faint">▼</span>
+            </span>
+            <select
+              aria-label="데이터셋"
+              value={dataset}
+              onChange={(e) => {
+                setDataset(e.target.value);
+                writeLS(KEY_DATASET, e.target.value);
+                const d = datasets.find((x) => x.name === e.target.value);
+                if (d) setSpec(fitToDataset(spec, d));
+              }}
+              className="absolute inset-0 h-full opacity-0 fold:static fold:!w-auto fold:py-1 fold:opacity-100"
+            >
+              {datasets.map((d) => (
+                <option key={d.name} value={d.name} disabled={!d.ready}>
+                  {d.label}
+                  {d.ready ? "" : " (준비 안 됨)"}
+                </option>
+              ))}
+            </select>
+          </div>
         )}
+          {/* 설명 글 간단히 / 자세히 (이 기기에 기억) */}
+          <ExplainToggle />
+        </div>
       </header>
 
       {needLogin && <Login onDone={loadDatasets} />}
@@ -817,10 +836,15 @@ function Settings({ onSaved }: { onSaved: () => void }) {
             </button>
           ))}
         </div>
+        <div className="text-sm text-muted">설명 글</div>
+        <ExplainToggle size="md" />
+        <p className="text-xs text-faint">간단히: 핵심만 보이고 ⓘ 를 누르면 그 항목 설명이 펼쳐집니다 · 자세히: 설명이 처음부터 다 보입니다 (이 기기에만 기억)</p>
       </section>
       <section className="space-y-3 rounded-xl border border-border bg-card p-4">
         <h2 className="font-semibold">분석 서버 주소</h2>
-        <p className="text-sm text-muted">보통은 비워 두면 됩니다(이 화면을 연 주소의 서버를 사용). 화면을 다른 곳(예: Vercel)에 올린 경우에만 서버 주소를 넣으세요.</p>
+        <Swap label="서버 주소" className="text-sm text-muted" short={<p>보통은 비워 두세요.</p>}>
+          <p>보통은 비워 두면 됩니다(이 화면을 연 주소의 서버를 사용). 화면을 다른 곳(예: Vercel)에 올린 경우에만 서버 주소를 넣으세요.</p>
+        </Swap>
         <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." autoCapitalize="off" />
         <div className="flex gap-2">
           <button
@@ -883,10 +907,12 @@ function AISettings() {
     <section className="space-y-3 rounded-xl border border-border bg-card p-4 text-sm">
       <h2 className="font-semibold">AI 질문·해설</h2>
       {!status.enabled ? (
-        <p className="text-muted">
-          꺼져 있음. 서버 <code>.env</code> 에 <code>ANTHROPIC_API_KEY</code> 를 넣고 <code>sudo systemctl restart sbt-api</code> 를
-          실행하면 켜집니다. 키는 console.anthropic.com 에서 발급하고 크레딧을 선불 충전해 사용합니다.
-        </p>
+        <Swap label="AI 켜는 법" className="text-muted" short={<p>꺼져 있음</p>}>
+          <p>
+            꺼져 있음. 서버 <code>.env</code> 에 <code>ANTHROPIC_API_KEY</code> 를 넣고 <code>sudo systemctl restart sbt-api</code> 를
+            실행하면 켜집니다. 키는 console.anthropic.com 에서 발급하고 크레딧을 선불 충전해 사용합니다.
+          </p>
+        </Swap>
       ) : (
         <>
           <div className="tabular rounded-lg bg-background p-3">
@@ -925,8 +951,10 @@ function AISettings() {
                 저장
               </button>
             </div>
-            <span className="mt-1 block text-xs text-faint">한도에 도달하면 그달에는 AI 기능이 멈춥니다. 조건식 검증은 계속 무료입니다.</span>
           </label>
+          <Explain label="한도">
+            <p className="text-xs text-faint">한도에 도달하면 그달에는 AI 기능이 멈춥니다. 조건식 검증은 계속 무료입니다.</p>
+          </Explain>
           {msg && <p className="text-muted">{msg}</p>}
         </>
       )}

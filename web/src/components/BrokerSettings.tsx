@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { InfoButton, InfoGroup, Swap } from "./ui/Info";
 
 type Mode = "mock" | "real";
 interface KeyState {
@@ -46,11 +47,17 @@ export default function BrokerSettings() {
   };
 
   return (
+    <InfoGroup>
     <section className="space-y-3 rounded-xl border border-border bg-card p-4">
-      <h2 className="font-semibold">키움 연결</h2>
-      <p className="text-sm text-muted">
-        실시간 시세를 받기 위한 키움 REST API 키입니다. 지금은 시세 조회만 하고 주문은 하지 않습니다. 저장한 키는 서버에만 있고 화면에 다시 나오지 않습니다.
-      </p>
+      <h2 className="font-semibold">
+        키움 연결
+        <InfoButton label="키움 연결" />
+      </h2>
+      <Swap label="키움 연결" short={<p className="text-sm text-muted">키움 REST API 키 (서버에만 저장)</p>}>
+        <p className="text-sm text-muted">
+          키움 REST API 키입니다. 모의투자 키로는 자동매매 주문과 시세 조회를 하고, 실전 키는 아직 시세·계좌 조회만 해요(실전 주문은 막혀 있음). 저장한 키는 서버에만 있고 화면에 다시 나오지 않습니다.
+        </p>
+      </Swap>
       <div className="rounded-lg bg-background p-3 text-sm">
         <div className="text-xs text-muted">키움 사이트의 &apos;허용 IP&apos;에 넣을 서버 주소</div>
         <div className="mt-1 flex items-center justify-between gap-2">
@@ -65,6 +72,7 @@ export default function BrokerSettings() {
       {info && (["mock", "real"] as Mode[]).map((m) => <KeyCard key={m} mode={m} state={info.kiwoom[m]} onChange={setInfo} />)}
       {msg && <p className="text-sm text-muted">{msg}</p>}
     </section>
+    </InfoGroup>
   );
 }
 
